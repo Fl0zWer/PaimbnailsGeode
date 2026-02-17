@@ -1,56 +1,21 @@
- # v1.0.5
-
-- <cg>**Captures**</c>: Improved capture logic; <cy>full scene detection</c> (UILayer, PlayLayer, overlays) for cleaner thumbnails and previews.
-- <cg>**Layer editor**</c>: New editor to <cy>arrange and hide layers</c> when editing thumbnails, so you can get the exact frame you want before capturing.
-- <cg>**Preview**</c>: Mini-preview and live recapture now use the same full-scene rendering for consistency.
+# v1.0.0
 
 ---
 
-# v1.0.45
+**The Beginning / El Comienzo**  
+<cg>Initial Release / Lanzamiento Inicial</c>
 
-- Support for <cy>GD 2.2081</c> and <cy>Geode v5</c>
-- <cg>**Dynamic Song**</c>: Play the level's song while browsing (enable in settings)
-- <cg>**Performance**</c>: Optimized downloads, disk cache, and GIF RAM caching
-- <cg>**UI**</c>: Buttons now use Geode's green circle style
-- <cg>**Stability**</c>: Fixed crashes and improved HTTP reliability
-- <cy>Bilingual support</c> (English/Spanish)
+- <cg>**Captures**</c>: Complete thumbnail capture system with <cy>full scene detection</c> (UILayer, PlayLayer, overlays) and high-quality hybrid capture.
+- <cg>**Layer Editor**</c>: New editor to <cy>arrange and hide layers</c> for perfect thumbnail composition.
+- <cg>**Visuals**</c>: Customizable level thumbnails with <cy>gradients, particles, and hover animations.</c>
+- <cg>**Preview**</c>: Accurate mini-previews using full-scene rendering.
+- <cg>**Dynamic Song**</c>: Option to play the level's song while browsing list menus.
+- <cg>**Performance**</c>: Highly optimized with multi-threaded downloads, local disk caching, and <cy>GIF RAM caching</c>.
+- <cg>**UI**</c>: Clean interface using Geode's style, with a customizable Button Editor.
+- <cg>**Bilingual Support**</c>: Fully translated in <cy>English and Spanish</c>.
+- <cg>**Compatibility**</c>: Built for <cy>Geometry Dash 2.2081</c> and <cy>Geode v5</c>.
 
 ---
-
-# v1.0.31
-
-- <cg>**Geode Standards**</c>: Renamed resources with `paim_` prefix to prevent conflicts with other mods.
-- <cg>**Geode Standards**</c>: Removed custom console window allocation; now uses standard Geode logging.
-- <cg>**Settings**</c>: Renamed "Show Console Logs" to "Enable Debug Logs".
-
-# v1.0.3
-
-- fixed <cr>crash</c> when saving images.
-- deleted useless code.
-- cleaned up everything to prevent issues.
-
-# v1.0.2
-
-- <cg>**Dependencies**</c>: Updated dependency configurations and optimized download handling.
-- <cg>**Moderation**</c>: The moderator menu is now hidden by default; added automatic server verification on profile load.
-
-# v1.0.1 (Geode Guidelines & Optimization)
-
-- <cg>**Code Auditing**</c>: Full compliance with Geode Modding Guidelines v4.9.0.
-- <cg>**Safety**</c>: Fixed blocking I/O on main thread (saving images now runs in detached threads).
-- <cg>**Cleanup**</c>: Removed deprecated features (Dark Mode, Moderator Mode, Profile Gradient) to focus on core functionality.
-- <cg>**Stability**</c>: Fixed potential crashes with `dynamic_cast` and Windows path handling.
-- <cg>**Refactoring**</c>: Cleaned up header files to prevent namespace pollution.
-
-# v1.0.0 (Public Release)
-
-- <cg>Level thumbnails system.</c>
-- <cy>High-quality hybrid capture</c> (Direct/Render) from inside the game.
-- Optimized concurrent downloading + local cache.
-- Configurable visual effects (gradients/particles/hover).
-- Advanced display options (including background styles in the level info screen).
-- Mod settings integration (including performance and customization options).
-
 
 ## Coming Soon
 
