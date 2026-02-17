@@ -1,14 +1,11 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/GauntletLayer.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include <Geode/binding/GauntletLayer.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GJMapPack.hpp>
 #include "../managers/ThumbnailLoader.hpp"
-#include "../managers/LocalThumbs.hpp"
 #include "../utils/Debug.hpp"
-#include <filesystem>
 
 using namespace geode::prelude;
 
@@ -233,31 +230,17 @@ public:
         }
     }
 
-    std::optional<std::filesystem::path> getLocalThumbPath(int id) {
-        auto p = LocalThumbs::get().findAnyThumbnail(id);
-        if (p) return std::filesystem::path(*p);
-        if (!ThumbnailLoader::get().hasGIFData(id)) {
-            auto cp = ThumbnailLoader::get().getCachePath(id, false);
-            if (!cp.empty() && std::filesystem::exists(cp))
-                return cp;
-        }
-        return std::nullopt;
-    }
-
     void showNextImage() {
         if (m_levelIDs.empty()) return;
         
         int id = m_levelIDs[m_currentIndex];
         
-        // no cargada -> buscar otra (check local + cache)
-        auto hasLocal = [this](int lid) {
-            return getLocalThumbPath(lid).has_value() || ThumbnailLoader::get().isLoaded(lid);
-        };
-        if (!hasLocal(id)) {
+        // no cargada -> buscar otra
+        if (!ThumbnailLoader::get().isLoaded(id)) {
             bool found = false;
             for (size_t i = 0; i < m_levelIDs.size(); i++) {
                 int checkIdx = (m_currentIndex + i) % m_levelIDs.size();
-                if (hasLocal(m_levelIDs[checkIdx])) {
+                if (ThumbnailLoader::get().isLoaded(m_levelIDs[checkIdx])) {
                     m_currentIndex = checkIdx;
                     id = m_levelIDs[m_currentIndex];
                     found = true;
@@ -265,21 +248,6 @@ public:
                 }
             }
             if (!found) return;
-        }
-
-        // Ruta rápida: LazySprite si archivo local existe
-        auto localPath = getLocalThumbPath(id);
-        if (localPath) {
-            auto lazy = LazySprite::create(CCSize(1, 1), false);
-            lazy->retain();
-            lazy->setLoadCallback([this, lazy](geode::Result<> res) {
-                if (res.isOk() && lazy->getTexture()) {
-                    transitionTo(lazy->getTexture());
-                }
-                lazy->release();
-            });
-            lazy->loadFromFile(*localPath);
-            return;
         }
 
         ThumbnailLoader::get().requestLoad(id, "", [this](CCTexture2D* tex, bool success) {

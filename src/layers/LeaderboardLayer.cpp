@@ -1,9 +1,7 @@
 #include "LeaderboardLayer.hpp"
 #include <Geode/modify/CreatorLayer.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/ThumbnailLoader.hpp"
-#include <filesystem>
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/HttpClient.hpp"
@@ -730,44 +728,6 @@ void LeaderboardLayer::createList(CCArray* items, std::string type) {
             if (texture) {
                 createThumb(cell, texture, thumbW, h);
             } else {
-                // LazySprite fast path si archivo en cache
-                std::optional<std::filesystem::path> localPath;
-                if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-                    localPath = std::filesystem::path(*p);
-                else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-                    auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-                    if (!cp.empty() && std::filesystem::exists(cp))
-                        localPath = cp;
-                }
-                if (localPath) {
-                    auto placeholder = CCLayerColor::create({30, 30, 40, 255});
-                    placeholder->setContentSize({thumbW, h});
-                    placeholder->setTag(101);
-                    cell->addChild(placeholder, 1);
-                    auto spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-                    if (spinner) {
-                        spinner->setScale(0.35f);
-                        spinner->setPosition({thumbW / 2, h / 2});
-                        spinner->setColor({70, 70, 80});
-                        spinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.f)));
-                        placeholder->addChild(spinner);
-                    }
-                    float capW = thumbW;
-                    float capH = h;
-                    cell->retain();
-                    auto lazy = LazySprite::create(CCSize(capW, capH), true);
-                    lazy->retain();
-                    lazy->setLoadCallback([cell, capW, capH, createThumb, lazy](geode::Result<> res) {
-                        geode::Loader::get()->queueInMainThread([cell, capW, capH, createThumb, lazy, res] {
-                            if (cell->getParent() && res.isOk() && lazy->getTexture()) {
-                                createThumb(cell, lazy->getTexture(), capW, capH);
-                            }
-                            lazy->release();
-                            cell->release();
-                        });
-                    });
-                    lazy->loadFromFile(*localPath);
-                } else {
                 // placeholder carga
                 auto placeholder = CCLayerColor::create({30, 30, 40, 255});
                 placeholder->setContentSize({thumbW, h});
@@ -803,7 +763,6 @@ void LeaderboardLayer::createList(CCArray* items, std::string type) {
                         cell->release();
                     });
                 });
-                }
             }
         }
 
@@ -1083,30 +1042,6 @@ void LeaderboardLayer::updateBackground(int levelID) {
     if (texture) {
         applyBackground(texture);
     } else {
-        // LazySprite fast path si archivo en cache
-        std::optional<std::filesystem::path> localPath;
-        if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-            localPath = std::filesystem::path(*p);
-        else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-            auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-            if (!cp.empty() && std::filesystem::exists(cp))
-                localPath = cp;
-        }
-        if (localPath) {
-            Ref<LeaderboardLayer> self = this;
-            auto lazy = LazySprite::create(CCSize(100, 100), false);
-            lazy->retain();
-            lazy->setLoadCallback([self, lazy](geode::Result<> res) {
-                geode::Loader::get()->queueInMainThread([self, lazy, res] {
-                    if ((self->getParent() || self->isRunning()) && res.isOk() && lazy->getTexture()) {
-                        self->applyBackground(lazy->getTexture());
-                    }
-                    lazy->release();
-                });
-            });
-            lazy->loadFromFile(*localPath);
-            return;
-        }
         // solicita descarga
         std::string fileName = fmt::format("{}.png", levelID);
         Ref<LeaderboardLayer> self = this;

@@ -1,9 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/DailyLevelNode.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include "../managers/ThumbnailLoader.hpp"
-#include "../managers/LocalThumbs.hpp"
-#include <filesystem>
 
 using namespace geode::prelude;
 
@@ -166,39 +163,6 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         int m_levelID = 0;
     };
 
-    void applyDailyThumb(CCTexture2D* tex) {
-        if (!tex || !m_fields->m_paimonClipper) return;
-        if (m_fields->m_loadingSpinner) {
-            m_fields->m_loadingSpinner->removeFromParent();
-            m_fields->m_loadingSpinner = nullptr;
-        }
-        if (m_fields->m_paimonThumb) {
-            m_fields->m_paimonThumb->removeFromParent();
-        }
-        auto sprite = PaimonBlurSprite::createWithTexture(tex);
-        sprite->m_texSize = tex->getContentSizeInPixels();
-        m_fields->m_paimonThumb = sprite;
-        auto shader = new CCGLProgram();
-        shader->initWithVertexShaderByteArray(kVertexShaderDaily, kFragmentShaderBlurDaily);
-        shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
-        shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
-        shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
-        shader->link();
-        shader->updateUniforms();
-        sprite->setShaderProgram(shader);
-        shader->release();
-        CCSize containerSize = m_fields->m_paimonClipper->getContentSize();
-        float sx = containerSize.width / sprite->getContentWidth();
-        float sy = containerSize.height / sprite->getContentHeight();
-        float scale = std::max(sx, sy);
-        sprite->setScale(scale);
-        sprite->setPosition(containerSize / 2);
-        sprite->setOpacity(0);
-        sprite->runAction(CCFadeIn::create(0.5f));
-        sprite->startLoop();
-        m_fields->m_paimonClipper->addChild(sprite);
-    }
-
     bool init(GJGameLevel* level, DailyLevelPage* page, bool isTime) {
         if (!DailyLevelNode::init(level, page, isTime)) return false;
 
@@ -268,39 +232,58 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         // pido la miniatura
         int levelID = level->m_levelID;
         std::string fileName = fmt::format("{}.png", levelID);
-
-        // Ruta rápida: LazySprite si archivo local existe
-        std::optional<std::filesystem::path> localPath;
-        if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-            localPath = std::filesystem::path(*p);
-        else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-            auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-            if (!cp.empty() && std::filesystem::exists(cp))
-                localPath = cp;
-        }
-        if (localPath) {
-            auto lazy = LazySprite::create(CCSize(382.f, 116.f), true);
-            this->retain();
-            lazy->retain();
-            lazy->setLoadCallback([this, lazy](geode::Result<> res) {
-                if (res.isOk() && lazy->getTexture() && this->m_fields->m_paimonClipper) {
-                    this->applyDailyThumb(lazy->getTexture());
-                }
-                lazy->release();
-                this->release();
-            });
-            lazy->loadFromFile(*localPath);
-            return true;
-        }
         
         this->retain(); // me mantengo vivo pa el callback
         ThumbnailLoader::get().requestLoad(levelID, fileName, [this](CCTexture2D* tex, bool success) {
+            // chequeo rapido por si ya no existo
             if (!this->getParent() && !this->m_fields->m_paimonClipper) {
                 this->release();
                 return;
             }
-            if (success && tex) {
-                this->applyDailyThumb(tex);
+
+            // quito el spinner
+            if (this->m_fields->m_loadingSpinner) {
+                this->m_fields->m_loadingSpinner->removeFromParent();
+                this->m_fields->m_loadingSpinner = nullptr;
+            }
+
+            if (success && tex && this->m_fields->m_paimonClipper) {
+                if (this->m_fields->m_paimonThumb) {
+                    this->m_fields->m_paimonThumb->removeFromParent();
+                }
+                
+                auto sprite = PaimonBlurSprite::createWithTexture(tex);
+                sprite->m_texSize = tex->getContentSizeInPixels();
+                this->m_fields->m_paimonThumb = sprite;
+                
+                // seteo shader
+                auto shader = new CCGLProgram();
+                shader->initWithVertexShaderByteArray(kVertexShaderDaily, kFragmentShaderBlurDaily);
+                shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
+                shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
+                shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
+                shader->link();
+                shader->updateUniforms();
+                sprite->setShaderProgram(shader);
+                shader->release();
+                
+                // hago aspect fill
+                CCSize containerSize = this->m_fields->m_paimonClipper->getContentSize();
+                float sx = containerSize.width / sprite->getContentWidth();
+                float sy = containerSize.height / sprite->getContentHeight();
+                float scale = std::max(sx, sy); // aspect fill: cubro todo el area
+
+                sprite->setScale(scale);
+                sprite->setPosition(containerSize / 2);
+                
+                // anim: fade in
+                sprite->setOpacity(0);
+                sprite->runAction(CCFadeIn::create(0.5f));
+                
+                // arranco el loop del blur
+                sprite->startLoop();
+
+                this->m_fields->m_paimonClipper->addChild(sprite);
             }
             this->release();
         });

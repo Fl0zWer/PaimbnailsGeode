@@ -1,10 +1,7 @@
 #include "ListThumbnailCarousel.hpp"
-#include <Geode/ui/LazySprite.hpp>
 #include "../managers/ThumbnailLoader.hpp"
-#include "../managers/LocalThumbs.hpp"
 #include "../managers/ListThumbnailManager.hpp"
 #include <Geode/Geode.hpp>
-#include <filesystem>
 
 #ifdef GEODE_IS_WINDOWS
 #include <excpt.h>
@@ -136,39 +133,14 @@ void ListThumbnailCarousel::tryShowNextImage() {
     }
 
     if (foundIndex != -1) {
+        // img valida
         int levelID = m_levelIDs[foundIndex];
+        
+        // alive compartido pa callbacks
         auto alive = m_alive;
         auto* self = this;
         std::string fileName = fmt::format("{}.png", levelID);
         
-        // LazySprite fast path si archivo local existe
-        std::optional<std::filesystem::path> localPath;
-        if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-            localPath = std::filesystem::path(*p);
-        else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-            auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-            if (!cp.empty() && std::filesystem::exists(cp))
-                localPath = cp;
-        }
-        if (localPath) {
-            auto lazy = LazySprite::create(m_size, true);
-            lazy->retain();
-            lazy->setLoadCallback([self, alive, levelID, lazy](geode::Result<> res) {
-                if (!alive || !*alive) { lazy->release(); return; }
-                if (!self->getParent()) { lazy->release(); return; }
-                if (self->m_loadingCircle) {
-                    self->m_loadingCircle->runAction(CCSequence::create(
-                        CCFadeOut::create(0.2f),
-                        CCCallFunc::create(self->m_loadingCircle, callfunc_selector(CCNode::removeFromParent)),
-                        nullptr));
-                    self->m_loadingCircle = nullptr;
-                }
-                if (res.isOk() && lazy->getTexture())
-                    self->onImageLoaded(lazy->getTexture(), levelID);
-                lazy->release();
-            });
-            lazy->loadFromFile(*localPath);
-        } else {
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, alive, levelID](CCTexture2D* tex, bool) {
             if (!alive || !*alive) return;
             // double-check padre
@@ -184,7 +156,6 @@ void ListThumbnailCarousel::tryShowNextImage() {
             }
             if (tex) self->onImageLoaded(tex, levelID);
         }, 0);
-        }
         
         // siguiente: item despues, rota
         m_currentIndex = (foundIndex + 1) % listSize;

@@ -1,12 +1,10 @@
 #include <Geode/modify/LevelCell.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include <Geode/binding/DailyLevelNode.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 #include <cmath>
 #include <unordered_set>
-#include <filesystem>
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/LevelColors.hpp"
 #include "../managers/ThumbnailLoader.hpp"
@@ -2037,66 +2035,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             this->retain();
             LevelCell* cellPtr = this;
             
-            // 1. Request Static Thumbnail - LazySprite fast path cuando archivo local existe
-            std::optional<std::filesystem::path> localPath;
-            if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-                localPath = std::filesystem::path(*p);
-            else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-                auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-                if (!cp.empty() && std::filesystem::exists(cp))
-                    localPath = cp;
-            }
-            if (localPath) {
-                auto lazy = LazySprite::create(CCSize(80, 60), true);
-                lazy->retain();
-                lazy->setLoadCallback([cellPtr, levelID, enableSpinners, currentRequestId, lazy](geode::Result<> res) {
-                    if (!cellPtr) { lazy->release(); return; }
-                    auto* cell = static_cast<PaimonLevelCell*>(cellPtr);
-                    auto fields = cell->m_fields.self();
-                    if (!fields || fields->m_isBeingDestroyed || fields->m_requestId != currentRequestId ||
-                        !cell->m_level || cell->m_level->m_levelID != levelID || fields->m_thumbnailApplied) {
-                        lazy->release();
-                        cellPtr->release();
-                        return;
-                    }
-                    if (enableSpinners) cell->hideLoadingSpinner();
-                    if (res.isOk() && lazy->getTexture()) {
-                        fields->m_thumbnailApplied = true;
-                        fields->m_staticTexture = lazy->getTexture();
-                        cell->addOrUpdateThumb(lazy->getTexture());
-                    } else if (levelID > 0 && levelID <= 100) {
-                        auto blackImage = new CCImage();
-                        uint8_t blackPixel[4] = {0, 0, 0, 255};
-                        if (blackImage->initWithImageData(blackPixel, 4)) {
-                            auto blackTex = new CCTexture2D();
-                            if (blackTex->initWithImage(blackImage)) {
-                                blackTex->autorelease();
-                                cell->addOrUpdateThumb(blackTex);
-                            }
-                        }
-                        blackImage->release();
-                    }
-                    lazy->release();
-                    cellPtr->release();
-                });
-                lazy->loadFromFile(*localPath);
-                // 2. GIF request sigue igual
-                this->retain();
-                ThumbnailLoader::get().requestLoad(levelID, fileName, [cellPtr, levelID, currentRequestId](CCTexture2D* tex, bool) {
-                    if (!cellPtr) return;
-                    auto* cell = static_cast<PaimonLevelCell*>(cellPtr);
-                    auto fields = cell->m_fields.self();
-                    if (!fields || fields->m_isBeingDestroyed || fields->m_requestId != currentRequestId ||
-                        !cell->m_level || cell->m_level->m_levelID != levelID) {
-                        cellPtr->release();
-                        return;
-                    }
-                    if (tex) { fields->m_hasGif = true; fields->m_gifTexture = tex; }
-                    cellPtr->release();
-                }, 0, true);
-                return;
-            }
-            
+            // 1. Request Static Thumbnail
             ThumbnailLoader::get().requestLoad(levelID, fileName, [cellPtr, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool fromServer) {
                 if (!cellPtr) return;
                 auto* cell = static_cast<PaimonLevelCell*>(cellPtr);

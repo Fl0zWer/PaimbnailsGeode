@@ -3,12 +3,9 @@
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/binding/LoadingCircle.hpp>
 #include "../managers/ThumbnailLoader.hpp"
-#include "../managers/LocalThumbs.hpp"
-#include <filesystem>
 
 using namespace geode::prelude;
 
@@ -133,73 +130,6 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
         log::info("[LevelAreaInnerLayer] Adding thumbnail for level {}", levelID);
 
         auto doorSize = doorNode->getContentSize();
-        CCSize thumbSize = CCSize(doorSize.width * 0.8f, doorSize.height * 0.8f);
-        
-        // camino rápido: LazySprite si hay thumb local
-        auto localPath = LocalThumbs::get().findAnyThumbnail(levelID);
-        if (localPath && std::filesystem::exists(*localPath)) {
-            auto lazy = LazySprite::create(thumbSize, true);
-            if (lazy) {
-                lazy->setLoadCallback([this, doorNode, levelID, lazy, doorSize](geode::Result<> res) {
-                    if (!doorNode) return;
-                    auto fields = m_fields.self();
-                    if (res.isOk()) {
-                        float scale = std::min(
-                            (doorSize.width * 0.8f) / lazy->getContentWidth(),
-                            (doorSize.height * 0.8f) / lazy->getContentHeight()
-                        );
-                        lazy->setScale(scale);
-                        lazy->setPosition(doorSize / 2);
-                        lazy->setZOrder(-1);
-                        lazy->setOpacity(180);
-                        if (fields) fields->m_doorThumbnails[levelID] = lazy;
-                        log::info("[LevelAreaInnerLayer] Thumbnail (LazySprite) added for level {}", levelID);
-                    } else if (fields) {
-                        lazy->removeFromParent();
-                        fields->m_doorThumbnails.erase(levelID);
-                    }
-                });
-                lazy->loadFromFile(*localPath);
-                doorNode->addChild(lazy);
-                if (fields) fields->m_doorThumbnails[levelID] = lazy;
-            }
-            return;
-        }
-        
-        // cache de ThumbnailLoader (solo PNG, nada de GIF)
-        if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-            auto cachePath = ThumbnailLoader::get().getCachePath(levelID, false);
-            if (std::filesystem::exists(cachePath)) {
-                auto lazy = LazySprite::create(thumbSize, true);
-                if (lazy) {
-                    lazy->setLoadCallback([this, doorNode, levelID, lazy, doorSize](geode::Result<> res) {
-                        if (!doorNode) return;
-                        auto fields = m_fields.self();
-                        if (res.isOk()) {
-                            float scale = std::min(
-                                (doorSize.width * 0.8f) / lazy->getContentWidth(),
-                                (doorSize.height * 0.8f) / lazy->getContentHeight()
-                            );
-                            lazy->setScale(scale);
-                            lazy->setPosition(doorSize / 2);
-                            lazy->setZOrder(-1);
-                            lazy->setOpacity(180);
-                            if (fields) fields->m_doorThumbnails[levelID] = lazy;
-                            log::info("[LevelAreaInnerLayer] Thumbnail (LazySprite cache) added for level {}", levelID);
-                        } else if (fields) {
-                            lazy->removeFromParent();
-                            fields->m_doorThumbnails.erase(levelID);
-                        }
-                    });
-                    lazy->loadFromFile(cachePath);
-                    doorNode->addChild(lazy);
-                    if (fields) fields->m_doorThumbnails[levelID] = lazy;
-                }
-                return;
-            }
-        }
-        
-        // fallback: que lo cargue ThumbnailLoader (descarga o GIF)
         std::string fileName = fmt::format("{}.png", levelID);
         ThumbnailLoader::get().requestLoad(
             levelID,

@@ -1,5 +1,4 @@
 #include <Geode/modify/LevelInfoLayer.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/LeaderboardsLayer.hpp>
 #include "../utils/PaimonButtonHighlighter.hpp"
@@ -754,39 +753,9 @@ protected:
         log::info("[ThumbnailViewPopup] Intentando Fuente 3: ThumbnailLoader + Descarga");
         std::string fileName = fmt::format("{}.png", m_levelID);
         
+        // guardar ptr callback
         LocalThumbnailViewPopup* popupPtr = this;
-        this->retain();
-        
-        // LazySprite fast path si archivo en cache ThumbnailLoader
-        std::optional<std::filesystem::path> localPath;
-        if (auto p = LocalThumbs::get().findAnyThumbnail(m_levelID))
-            localPath = std::filesystem::path(*p);
-        else if (!ThumbnailLoader::get().hasGIFData(m_levelID)) {
-            auto cp = ThumbnailLoader::get().getCachePath(m_levelID, false);
-            if (!cp.empty() && std::filesystem::exists(cp))
-                localPath = cp;
-        }
-        if (localPath) {
-            auto lazy = LazySprite::create(CCSize(340, 220), true);
-            lazy->retain();
-            lazy->setLoadCallback([popupPtr, maxWidth, maxHeight, content, openedFromReport, lazy](geode::Result<> res) {
-                if (!popupPtr) { lazy->release(); return; }
-                auto parent = popupPtr->getParent();
-                if (!parent || !popupPtr->m_mainLayer) {
-                    lazy->release();
-                    popupPtr->release();
-                    return;
-                }
-                if (res.isOk() && lazy->getTexture())
-                    popupPtr->displayThumbnail(lazy->getTexture(), maxWidth, maxHeight, content, openedFromReport);
-                else
-                    popupPtr->showNoThumbnail(content);
-                lazy->release();
-                popupPtr->release();
-            });
-            lazy->loadFromFile(*localPath);
-            return;
-        }
+        this->retain(); // retain pa callback
         
         ThumbnailLoader::get().requestLoad(m_levelID, fileName, [popupPtr, maxWidth, maxHeight, content, openedFromReport](CCTexture2D* tex, bool) {
             log::info("[ThumbnailViewPopup] === CALLBACK THUMBNAILLOADER ===");
@@ -2218,33 +2187,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 m_fields->m_thumbnailRequested = true;
                 int32_t levelID = level->m_levelID.value();
                 std::string fileName = fmt::format("{}.png", levelID);
+                // retain pa carga async
                 this->retain();
                 auto selfPtr = this;
-                
-                // LazySprite fast path si archivo local existe
-                std::optional<std::filesystem::path> localPath;
-                if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-                    localPath = std::filesystem::path(*p);
-                else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-                    auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-                    if (!cp.empty() && std::filesystem::exists(cp))
-                        localPath = cp;
-                }
-                if (localPath) {
-                    auto lazy = LazySprite::create(CCSize(100, 100), false);
-                    lazy->retain();
-                    lazy->setLoadCallback([selfPtr, levelID, lazy](geode::Result<> res) {
-                        if (selfPtr && selfPtr->getParent()) {
-                            if (res.isOk() && lazy->getTexture())
-                                static_cast<PaimonLevelInfoLayer*>(selfPtr)->applyThumbnailBackground(lazy->getTexture(), levelID);
-                            else
-                                log::warn("[LevelInfoLayer] No texture for pixel background (LazySprite)");
-                        }
-                        lazy->release();
-                        selfPtr->release();
-                    });
-                    lazy->loadFromFile(*localPath);
-                } else {
                 ThumbnailLoader::get().requestLoad(levelID, fileName, [selfPtr, levelID](CCTexture2D* tex, bool success) {
                     // validar que el layer aun existe antes de usarlo
                     try {
@@ -2264,7 +2209,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     }
                     selfPtr->release();
                 }, 5);
-                }
             }
 
             // load layouts botones

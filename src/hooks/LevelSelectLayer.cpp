@@ -1,8 +1,6 @@
 #include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/GameManager.hpp>
-#include <Geode/ui/LazySprite.hpp>
 #include <Geode/utils/cocos.hpp>
-#include <filesystem>
 #include <Geode/binding/GJGameLevel.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/BoomScrollLayer.hpp>
@@ -257,32 +255,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         
         auto selfPtr = this;
         this->retain();
-        
-        // camino rápido con LazySprite si ya hay archivo local
-        std::optional<std::filesystem::path> localPath;
-        if (auto p = LocalThumbs::get().findAnyThumbnail(levelID))
-            localPath = std::filesystem::path(*p);
-        else if (!ThumbnailLoader::get().hasGIFData(levelID)) {
-            auto cp = ThumbnailLoader::get().getCachePath(levelID, false);
-            if (!cp.empty() && std::filesystem::exists(cp))
-                localPath = cp;
-        }
-        if (localPath) {
-            auto lazy = LazySprite::create(CCSize(100, 100), false);
-            lazy->retain();
-            lazy->setLoadCallback([selfPtr, levelID, lazy](geode::Result<> res) {
-                if (selfPtr->m_fields->m_currentLevelID == levelID) {
-                    if (res.isOk() && lazy->getTexture())
-                        selfPtr->applyBackground(lazy->getTexture(), levelID);
-                    else
-                        selfPtr->applyBackground(nullptr, levelID);
-                }
-                lazy->release();
-                selfPtr->release();
-            });
-            lazy->loadFromFile(*localPath);
-            return;
-        }
         
         ThumbnailLoader::get().requestLoad(levelID, fileName, [selfPtr, levelID](CCTexture2D* tex, bool success) {
             // por si el usuario se fue a otra página mientras cargaba
