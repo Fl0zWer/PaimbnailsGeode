@@ -1,0 +1,314 @@
+{
+  "geode": "5.0.0-beta.2",
+  "gd": {
+    "win": "2.2081",
+    "android": "2.2074",
+    "mac": "2.2074",
+    "ios": "2.2074"
+  },
+  "version": "1.0.5",
+  "id": "flozwer.paimbnails",
+  "name": "Paimbnails",
+  "developer": "FlozWer",
+  "description": "Level & profile thumbnails with in-game capture, caching, and visual effects",
+  "repository": "https://github.com/Fl0zWer/Paimbnails",
+  "tags": [
+    "interface",
+    "online",
+    "enhancement"
+  ],
+  "links": {
+    "homepage": "https://paimon-thumbnails-server.paimonalcuadrado.workers.dev/",
+    "community": "https://discord.gg/5N5vpSfZwY"
+  },
+  "resources": {
+    "sprites": [
+      "resources/*.png"
+    ]
+  },
+  "settings": {
+    "optimizer": {
+      "type": "bool",
+      "name": "Optimizer Mode",
+      "description": "Disables all logs for maximum performance.",
+      "default": true
+    },
+    "language": {
+      "type": "string",
+      "name": "Language / Idioma",
+      "description": "Select language / Seleccionar idioma",
+      "default": "english",
+      "one-of": [
+        "spanish",
+        "english"
+      ]
+    },
+    "android-safe-mode": {
+      "type": "bool",
+      "name": "Android Safe Mode",
+      "description": "Disables heavy startup work. Turn off if stable.",
+      "default": true
+    },
+    "gif-ram-cache": {
+      "type": "bool",
+      "name": "Cache GIFs in RAM",
+      "description": "Keep processed GIFs in RAM for faster loading. Warning: High RAM usage.",
+      "default": true
+    },
+    "dynamic-song": {
+      "type": "bool",
+      "name": "Dynamic Song",
+      "description": "Plays the level song at a random position when viewing a level.",
+      "default": false
+    },
+    "thumbnail-concurrent-downloads": {
+      "type": "int",
+      "name": "Download Speed (Threads)",
+      "description": "Max simultaneous downloads (8-15 recommended).",
+      "default": 12,
+      "min": 1,
+      "max": 100
+    },
+    "level-thumbs-title": {
+      "name": "Level Thumbnails",
+      "description": "Settings for level list thumbnails",
+      "type": "title"
+    },
+    "level-thumb-width": {
+      "type": "float",
+      "name": "Thumbnail Size",
+      "description": "Width of the thumbnail area.",
+      "default": 0.5,
+      "min": 0.2,
+      "max": 0.95
+    },
+    "levelcell-background-type": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Gradient or Blurred Thumbnail.",
+      "default": "thumbnail",
+      "one-of": [
+        "gradient",
+        "thumbnail"
+      ]
+    },
+    "levelcell-background-blur": {
+      "type": "float",
+      "name": "Background Blur",
+      "description": "Blur intensity for thumbnail background.",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 10.0
+    },
+    "levelcell-background-darkness": {
+      "type": "float",
+      "name": "Background Darkness",
+      "description": "Darkness overlay (0 = clear, 1 = black).",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "levelcell-show-separator": {
+      "type": "bool",
+      "name": "Show Separator Line",
+      "description": "Shows the line separating thumbnail and info.",
+      "default": true
+    },
+    "levelcell-show-view-button": {
+      "type": "bool",
+      "name": "Show View Button",
+      "description": "Shows the 'View' button.",
+      "default": true
+    },
+    "compact-list-mode": {
+      "type": "bool",
+      "name": "Compact Mode (Lists)",
+      "description": "Optimizes layout for Compact Lists mod.",
+      "default": false
+    },
+    "level-effects-title": {
+      "name": "Level Visual Effects",
+      "description": "Animations and effects",
+      "type": "title"
+    },
+    "levelcell-hover-effects": {
+      "type": "bool",
+      "name": "Hover Animation",
+      "description": "Animate on hover.",
+      "default": true
+    },
+    "levelcell-anim-type": {
+      "type": "string",
+      "name": "Animation Type",
+      "description": "Style of hover animation.",
+      "default": "zoom-slide",
+      "one-of": [
+        "none",
+        "zoom-slide",
+        "zoom",
+        "slide",
+        "bounce",
+        "rotate",
+        "rotate-content",
+        "shake",
+        "pulse",
+        "swing"
+      ]
+    },
+    "levelcell-anim-speed": {
+      "type": "float",
+      "name": "Animation Speed",
+      "description": "Speed of animation.",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 5.0
+    },
+    "levelcell-anim-effect": {
+      "type": "string",
+      "name": "Color Effect",
+      "description": "Color filter during animation.",
+      "default": "none",
+      "one-of": [
+        "none",
+        "brightness",
+        "darken",
+        "sepia",
+        "red",
+        "blue",
+        "gold",
+        "fade",
+        "grayscale",
+        "blur",
+        "invert",
+        "glitch",
+        "sharpen",
+        "edge-detection",
+        "vignette",
+        "pixelate",
+        "posterize",
+        "chromatic",
+        "scanlines",
+        "solarize",
+        "rainbow"
+      ]
+    },
+    "levelcell-effect-on-gradient": {
+      "type": "bool",
+      "name": "Apply Effect to Background",
+      "description": "Apply color effect to background gradient.",
+      "default": false
+    },
+    "levelcell-mythic-particles": {
+      "type": "bool",
+      "name": "Mythic Particles",
+      "description": "Particles for Mythic levels.",
+      "default": true
+    },
+    "levelcell-animated-gradient": {
+      "type": "bool",
+      "name": "Animated Gradient",
+      "description": "Animate background colors.",
+      "default": true
+    },
+    "levelinfo-title": {
+      "name": "Level Info Screen",
+      "description": "Settings for the level info screen",
+      "type": "title"
+    },
+    "levelinfo-background-style": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Visual style of the background.",
+      "default": "blur",
+      "one-of": [
+        "normal",
+        "pixel",
+        "blur",
+        "grayscale",
+        "sepia",
+        "vignette",
+        "scanlines",
+        "bloom",
+        "chromatic",
+        "radial-blur",
+        "glitch",
+        "posterize"
+      ]
+    },
+    "levelinfo-effect-intensity": {
+      "type": "int",
+      "name": "Effect Intensity",
+      "description": "Intensity of the background effect.",
+      "default": 5,
+      "min": 1,
+      "max": 10
+    },
+    "capture-title": {
+      "name": "Capture Settings",
+      "description": "In-game thumbnail capture",
+      "type": "title"
+    },
+    "enable-thumbnail-taking": {
+      "name": "Enable Capture Button",
+      "description": "Show capture button in pause menu.",
+      "type": "bool",
+      "default": true
+    },
+    "save-thumbnails-locally": {
+      "type": "bool",
+      "name": "Save Thumbnails Locally",
+      "description": "Save captured thumbnails to local storage before uploading.",
+      "default": false
+    },
+    "capture-resolution": {
+      "type": "string",
+      "name": "Capture Resolution",
+      "description": "Resolution for Render mode.",
+      "default": "1080p",
+      "one-of": [
+        "1080p",
+        "1440p",
+        "4k"
+      ]
+    },
+    "button-editor-title": {
+      "name": "Interface",
+      "description": "UI Customization",
+      "type": "title"
+    },
+    "show-button-editor": {
+      "type": "bool",
+      "name": "Show Button Editor",
+      "description": "Show button to move UI elements.",
+      "default": true
+    },
+    "keybind-info": {
+      "name": "Keybinds",
+      "description": "Default: T. Change in 'Custom Keybinds' mod.",
+      "type": "title"
+    },
+    "test-category": {
+      "name": "Test / Debug",
+      "description": "Developer options",
+      "type": "title"
+    },
+    "debug-password": {
+      "type": "string",
+      "name": "Password",
+      "description": "Enter password to enable debug features",
+      "default": ""
+    },
+    "enable-debug-logs": {
+      "type": "bool",
+      "name": "Enable Debug Logs",
+      "description": "Requires password 'Paimon285'",
+      "default": false
+    }
+  },
+  "dependencies": {
+    "geode.node-ids": {
+      "version": ">=1.7.1",
+      "required": true
+    }
+  }
+}
