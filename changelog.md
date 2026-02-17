@@ -1,4 +1,4 @@
-# v1.0.0
+# v2.0.0
 
 ---
 
@@ -20,3 +20,4 @@
 ## Coming Soon
 
 - Versions for <cg>**Android**</c>, <cg>**iOS**</c>, and <cg>**macOS**</c>.
+
