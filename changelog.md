@@ -1,6 +1,6 @@
 # v2.1.0
 
-**Leaderboard & Navigation Improvements / Mejoras de Leaderboard y Navegación**
+**Leaderboard & Navigation Improvements / Mejoras de Leaderboard y Navegacion**
 
 - <cy>**Leaderboard Button Moved**</c>: The leaderboard button is now located in LevelSearchLayer's "other-filter-menu" instead of CreatorLayer for better accessibility.
 - <cy>**Smart Navigation**</c>: Fixed back button functionality - LeaderboardLayer now correctly returns to the previous screen (CreatorLayer or LevelSearchLayer).
@@ -12,13 +12,13 @@
 - <cy>**Profile Features**</c>: Added VIP restrictions for profile GIFs and profile music - only VIP, Moderators, and Admins can use these features.
 - <cy>**Better File Handling**</c>: Improved filesystem error handling with proper error codes for cross-platform compatibility.
 
-**Technical Improvements / Mejoras Técnicas**
+**Technical Improvements / Mejoras Tecnicas**
 
 - <cy>**Player Toggle Helper**</c>: New utility class for comprehensive player visibility control including all particle effects and trails.
 - <cy>**Code Cleanup**</c>: Removed unused includes and cleaned up commented code throughout the codebase.
 - <cy>**Documentation Updates**</c>: Improved comments and documentation for better code maintainability.
 
-**Bug Fixes / Corrección de Errores**
+**Bug Fixes / Correccion de Errores**
 
 - <cy>**Navigation Stack**</c>: Fixed issue where pressing back from LevelInfoLayer would return to unexpected screens instead of the previous one.
 - <cy>**Filesystem Operations**</c>: Fixed potential crashes when checking directory existence on different platforms.
