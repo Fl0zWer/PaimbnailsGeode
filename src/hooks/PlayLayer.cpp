@@ -1,4 +1,3 @@
-#include "../MSVCFix.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/ui/Notification.hpp>
