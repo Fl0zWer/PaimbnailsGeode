@@ -5,6 +5,11 @@
 #include <Geode/cocos/extensions/GUI/CCScrollView/CCScrollView.h>
 
 class LeaderboardLayer : public cocos2d::CCLayer, public LevelManagerDelegate {
+public:
+    enum class BackTarget {
+        CreatorLayer,
+        LevelSearchLayer
+    };
 protected:
     bool init() override;
     void keyBackClicked() override;
@@ -42,6 +47,7 @@ protected:
     cocos2d::CCSprite* m_bgSprite = nullptr;
     cocos2d::CCLayerColor* m_bgOverlay = nullptr;
     float m_blurTime = 0.f;
+    BackTarget m_backTarget = BackTarget::CreatorLayer;
 
     void update(float dt) override;
     void updateBackground(int levelID);
@@ -56,6 +62,6 @@ protected:
 
 public:
     ~LeaderboardLayer();
-    static LeaderboardLayer* create();
-    static cocos2d::CCScene* scene();
+    static LeaderboardLayer* create(BackTarget backTarget = BackTarget::CreatorLayer);
+    static cocos2d::CCScene* scene(BackTarget backTarget = BackTarget::CreatorLayer);
 };

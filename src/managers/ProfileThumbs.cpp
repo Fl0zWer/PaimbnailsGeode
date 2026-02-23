@@ -2,6 +2,7 @@
 #include "ThumbnailAPI.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include <Geode/utils/file.hpp>
+#include <Geode/utils/string.hpp>
 #include <filesystem>
 #include <Geode/loader/Mod.hpp>
 #include <fstream>
@@ -28,12 +29,13 @@ ProfileThumbs& ProfileThumbs::get() {
         initialized = true;
         // limpio el cache de disco al inicio
         auto dir = Mod::get()->getSaveDir() / "thumbnails" / "profiles";
-        if (std::filesystem::exists(dir)) {
-            try {
-                std::filesystem::remove_all(dir);
+        std::error_code ec;
+        if (std::filesystem::exists(dir, ec)) {
+            std::filesystem::remove_all(dir, ec);
+            if (ec) {
+                log::error("[ProfileThumbs] Failed to clear profile cache: {}", ec.message());
+            } else {
                 log::info("[ProfileThumbs] Profile cache cleared on startup");
-            } catch (const std::exception& e) {
-                log::error("[ProfileThumbs] Failed to clear profile cache: {}", e.what());
             }
         }
     }
@@ -43,7 +45,7 @@ ProfileThumbs& ProfileThumbs::get() {
 std::string ProfileThumbs::makePath(int accountID) const {
     auto dir = Mod::get()->getSaveDir() / "thumbnails" / "profiles";
     (void)file::createDirectoryAll(dir);
-    return (dir / fmt::format("{}.rgb", accountID)).string();
+    return geode::utils::string::pathToString(dir / fmt::format("{}.rgb", accountID));
 }
 
 bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int height) {

@@ -14,7 +14,8 @@ ButtonLayoutManager& ButtonLayoutManager::get() {
 void ButtonLayoutManager::load() {
     auto filePath = geode::Mod::get()->getSaveDir() / "button_layouts.txt";
     
-    if (!std::filesystem::exists(filePath)) {
+    std::error_code ec;
+    if (!std::filesystem::exists(filePath, ec)) {
         log::debug("[ButtonLayoutManager] no se encontro archivo diseno; usando por defecto");
         m_layouts.clear();
         return;
@@ -91,7 +92,8 @@ void ButtonLayoutManager::save() {
 void ButtonLayoutManager::loadDefaults() {
     auto filePath = geode::Mod::get()->getSaveDir() / "button_defaults.txt";
     m_defaults.clear();
-    if (!std::filesystem::exists(filePath)) {
+    std::error_code ecDef;
+    if (!std::filesystem::exists(filePath, ecDef)) {
         log::debug("[ButtonLayoutManager] no se encontro archivo defaults");
         return;
     }
@@ -180,6 +182,32 @@ bool ButtonLayoutManager::hasCustomLayout(const std::string& sceneKey, const std
 void ButtonLayoutManager::resetScene(const std::string& sceneKey) {
     m_layouts.erase(sceneKey);
     save();
+}
+
+void ButtonLayoutManager::applyLayoutToMenu(const std::string& sceneKey, cocos2d::CCMenu* menu) {
+    if (!menu) return;
+    auto children = menu->getChildren();
+    if (!children) return;
+
+    for (int i = 0; i < children->count(); ++i) {
+        auto node = static_cast<cocos2d::CCNode*>(children->objectAtIndex(i));
+        auto item = geode::cast::typeinfo_cast<cocos2d::CCMenuItem*>(node);
+        if (!item) continue;
+        
+        std::string id = item->getID();
+        if (id.empty()) continue;
+
+        auto layout = getLayout(sceneKey, id);
+        if (layout) {
+            item->setPosition(layout->position);
+            item->setScale(layout->scale);
+            item->setOpacity(static_cast<GLubyte>(layout->opacity * 255.0f));
+            
+            if (auto spriteExtra = geode::cast::typeinfo_cast<CCMenuItemSpriteExtra*>(item)) {
+                spriteExtra->m_baseScale = layout->scale;
+            }
+        }
+    }
 }
 
 std::optional<ButtonLayout> ButtonLayoutManager::getDefaultLayout(const std::string& sceneKey, const std::string& buttonID) const {

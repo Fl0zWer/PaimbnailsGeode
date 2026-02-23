@@ -48,7 +48,8 @@ void ThumbsRegistry::save() const {
         ss << kindToStr(r.kind) << "," << r.id << "," << (r.verified ? "1" : "0") << "\n";
     }
     auto p = path();
-    std::filesystem::create_directories(p.parent_path());
+    std::error_code ec;
+    std::filesystem::create_directories(p.parent_path(), ec);
     std::ofstream out(p, std::ios::binary);
     out << ss.str();
     out.close();

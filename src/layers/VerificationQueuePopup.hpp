@@ -39,6 +39,7 @@ protected:
     void onTabUpdate(cocos2d::CCObject*);
     void onTabReport(cocos2d::CCObject*);
     void onTabBanner(cocos2d::CCObject*);
+    void onTabProfileImg(cocos2d::CCObject*);
     void onOpenLevel(cocos2d::CCObject* sender);
     void checkLevelDownloaded(float dt); // schedule pa revisar descarga
     void openStoredLevel(); // auxiliar legado (no usado)
@@ -50,6 +51,7 @@ protected:
     void onViewBans(cocos2d::CCObject*);
     void onOpenProfile(cocos2d::CCObject* sender);
     void onViewBanner(cocos2d::CCObject* sender);
+    void onViewProfileImg(cocos2d::CCObject* sender);
 
 public:
     static VerificationQueuePopup* create();

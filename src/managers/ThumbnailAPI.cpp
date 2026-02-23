@@ -234,6 +234,86 @@ void ThumbnailAPI::uploadProfileGIF(int accountID, const std::vector<uint8_t>& g
     });
 }
 
+void ThumbnailAPI::uploadProfileImg(int accountID, const std::vector<uint8_t>& imgData, const std::string& username, const std::string& contentType, UploadCallback callback) {
+    if (GJAccountManager::get()->m_accountID <= 0) {
+        log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
+        callback(false, "Debes estar logueado para subir imagen de perfil.");
+        return;
+    }
+    if (!m_serverEnabled) {
+        log::warn("[ThumbnailAPI] servidor desactivado, saltando subida de profileimg pal account {}", accountID);
+        callback(false, "Funcionalidad de servidor desactivada");
+        return;
+    }
+    log::info("[ThumbnailAPI] subiendo profileimg pal account {} ({} bytes, type: {})", accountID, imgData.size(), contentType);
+    HttpClient::get().uploadProfileImg(accountID, imgData, username, contentType, [this, callback, accountID](bool success, const std::string& message){
+        if (success) {
+            m_uploadCount++;
+            log::info("[ThumbnailAPI] subida de profileimg exitosa - total subidas: {}", m_uploadCount);
+        }
+        callback(success, message);
+    });
+}
+
+void ThumbnailAPI::uploadProfileImgGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback) {
+    uploadProfileImg(accountID, gifData, username, "image/gif", callback);
+}
+
+void ThumbnailAPI::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
+    if (!m_serverEnabled) {
+        log::warn("[ThumbnailAPI] servidor desactivado, saltando descarga de profileimg pal account {}", accountID);
+        callback(false, nullptr);
+        return;
+    }
+
+    log::info("[ThumbnailAPI] descargando profileimg pal account {} (self={})", accountID, isSelf);
+
+    HttpClient::get().downloadProfileImg(accountID, [this, accountID, callback](bool success, const std::vector<uint8_t>& data, int width, int height) {
+        if (!success || data.empty()) {
+            log::warn("[ThumbnailAPI] fallo descarga de profileimg pal account {}", accountID);
+            callback(false, nullptr);
+            return;
+        }
+
+        // guardar datos en caché de disco
+        try {
+            auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
+            std::error_code ec;
+            std::filesystem::create_directories(cacheDir, ec);
+            auto cachePath = cacheDir / fmt::format("{}.dat", accountID);
+            std::ofstream cacheFile(cachePath, std::ios::binary);
+            if (cacheFile) {
+                cacheFile.write(reinterpret_cast<const char*>(data.data()), data.size());
+                cacheFile.close();
+                log::info("[ThumbnailAPI] profileimg guardada en caché de disco: {}", geode::utils::string::pathToString(cachePath));
+            }
+        } catch (...) {
+            log::warn("[ThumbnailAPI] no se pudo guardar profileimg en caché de disco");
+        }
+
+        // guardar datos para crear textura en main thread
+        auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
+
+        queueInMainThread([this, accountID, callback, dataCopy]() {
+            CCImage img;
+            if (img.initWithImageData(const_cast<uint8_t*>(dataCopy->data()), dataCopy->size())) {
+                auto* tex = new CCTexture2D();
+                if (tex->initWithImage(&img)) {
+                    tex->autorelease();
+                    m_downloadCount++;
+                    log::info("[ThumbnailAPI] profileimg descargada exitosamente pal account {}", accountID);
+                    callback(true, tex);
+                    return;
+                }
+                tex->release();
+            }
+
+            log::warn("[ThumbnailAPI] no se pudo crear textura de profileimg pal account {}", accountID);
+            callback(false, nullptr);
+        });
+    }, isSelf);
+}
+
 void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, DownloadCallback callback) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, saltando descarga de perfil pal account {}", accountID);
@@ -822,6 +902,8 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
         case PendingCategory::Verify: endpoint += "verify"; break;
         case PendingCategory::Update: endpoint += "update"; break;
         case PendingCategory::Report: endpoint += "report"; break;
+        case PendingCategory::Banner: endpoint += "banner"; break;
+        case PendingCategory::ProfileImg: endpoint += "profileimgs"; break;
     }
     
     HttpClient::get().get(endpoint, [callback, category](bool success, const std::string& response) {
@@ -866,7 +948,15 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
                         it.levelID = item["levelId"].asInt().unwrapOr(0);
                     }
                 }
-                
+                // fallback: profileimg items may use accountID instead of levelId
+                if (it.levelID == 0 && item.contains("accountID")) {
+                    if (item["accountID"].isString()) {
+                        it.levelID = std::atoi(item["accountID"].asString().unwrapOr("0").c_str());
+                    } else if (item["accountID"].isNumber()) {
+                        it.levelID = item["accountID"].asInt().unwrapOr(0);
+                    }
+                }
+
                 it.category = category;
                 
                 // timestamp servidor es ms; convertir a segundos
@@ -1156,4 +1246,4 @@ void ThumbnailAPI::downloadFromUrlData(const std::string& url, DownloadDataCallb
     });
 }
 
- 
+

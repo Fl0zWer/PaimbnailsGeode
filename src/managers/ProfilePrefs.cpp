@@ -45,7 +45,7 @@ void ProfilePrefs::save() const {
            << "," << (int)p.a.r << "," << (int)p.a.g << "," << (int)p.a.b
            << "," << (int)p.b.r << "," << (int)p.b.g << "," << (int)p.b.b << "\n";
     }
-    auto p = path(); std::filesystem::create_directories(p.parent_path());
+    auto p = path(); std::error_code ec; std::filesystem::create_directories(p.parent_path(), ec);
     [[maybe_unused]] auto _ = file::writeString(p, ss.str());
 }
 

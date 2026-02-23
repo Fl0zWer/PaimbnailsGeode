@@ -39,6 +39,11 @@ public:
     void clearCache();
     void invalidateLevel(int levelID, bool isGif = false);
     
+    // version de invalidación: se incrementa cada vez que se invalida un level
+    // los consumidores (LevelCell, etc) guardan la versión cuando cargan
+    // y la comparan pa saber si deben recargar
+    int getInvalidationVersion(int levelID) const;
+
     // config
     void setMaxConcurrentTasks(int max);
     void setBatchMode(bool enabled) { m_batchMode = enabled; }
@@ -90,6 +95,9 @@ private:
     
     // cache gifs
     std::unordered_set<int> m_gifLevels;
+
+    // version de invalidacion por level (se incrementa al invalidar)
+    std::unordered_map<int, int> m_invalidationVersions;
 
     bool m_batchMode = false; // por defecto "smart" (desactivado por velocidad)
 

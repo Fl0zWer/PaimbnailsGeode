@@ -93,11 +93,13 @@ bool VerificationQueuePopup::init() {
     auto t2 = mkTab(Localization::get().getString("queue.update_tab").c_str(), menu_selector(VerificationQueuePopup::onTabUpdate));
     auto t3 = mkTab(Localization::get().getString("queue.report_tab").c_str(), menu_selector(VerificationQueuePopup::onTabReport));
     auto t4 = mkTab("Banners", menu_selector(VerificationQueuePopup::onTabBanner));
+    auto t5 = mkTab("Profiles", menu_selector(VerificationQueuePopup::onTabProfileImg));
     t1->setTag((int)PendingCategory::Verify);
     t2->setTag((int)PendingCategory::Update);
     t3->setTag((int)PendingCategory::Report);
     t4->setTag((int)PendingCategory::Banner);
-    m_tabsMenu->addChild(t1); m_tabsMenu->addChild(t2); m_tabsMenu->addChild(t3); m_tabsMenu->addChild(t4);
+    t5->setTag((int)PendingCategory::ProfileImg);
+    m_tabsMenu->addChild(t1); m_tabsMenu->addChild(t2); m_tabsMenu->addChild(t3); m_tabsMenu->addChild(t4); m_tabsMenu->addChild(t5);
 
     // btn baneados
     {
@@ -203,7 +205,7 @@ void VerificationQueuePopup::rebuildList() {
             m_listMenu->addChild(rowBg);
 
             // etiqueta de ID
-            std::string idText = (m_current == PendingCategory::Banner) 
+            std::string idText = (m_current == PendingCategory::Banner || m_current == PendingCategory::ProfileImg)
                 ? fmt::format("Account ID: {}", r.levelID)
                 : fmt::format(fmt::runtime(Localization::get().getString("queue.level_id")), r.levelID);
             auto idLbl = CCLabelBMFont::create(idText.c_str(), "goldFont.fnt");
@@ -261,7 +263,7 @@ void VerificationQueuePopup::rebuildList() {
             auto openSpr = ButtonSprite::create(Localization::get().getString("queue.open_button").c_str(), 70, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.6f); openSpr->setScale(0.45f);
             auto openBtn = CCMenuItemSpriteExtra::create(openSpr, this, menu_selector(VerificationQueuePopup::onOpenLevel)); openBtn->setTag(r.levelID);
             openBtn->setID(fmt::format("open-btn-{}", r.levelID));
-            if (m_current == PendingCategory::Banner) {
+            if (m_current == PendingCategory::Banner || m_current == PendingCategory::ProfileImg) {
                  openBtn->setTarget(this, menu_selector(VerificationQueuePopup::onOpenProfile));
             }
             setupBtn(openBtn, openSpr);
@@ -274,6 +276,9 @@ void VerificationQueuePopup::rebuildList() {
             viewBtn->setID(fmt::format("view-btn-{}", r.levelID));
             if (m_current == PendingCategory::Banner) {
                  viewBtn->setTarget(this, menu_selector(VerificationQueuePopup::onViewBanner));
+            }
+            if (m_current == PendingCategory::ProfileImg) {
+                 viewBtn->setTarget(this, menu_selector(VerificationQueuePopup::onViewProfileImg));
             }
             setupBtn(viewBtn, viewSpr);
 
@@ -416,6 +421,7 @@ void VerificationQueuePopup::onTabVerify(CCObject*) { switchTo(PendingCategory::
 void VerificationQueuePopup::onTabUpdate(CCObject*) { switchTo(PendingCategory::Update); }
 void VerificationQueuePopup::onTabReport(CCObject*) { switchTo(PendingCategory::Report); }
 void VerificationQueuePopup::onTabBanner(CCObject*) { switchTo(PendingCategory::Banner); }
+void VerificationQueuePopup::onTabProfileImg(CCObject*) { switchTo(PendingCategory::ProfileImg); }
 
 
 void VerificationQueuePopup::onOpenLevel(CCObject* sender) {
@@ -757,4 +763,24 @@ void VerificationQueuePopup::onViewBanner(CCObject* sender) {
         }
         this->release();
     });
+}
+
+void VerificationQueuePopup::onViewProfileImg(CCObject* sender) {
+    int accountID = static_cast<CCNode*>(sender)->getTag();
+
+    auto loading = Notification::create("Loading profile image...", NotificationIcon::Loading);
+    loading->show();
+
+    this->retain();
+    // descargar profileimg pendiente (usando isSelf=true para que el servidor devuelva la pending)
+    ThumbnailAPI::get().downloadProfileImg(accountID, [this, loading](bool success, CCTexture2D* texture) {
+        loading->hide();
+        if (success && texture) {
+            auto sprite = CCSprite::createWithTexture(texture);
+            BannerViewPopup::create(sprite)->show();
+        } else {
+            Notification::create("Failed to load profile image", NotificationIcon::Error)->show();
+        }
+        this->release();
+    }, true);
 }

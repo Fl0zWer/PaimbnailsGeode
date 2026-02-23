@@ -1,5 +1,6 @@
 #include "LeaderboardLayer.hpp"
-#include <Geode/modify/CreatorLayer.hpp>
+#include <Geode/binding/CreatorLayer.hpp>
+#include <Geode/binding/LevelSearchLayer.hpp>
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/ThumbnailLoader.hpp"
 #include "../managers/ThumbnailAPI.hpp"
@@ -97,9 +98,10 @@ static void calculateLevelCellThumbScale(CCSprite* sprite, float bgWidth, float 
     outScaleX = std::max(minScaleX, desiredScaleX);
 }
 
-LeaderboardLayer* LeaderboardLayer::create() {
+LeaderboardLayer* LeaderboardLayer::create(BackTarget backTarget) {
     auto ret = new LeaderboardLayer();
     if (ret && ret->init()) {
+        ret->m_backTarget = backTarget;
         ret->autorelease();
         return ret;
     }
@@ -107,9 +109,9 @@ LeaderboardLayer* LeaderboardLayer::create() {
     return nullptr;
 }
 
-CCScene* LeaderboardLayer::scene() {
+CCScene* LeaderboardLayer::scene(BackTarget backTarget) {
     auto scene = CCScene::create();
-    auto layer = LeaderboardLayer::create();
+    auto layer = LeaderboardLayer::create(backTarget);
     scene->addChild(layer);
     return scene;
 }
@@ -242,7 +244,13 @@ void LeaderboardLayer::onBack(CCObject*) {
     if (GameLevelManager::get()->m_levelManagerDelegate == this) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
-    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, CreatorLayer::scene()));
+    CCScene* backScene = nullptr;
+    if (m_backTarget == BackTarget::LevelSearchLayer) {
+        backScene = LevelSearchLayer::scene(0);
+    } else {
+        backScene = CreatorLayer::scene();
+    }
+    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, backScene));
 }
 
 void LeaderboardLayer::keyBackClicked() {
@@ -250,8 +258,11 @@ void LeaderboardLayer::keyBackClicked() {
 }
 
 void LeaderboardLayer::onTab(CCObject* sender) {
-    auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    auto type = static_cast<CCString*>(toggler->getUserObject())->getCString();
+    auto toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
+    if (!toggler) return;
+    auto typeObj = typeinfo_cast<CCString*>(toggler->getUserObject());
+    if (!typeObj) return;
+    auto type = typeObj->getCString();
     
     if (m_currentType == type) {
         toggler->toggle(true); // on
@@ -641,15 +652,17 @@ void LeaderboardLayer::createList(CCArray* items, std::string type) {
         int levelID = 0;
         
         if (type == "creators") {
-            auto score = static_cast<GJUserScore*>(obj);
+            auto score = typeinfo_cast<GJUserScore*>(obj);
+            if (!score) return;
             nameStr = score->m_userName;
             creatorStr = fmt::format("{} uploads", score->m_stars);
         } else {
-            auto level = static_cast<GJGameLevel*>(obj);
+            auto level = typeinfo_cast<GJGameLevel*>(obj);
+            if (!level) return;
             nameStr = level->m_levelName;
             creatorStr = "by " + std::string(level->m_creatorName);
             levelID = level->m_levelID;
-            auto ratingObj = static_cast<CCString*>(level->getUserObject());
+            auto ratingObj = typeinfo_cast<CCString*>(level->getUserObject());
             if (ratingObj) ratingStr = ratingObj->getCString();
         }
 
@@ -658,8 +671,8 @@ void LeaderboardLayer::createList(CCArray* items, std::string type) {
         GJGameLevel* levelPtr = nullptr;
 
         if (type != "creators") {
-            levelPtr = static_cast<GJGameLevel*>(obj);
-            levelID = levelPtr->m_levelID;
+            levelPtr = typeinfo_cast<GJGameLevel*>(obj);
+            if (levelPtr) levelID = levelPtr->m_levelID;
             log::debug("[LeaderboardLayer] createMinimalCell: levelID={}, isFeatured={}", levelID, isFeatured);
         }
 
@@ -925,8 +938,9 @@ void LeaderboardLayer::createList(CCArray* items, std::string type) {
 }
 
 void LeaderboardLayer::onViewLevel(CCObject* sender) {
-    auto btn = static_cast<CCMenuItemSpriteExtra*>(sender);
-    auto level = static_cast<GJGameLevel*>(btn->getUserObject());
+    auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!btn) return;
+    auto level = typeinfo_cast<GJGameLevel*>(btn->getUserObject());
     if (level) {
         // nivel + musica desde cache
         auto savedLevel = GameLevelManager::get()->getSavedLevel(level->m_levelID);
@@ -941,9 +955,9 @@ void LeaderboardLayer::onViewLevel(CCObject* sender) {
         }
 
         auto layer = LevelInfoLayer::create(levelToUse, false);
-        auto scene = CCScene::create();
-        scene->addChild(layer);
-        CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, scene));
+        auto infoScene = CCScene::create();
+        infoScene->addChild(layer);
+        CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.5f, infoScene));
     }
 }
 
@@ -1063,7 +1077,8 @@ void LeaderboardLayer::loadLevelsFinished(CCArray* levels, const char* key) {
     if (!levels) return;
 
     for (int i = 0; i < levels->count(); ++i) {
-        auto downloadedLevel = static_cast<GJGameLevel*>(levels->objectAtIndex(i));
+        auto downloadedLevel = typeinfo_cast<GJGameLevel*>(levels->objectAtIndex(i));
+        if (!downloadedLevel) continue;
         
         // actualiza destacado si coincide
         if (m_featuredLevel && m_featuredLevel->m_levelID == downloadedLevel->m_levelID) {

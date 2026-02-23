@@ -45,20 +45,9 @@ bool BanListPopup::init() {
     m_scroll->setContainer(m_listMenu);
     this->m_mainLayer->addChild(m_scroll, 5);
 
-    // estado de carga inicial
-    {
-        auto lbl = CCLabelBMFont::create(Localization::get().getString("ban.list.loading").c_str(), "goldFont.fnt");
-        lbl->setScale(0.45f);
-        lbl->setPosition({panel->getContentSize().width / 2, panel->getContentSize().height / 2});
-        m_listMenu->addChild(lbl);
-        m_listMenu->setContentSize(panel->getContentSize());
-    }
-
-    // obtengo lista de baneados
-    // uso weakref para evitar crashes y memory management manual
-    WeakRef<BanListPopup> self = this;
+    m_listMenu = CCMenu::create();
+    auto self = WeakRef<BanListPopup>(this);
     HttpClient::get().getBanList([self](bool success, const std::string& jsonData) {
-        // si el popup murio, no hago nada
         auto popup = self.lock();
         if (!popup) return;
 
@@ -101,7 +90,6 @@ bool BanListPopup::init() {
                     }
                 }
             } catch (...) {
-                // ignoro errores de parseo; muestro vacio
             }
         }
 
@@ -116,7 +104,6 @@ bool BanListPopup::init() {
 void BanListPopup::rebuildList(const std::vector<std::string>& users) {
     m_listMenu->removeAllChildren();
     
-    // uso columnlayout para la lista
     m_listMenu->setLayout(ColumnLayout::create()->setGap(5.f)->setAxisReverse(true)->setAxisAlignment(AxisAlignment::End));
 
     auto viewSize = m_scroll->getViewSize();
@@ -132,9 +119,8 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
     for (const auto& user : users) {
         auto cellContainer = CCNode::create();
         cellContainer->setContentSize({viewSize.width - 20.f, 30.f});
-        cellContainer->setID("user-cell");
+        cellContainer->setID("user-cell"_spr);
 
-        // fondo semitransparente
         auto bg = CCScale9Sprite::create("square02_001.png");
         bg->setColor({0, 0, 0});
         bg->setOpacity(55);
@@ -142,28 +128,24 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         bg->setPosition(cellContainer->getContentSize() / 2);
         cellContainer->addChild(bg);
 
-        // nombre del usuario
         auto name = CCLabelBMFont::create(user.c_str(), "chatFont.fnt");
         name->setScale(0.5f);
         name->setAnchorPoint({0, 0.5f});
         name->setPosition({10.f, cellContainer->getContentHeight() / 2});
         cellContainer->addChild(name);
 
-        // menu interno para botones
         auto btnMenu = CCMenu::create();
         btnMenu->setContentSize({100.f, 30.f});
         btnMenu->setPosition({cellContainer->getContentWidth() - 60.f, cellContainer->getContentHeight() / 2});
         btnMenu->setLayout(RowLayout::create()->setGap(10.f));
         cellContainer->addChild(btnMenu);
 
-        // boton de info
         auto infoSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
         infoSpr->setScale(0.6f);
         auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(BanListPopup::onInfo));
         infoBtn->setUserObject(CCString::create(user));
         btnMenu->addChild(infoBtn);
 
-        // boton de unban
         auto unbanSpr = ButtonSprite::create(Localization::get().getString("ban.list.unban_btn").c_str(), 50, true, "goldFont.fnt", "GJ_button_05.png", 30.f, 0.6f);
         unbanSpr->setScale(0.7f);
         auto unbanBtn = CCMenuItemSpriteExtra::create(unbanSpr, this, menu_selector(BanListPopup::onUnban));
@@ -175,7 +157,6 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         m_listMenu->addChild(cellContainer);
     }
     
-    // fuerzo layout y height
     m_listMenu->updateLayout();
     
     float totalH = m_listMenu->getContentHeight();
@@ -184,8 +165,6 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         m_listMenu->updateLayout();
     }
     
-    // m_contentlayer es de scrolllayer, ccscrollview usa getcontainer()
-    // pero como asigno m_listmenu como contenedor
     m_listMenu->setPosition({0,viewSize.height - m_listMenu->getContentHeight()});
 }
 

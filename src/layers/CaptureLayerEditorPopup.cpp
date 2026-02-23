@@ -56,7 +56,7 @@ CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* pr
 void CaptureLayerEditorPopup::restoreAllLayers() {
     for (auto& [node, vis] : s_originalVisibilities) {
         if (node) {
-            try { node->setVisible(vis); } catch (...) {}
+            node->setVisible(vis);
         }
     }
     s_originalVisibilities.clear();
@@ -419,7 +419,7 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
 // ─── callbacks ─────────────────────────────────────────────────
 
 void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
-    auto* toggler = static_cast<CCMenuItemToggler*>(sender);
+    auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
     if (!toggler) return;
 
     int idx = toggler->getTag();
@@ -437,7 +437,7 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
 
     // actualiza color etiqueta
     if (m_listMenu) {
-        if (auto* label = dynamic_cast<CCLabelBMFont*>(
+        if (auto* label = typeinfo_cast<CCLabelBMFont*>(
                 m_listMenu->getChildByTag(1000 + idx))) {
             label->setColor(newVisible ? ccColor3B{255, 255, 255}
                                        : ccColor3B{150, 150, 150});

@@ -23,6 +23,10 @@ float widthFactor = 0.60f; // widthFactor añadido
 };
 
 struct ProfileCacheEntry {
+    // flag global de shutdown: cuando es true, no se debe hacer release() de objetos cocos
+    // porque el CCPoolManager ya puede estar destruido (orden de destructores estáticos indefinido)
+    static inline bool s_shutdownMode = false;
+
     cocos2d::CCTexture2D* texture;
     std::string gifKey; // gifKey añadido
     cocos2d::ccColor3B colorA;
@@ -46,7 +50,7 @@ struct ProfileCacheEntry {
     }
     
     ~ProfileCacheEntry() {
-        if (texture) texture->release();
+        if (texture && !s_shutdownMode) texture->release();
     }
     
     // no permito copia
@@ -62,7 +66,7 @@ struct ProfileCacheEntry {
     
     ProfileCacheEntry& operator=(ProfileCacheEntry&& other) noexcept {
         if (this != &other) {
-            if (texture) texture->release();
+            if (texture && !s_shutdownMode) texture->release();
             texture = other.texture;
             gifKey = std::move(other.gifKey);
             colorA = other.colorA;
@@ -81,8 +85,11 @@ public:
     static ProfileThumbs& get();
     
     ~ProfileThumbs() {
-        // limpio cache al cerrar
-        clearAllCache();
+        // NO limpiar cache aquí.
+        // durante el cierre del proceso los destructores estáticos se ejecutan en orden indefinido
+        // y el CCPoolManager de cocos2d puede ya estar muerto. Llamar release() en texturas
+        // provoca EXCEPTION_ACCESS_VIOLATION en CCPoolManager::removeObject.
+        // El OS libera toda la memoria del proceso al terminar.
     }
 
     bool saveRGB(int accountID, const uint8_t* rgb, int width, int height);

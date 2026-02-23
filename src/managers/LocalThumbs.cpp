@@ -131,9 +131,9 @@ std::vector<int32_t> LocalThumbs::getAllLevelIDs() const {
             if (!std::filesystem::exists(path)) return;
             for (const auto& entry : std::filesystem::directory_iterator(path)) {
                 if (entry.is_regular_file()) {
-                    auto ext = entry.path().extension().string();
+                    auto ext = geode::utils::string::pathToString(entry.path().extension());
                     if (ext == ".rgb" || ext == ".png" || ext == ".webp" || ext == ".jpg") {
-                        std::string stem = entry.path().stem().string();
+                        std::string stem = geode::utils::string::pathToString(entry.path().stem());
                         if (auto res = geode::utils::numFromString<int32_t>(stem)) {
                              uniqueIds.insert(res.unwrap());
                         }

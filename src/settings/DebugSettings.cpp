@@ -1,9 +1,28 @@
+#include "../MSVCFix.hpp"
 #include <Geode/Geode.hpp>
 #include "../utils/Debug.hpp"
 
 using namespace geode::prelude;
 
 $execute {
+    // aplicar optimizer lo antes posible (desactiva todos los logs de Geode)
+    bool optimizerEnabled = true;
+    try {
+        optimizerEnabled = Mod::get()->getSettingValue<bool>("optimizer");
+    } catch (...) {}
+
+    if (optimizerEnabled) {
+        Mod::get()->setLoggingEnabled(false);
+    }
+
+    geode::listenForSettingChanges<bool>("optimizer", +[](bool value) {
+        if (value) {
+            Mod::get()->setLoggingEnabled(false);
+        } else {
+            Mod::get()->setLoggingEnabled(true);
+        }
+    });
+
     // inicializar estado predeterminado
     bool initial = Mod::get()->getSettingValue<bool>("enable-debug-logs");
     PaimonDebug::setEnabled(initial);

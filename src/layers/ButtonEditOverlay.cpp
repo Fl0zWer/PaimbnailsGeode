@@ -10,9 +10,10 @@ using namespace cocos2d;
 using namespace geode::prelude;
 using namespace cocos2d::extension;
 
-ButtonEditOverlay* ButtonEditOverlay::create(const std::string& sceneKey, CCMenu* menu) {
+ButtonEditOverlay* ButtonEditOverlay::create(const std::string& sceneKey, CCMenu* menu,
+                                             const std::vector<CCMenu*>& extraMenus) {
     auto ret = new ButtonEditOverlay();
-    if (ret && ret->init(sceneKey, menu)) {
+    if (ret && ret->init(sceneKey, menu, extraMenus)) {
         ret->autorelease();
         return ret;
     }
@@ -20,13 +21,21 @@ ButtonEditOverlay* ButtonEditOverlay::create(const std::string& sceneKey, CCMenu
     return nullptr;
 }
 
-bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu) {
+bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu,
+                             const std::vector<CCMenu*>& extraMenus) {
     if (!CCLayer::init()) return false;
 
     m_sceneKey = sceneKey;
     m_targetMenu = menu;
     if (m_targetMenu) m_targetMenu->retain();
     m_selectedButton = nullptr;
+
+    // Retener extra menus
+    m_extraMenus = extraMenus;
+    for (auto* em : m_extraMenus) {
+        if (em) em->retain();
+    }
+
     m_draggedButton = nullptr;
 
     // cachear winsize para evitar multiples llamadas
@@ -47,6 +56,11 @@ bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu) {
     
     createControls();
     showControls(false);
+
+    // Desactivar todos los CCMenus en la escena que NO sean nuestros menus editables
+    if (auto scene = CCDirector::sharedDirector()->getRunningScene()) {
+        disableOtherMenus(scene);
+    }
     
     m_selectionHighlight = CCScale9Sprite::create("square02b_001.png");
     // ccscale9sprite siempre implementa ccrgbaprotocol, no necesita cast
@@ -71,7 +85,12 @@ bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu) {
 }
 
 ButtonEditOverlay::~ButtonEditOverlay() {
-    // seguridad: aseguro que el resaltado este separado y el menu retenido libre
+    // Re-habilitar menus desactivados
+    for (auto* menu : m_disabledMenus) {
+        if (menu) menu->setEnabled(true);
+    }
+    m_disabledMenus.clear();
+
     if (m_selectionHighlight && m_selectionHighlight->getParent()) {
         m_selectionHighlight->removeFromParent();
     }
@@ -80,38 +99,75 @@ ButtonEditOverlay::~ButtonEditOverlay() {
         m_targetMenu->release();
         m_targetMenu = nullptr;
     }
+    for (auto* em : m_extraMenus) {
+        if (em) em->release();
+    }
+    m_extraMenus.clear();
 }
 
 void ButtonEditOverlay::collectEditableButtons() {
     m_editableButtons.clear();
 
-    if (!m_targetMenu) return;
+    // Helper lambda para recoger botones de un menu
+    auto collectFromMenu = [this](CCMenu* menu) {
+        if (!menu) return;
+        auto children = menu->getChildren();
+        if (!children) return;
 
-    auto children = m_targetMenu->getChildren();
-    if (!children) return;
+        for (auto* child : CCArrayExt<CCObject*>(children)) {
+            auto item = typeinfo_cast<CCMenuItem*>(child);
+            if (!item) continue;
 
-    // reservar memoria anticipadamente para evitar realocaciones
-    m_editableButtons.reserve(children->count());
+            auto buttonID = item->getID();
+            if (buttonID.empty()) continue;
 
-    for (auto* child : CCArrayExt<CCObject*>(children)) {
-        auto item = typeinfo_cast<CCMenuItem*>(child);
-        if (!item) continue;
+            EditableButton editable;
+            editable.item = item;
+            editable.buttonID = std::string(buttonID);
+            editable.originalPos = item->getPosition();
+            editable.originalScale = item->getScale();
+            editable.originalOpacity = item->getOpacity() / 255.0f;
 
-        // getid() devuelve string_view en geode, mas eficiente
-        auto buttonID = item->getID();
-        if (buttonID.empty()) continue;
+            m_editableButtons.push_back(std::move(editable));
+        }
+    };
 
-        EditableButton editable;
-        editable.item = item;
-        editable.buttonID = std::string(buttonID);
-        editable.originalPos = item->getPosition();
-        editable.originalScale = item->getScale();
-        editable.originalOpacity = item->getOpacity() / 255.0f;
+    // Recoger del menu principal
+    collectFromMenu(m_targetMenu);
 
-        m_editableButtons.push_back(std::move(editable));
+    // Recoger de menus extra
+    for (auto* em : m_extraMenus) {
+        collectFromMenu(em);
     }
 
     log::info("[ButtonEditOverlay] Collected {} editable buttons", m_editableButtons.size());
+}
+
+void ButtonEditOverlay::disableOtherMenus(CCNode* root) {
+    if (!root) return;
+    auto children = root->getChildren();
+    if (!children) return;
+
+    for (auto* obj : CCArrayExt<CCObject*>(children)) {
+        auto node = typeinfo_cast<CCNode*>(obj);
+        if (!node) continue;
+
+        // Si es un CCMenu, verificar si es uno de los nuestros
+        if (auto menu = typeinfo_cast<CCMenu*>(node)) {
+            // No desactivar nuestros menus editables ni el menu de controles
+            bool isOurs = (menu == m_targetMenu || menu == m_controlsMenu);
+            for (auto* em : m_extraMenus) {
+                if (menu == em) isOurs = true;
+            }
+            if (!isOurs && menu->isEnabled()) {
+                menu->setEnabled(false);
+                m_disabledMenus.push_back(menu);
+            }
+        }
+
+        // Recursivamente buscar en hijos
+        disableOtherMenus(node);
+    }
 }
 
 void ButtonEditOverlay::createControls() {
@@ -399,10 +455,13 @@ void ButtonEditOverlay::onAccept(CCObject*) {
         return;
     }
 
-    // guardo todos los disenos de botones del menu actual por id
-    if (auto children = m_targetMenu->getChildren()) {
+    // Helper: guardar layouts de un menu
+    auto saveMenuButtons = [this](CCMenu* menu) {
+        if (!menu) return;
+        auto children = menu->getChildren();
+        if (!children) return;
         for (auto obj : CCArrayExt<CCObject*>(children)) {
-            auto item = typeinfo_cast<CCMenuItemSpriteExtra*>(obj);
+            auto item = typeinfo_cast<CCMenuItem*>(obj);
             if (!item) continue;
             std::string id = item->getID();
             if (id.empty()) continue;
@@ -412,15 +471,21 @@ void ButtonEditOverlay::onAccept(CCObject*) {
             layout.scale = item->getScale();
             layout.opacity = item->getOpacity() / 255.0f;
 
-            // guardar el layout
             ButtonLayoutManager::get().setLayout(m_sceneKey, id, layout);
 
-            // importante: actualizar m_basescale para que el hover no resetee la escala
-            item->m_baseScale = layout.scale;
+            if (auto spriteExtra = typeinfo_cast<CCMenuItemSpriteExtra*>(item)) {
+                spriteExtra->m_baseScale = layout.scale;
+            }
 
             log::info("[ButtonEditOverlay] Saved button '{}': pos({}, {}), scale={}, opacity={}",
                 id, layout.position.x, layout.position.y, layout.scale, layout.opacity);
         }
+    };
+
+    // Guardar de todos los menus
+    saveMenuButtons(m_targetMenu);
+    for (auto* em : m_extraMenus) {
+        saveMenuButtons(em);
     }
     
     // elimino resaltado de seleccion
@@ -454,7 +519,7 @@ void ButtonEditOverlay::onReset(CCObject*) {
     for (auto& btn : m_editableButtons) {
         if (btn.buttonID.empty()) continue;
         auto node = m_targetMenu->getChildByID(btn.buttonID);
-        auto item = typeinfo_cast<CCMenuItemSpriteExtra*>(node);
+        auto item = typeinfo_cast<CCMenuItem*>(node);
         if (!item) continue;
 
         auto def = ButtonLayoutManager::get().getDefaultLayout(m_sceneKey, btn.buttonID);
@@ -472,7 +537,9 @@ void ButtonEditOverlay::onReset(CCObject*) {
         }
 
         // importante: actualizar m_basescale para que el hover no resetee la escala
-        item->m_baseScale = newScale;
+        if (auto spriteExtra = typeinfo_cast<CCMenuItemSpriteExtra*>(item)) {
+            spriteExtra->m_baseScale = newScale;
+        }
     }
 
     // limpio disenos guardados para esta escena y persisto

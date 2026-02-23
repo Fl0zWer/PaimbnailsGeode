@@ -7,7 +7,7 @@
 #include <optional>
 #include <cstdint>
 
-enum class PendingCategory { Verify, Update, Report, Banner };
+enum class PendingCategory { Verify, Update, Report, Banner, ProfileImg };
 enum class PendingStatus { Open, Accepted, Rejected };
 
 struct Suggestion {

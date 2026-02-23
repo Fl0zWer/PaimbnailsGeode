@@ -77,6 +77,13 @@ public:
     // descargar imagen de perfil por accountID
     void downloadProfile(int accountID, const std::string& username, DownloadCallback callback);
 
+    // subir imagen de foto de perfil (profileimg) por accountID
+    void uploadProfileImg(int accountID, const std::vector<uint8_t>& imgData, const std::string& username, const std::string& contentType, UploadCallback callback);
+    // subir GIF de foto de perfil (profileimg) por accountID
+    void uploadProfileImgGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    // descargar foto de perfil (profileimg) por accountID
+    void downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf = false);
+
     // descargar imagen desde una URL cualquiera
     void downloadFromUrl(const std::string& url, DownloadCallback callback);
     // descargar solo los datos binarios de una imagen desde una URL

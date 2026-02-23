@@ -15,9 +15,8 @@ bool ReportInputPopup::init(int levelID, std::function<void(std::string)> callba
         auto currentSize = m_mainLayer->getContentSize();
         m_mainLayer->setContentSize({currentSize.width, currentSize.height + 60.f});
         
-        // fondo
-        auto bgSprite = typeinfo_cast<CCScale9Sprite*>(m_mainLayer->getChildren()->objectAtIndex(0));
-        if (bgSprite) {
+        // fondo (buscar por tipo en vez de indice fragil)
+        if (auto bgSprite = m_mainLayer->getChildByType<CCScale9Sprite>(0)) {
             bgSprite->setContentSize({bgSprite->getContentSize().width, bgSprite->getContentSize().height + 60.f});
         }
     }

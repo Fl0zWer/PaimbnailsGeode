@@ -32,7 +32,12 @@ ThumbnailLoader::ThumbnailLoader() {
 }
 
 ThumbnailLoader::~ThumbnailLoader() {
-    clearCache();
+    // NO tocar nada aquí.
+    // durante el cierre del proceso (destructores estáticos) el orden de destrucción
+    // es indefinido: Cocos2d, el autorelease pool, y otros singletons pueden ya estar muertos.
+    // hacer clear() en contenedores con punteros a CCTexture2D puede provocar
+    // EXCEPTION_ACCESS_VIOLATION en CCPoolManager::removeObject.
+    // el OS libera toda la memoria del proceso al terminar, así que es seguro no hacer nada.
 }
 
 void ThumbnailLoader::initDiskCache() {
@@ -42,15 +47,17 @@ void ThumbnailLoader::initDiskCache() {
         auto path = Mod::get()->getSaveDir() / "cache";
         PaimonDebug::log("[ThumbnailLoader] iniciando cache de disco en: {}", geode::utils::string::pathToString(path));
         
-        if (!std::filesystem::exists(path)) {
-            std::filesystem::create_directories(path);
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec)) {
+            std::filesystem::create_directories(path, ec);
             PaimonDebug::log("[ThumbnailLoader] carpeta de cache creada");
             return;
         }
         
-        // limpieza al inicio
-        // niveles principales (1–22) nunca expiran (los guardo pa siempre)
-        // el resto se borra para no dejar la carpeta gigante
+        // limpieza al inicio: ya no se borra nada aquí
+        // si clear-cache-on-exit está activo, se borró al cerrar la sesion anterior
+        // si está desactivado, el cache se mantiene entre sesiones
+        const bool clearOnStart = false;
 
         int deletedCount = 0;
         int keptCount = 0;
@@ -80,11 +87,11 @@ void ThumbnailLoader::initDiskCache() {
 
                         // si es main level no lo borro ni por tiempo ni por sesión
                         if (!isMain) {
-                            // a petición del usuario: borro cache de no-mains al iniciar
-                            // así solo se quedan cacheados mientras estás jugando
-                            std::filesystem::remove(entry.path());
-                            deletedCount++;
-                            continue;
+                            if (clearOnStart) {
+                                std::filesystem::remove(entry.path());
+                                deletedCount++;
+                                continue;
+                            }
                         }
                         
                         m_diskCache.insert(isGif ? -id : id);
@@ -548,6 +555,9 @@ void ThumbnailLoader::clearCache() {
 
 void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     int key = isGif ? -levelID : levelID;
+    // incrementar version de invalidacion pa que los consumidores sepan que hay cambio
+    m_invalidationVersions[levelID]++;
+
     // quito entrada de la RAM
     auto it = m_textureCache.find(key);
     if (it != m_textureCache.end()) {
@@ -573,6 +583,11 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
             log::error("[ThumbnailLoader] error borrando cache: {}", e.what());
         } catch(...) {}
     }).detach();
+}
+
+int ThumbnailLoader::getInvalidationVersion(int levelID) const {
+    auto it = m_invalidationVersions.find(levelID);
+    return it != m_invalidationVersions.end() ? it->second : 0;
 }
 
 void ThumbnailLoader::clearDiskCache() {

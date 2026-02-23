@@ -80,7 +80,8 @@ void BackgroundConfigPopup::createTabs() {
 }
 
 void BackgroundConfigPopup::onTab(CCObject* sender) {
-    auto btn = static_cast<CCMenuItemSpriteExtra*>(sender);
+    auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!btn) return;
     int tag = btn->getTag();
     m_selectedTab = tag;
     
@@ -90,7 +91,8 @@ void BackgroundConfigPopup::onTab(CCObject* sender) {
 
     // actualiza visuales
     for (auto tab : m_tabs) {
-        auto spr = static_cast<ButtonSprite*>(tab->getNormalImage());
+        auto spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
+        if (!spr) continue;
         if (tab->getTag() == tag) {
             spr->setColor({0, 255, 0});
             spr->setOpacity(255);
@@ -208,7 +210,8 @@ void BackgroundConfigPopup::onDefaultMenu(CCObject*) {
 }
 
 void BackgroundConfigPopup::onAdaptiveColors(CCObject* sender) {
-    auto toggle = static_cast<CCMenuItemToggler*>(sender);
+    auto toggle = typeinfo_cast<CCMenuItemToggler*>(sender);
+    if (!toggle) return;
     Mod::get()->setSavedValue("bg-adaptive-colors", !toggle->isToggled());
     (void)Mod::get()->saveData();
 }
@@ -255,7 +258,13 @@ CCMenuItemSpriteExtra* BackgroundConfigPopup::createBtn(const char* text, CCPoin
 // menu
 
 void BackgroundConfigPopup::onCustomImage(CCObject*) {
+    // deshabilitar touch pa que no se active otra vez mientras el dialogo esta abierto
+    this->setTouchEnabled(false);
+
     auto result = pt::openImageFileDialog();
+
+    // rehabilitar touch al volver del dialogo
+    this->setTouchEnabled(true);
 
     if (result.has_value()) {
         auto path = result.value();
@@ -297,7 +306,8 @@ void BackgroundConfigPopup::onSetID(CCObject*) {
 }
 
 void BackgroundConfigPopup::onDarkMode(CCObject* sender) {
-    auto toggle = static_cast<CCMenuItemToggler*>(sender);
+    auto toggle = typeinfo_cast<CCMenuItemToggler*>(sender);
+    if (!toggle) return;
     Mod::get()->setSavedValue("bg-dark-mode", !toggle->isToggled());
     (void)Mod::get()->saveData();
 }
@@ -317,7 +327,11 @@ void BackgroundConfigPopup::onApply(CCObject*) {
 // perfil
 
 void BackgroundConfigPopup::onProfileCustomImage(CCObject*) {
+    this->setTouchEnabled(false);
+
     auto result = pt::openImageFileDialog();
+
+    this->setTouchEnabled(true);
 
     if (result.has_value()) {
         auto path = result.value();

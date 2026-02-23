@@ -21,8 +21,9 @@ void LevelColors::load() const {
     m_loaded = true; 
     m_items.clear();
     
-    auto p = path(); 
-    if (!std::filesystem::exists(p)) return;
+    auto p = path();
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec)) return;
     
     // cargar datos desencriptados de .paimon.
     auto data = PaimonFormat::load(p);
@@ -181,7 +182,8 @@ void LevelColors::extractColorsFromCache() {
     log::info("[LevelColors] extrayendo colores de cache...");
     
     auto cacheDir = Mod::get()->getSaveDir() / "thumbnails";
-    if (!std::filesystem::exists(cacheDir)) {
+    std::error_code ecCache;
+    if (!std::filesystem::exists(cacheDir, ecCache)) {
         log::warn("[LevelColors] directorio cache no existe");
         return;
     }
@@ -191,7 +193,7 @@ void LevelColors::extractColorsFromCache() {
     int skipped = 0;
     
     // escanear miniaturas cacheadas (.png/.webp).
-    for (const auto& entry : std::filesystem::directory_iterator(cacheDir)) {
+    for (const auto& entry : std::filesystem::directory_iterator(cacheDir, ecCache)) {
         if (!entry.is_regular_file()) continue;
         
         auto filepath = entry.path();

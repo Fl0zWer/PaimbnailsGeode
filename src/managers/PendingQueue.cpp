@@ -21,6 +21,7 @@ const char* PendingQueue::catToStr(PendingCategory c) {
         case PendingCategory::Update: return "update";
         case PendingCategory::Report: return "report";
         case PendingCategory::Banner: return "banner";
+        case PendingCategory::ProfileImg: return "profileimg";
     }
     return "verify";
 }
@@ -29,6 +30,7 @@ PendingCategory PendingQueue::strToCat(std::string const& s) {
     if (s == "update") return PendingCategory::Update;
     if (s == "report") return PendingCategory::Report;
     if (s == "banner") return PendingCategory::Banner;
+    if (s == "profileimg") return PendingCategory::ProfileImg;
     return PendingCategory::Verify;
 }
 

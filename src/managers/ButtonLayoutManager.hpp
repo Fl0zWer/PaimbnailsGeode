@@ -41,6 +41,9 @@ public:
     // resetear todos disenos para escena especifica
     void resetScene(const std::string& sceneKey);
 
+    // aplica disenos guardados a todos los items de un menu
+    void applyLayoutToMenu(const std::string& sceneKey, cocos2d::CCMenu* menu);
+
     // api defaults: posiciones base persistentes independientes de ediciones usuario
     std::optional<ButtonLayout> getDefaultLayout(const std::string& sceneKey, const std::string& buttonID) const;
     // establecer default solo si ausente; evita sobreescribir una vez capturado
