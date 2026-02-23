@@ -402,13 +402,14 @@ bool AnimatedGIFSprite::processNextPendingFrame() {
 
 std::string AnimatedGIFSprite::getCachePath(const std::string& path) {
     auto cacheDir = Mod::get()->getSaveDir() / "gif_cache";
-    if (!std::filesystem::exists(cacheDir)) {
-        std::filesystem::create_directories(cacheDir);
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec)) {
+        std::filesystem::create_directories(cacheDir, ec);
     }
     
     std::hash<std::string> hasher;
     auto hash = hasher(path);
-    return (cacheDir / (std::to_string(hash) + ".bin")).string();
+    return geode::utils::string::pathToString(cacheDir / (std::to_string(hash) + ".bin"));
 }
 
 bool AnimatedGIFSprite::loadFromDiskCache(const std::string& path, DiskCacheEntry& outEntry) {

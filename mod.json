@@ -1,12 +1,12 @@
 {
-  "geode": "5.0.0-beta.2",
+  "geode": "5.0.1",
   "gd": {
     "win": "2.2081",
     "android": "2.2074",
     "mac": "2.2074",
     "ios": "2.2074"
   },
-  "version": "2.0.0",
+  "version": "2.1.0",
   "id": "flozwer.paimbnails",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -26,11 +26,10 @@
     ]
   },
   "settings": {
-    "optimizer": {
-      "type": "bool",
-      "name": "Optimizer Mode",
-      "description": "Disables all logs for maximum performance.",
-      "default": true
+    "general-title": {
+      "name": "General",
+      "description": "General mod settings",
+      "type": "title"
     },
     "language": {
       "type": "string",
@@ -42,31 +41,11 @@
         "english"
       ]
     },
-    "android-safe-mode": {
-      "type": "bool",
-      "name": "Android Safe Mode",
-      "description": "Disables heavy startup work. Turn off if stable.",
-      "default": true
-    },
-    "gif-ram-cache": {
-      "type": "bool",
-      "name": "Cache GIFs in RAM",
-      "description": "Keep processed GIFs in RAM for faster loading. Warning: High RAM usage.",
-      "default": true
-    },
     "dynamic-song": {
       "type": "bool",
       "name": "Dynamic Song",
       "description": "Plays the level song at a random position when viewing a level.",
       "default": false
-    },
-    "thumbnail-concurrent-downloads": {
-      "type": "int",
-      "name": "Download Speed (Threads)",
-      "description": "Max simultaneous downloads (8-15 recommended).",
-      "default": 12,
-      "min": 1,
-      "max": 100
     },
     "level-thumbs-title": {
       "name": "Level Thumbnails",
@@ -242,6 +221,56 @@
       "min": 1,
       "max": 10
     },
+    "profile-music-title": {
+      "name": "Profile Music",
+      "description": "Music that plays when viewing profiles",
+      "type": "title"
+    },
+    "profile-music-enabled": {
+      "type": "bool",
+      "name": "Enable Profile Music",
+      "description": "Play custom music when viewing profiles.",
+      "default": true
+    },
+    "profile-music-autoplay": {
+      "type": "bool",
+      "name": "Autoplay Profile Music",
+      "description": "Automatically play music when viewing a profile.",
+      "default": true
+    },
+    "profile-music-crossfade": {
+      "type": "bool",
+      "name": "Crossfade Transition",
+      "description": "Smooth fade between background music and profile music instead of cutting abruptly.",
+      "default": true
+    },
+    "profile-music-fade-duration": {
+      "type": "float",
+      "name": "Fade Duration (seconds)",
+      "description": "Duration of the crossfade transition in seconds.",
+      "default": 0.8,
+      "min": 0.1,
+      "max": 3.0
+    },
+    "button-editor-title": {
+      "name": "Interface",
+      "description": "UI Customization",
+      "type": "title"
+    },
+    "show-button-editor": {
+      "type": "bool",
+      "name": "Show Button Editor",
+      "description": "Show button to move UI elements.",
+      "default": true
+    },
+    "profile-img-zlayer": {
+      "type": "int",
+      "name": "Profile Image Z-Layer",
+      "description": "Z-order of the profile image behind the popup. Lower = further back. Adjust until the image shows correctly behind panels.",
+      "default": -1,
+      "min": -10,
+      "max": 10
+    },
     "capture-title": {
       "name": "Capture Settings",
       "description": "In-game thumbnail capture",
@@ -270,26 +299,59 @@
         "4k"
       ]
     },
-    "button-editor-title": {
-      "name": "Interface",
-      "description": "UI Customization",
+    "keybinds-title": {
+      "name": "Keybinds",
+      "description": "Configure keyboard shortcuts",
       "type": "title"
     },
-    "show-button-editor": {
+    "capture-keybind": {
+      "type": "keybind",
+      "name": "Capture Thumbnail",
+      "description": "Press this key during gameplay to capture a thumbnail",
+      "default": "T",
+      "category": "gameplay"
+    },
+    "performance-title": {
+      "name": "Performance & Optimization",
+      "description": "Settings for improving performance and resource usage",
+      "type": "title"
+    },
+    "optimizer": {
       "type": "bool",
-      "name": "Show Button Editor",
-      "description": "Show button to move UI elements.",
+      "name": "Optimizer Mode",
+      "description": "Disables all logs for maximum performance.",
       "default": true
     },
-    "keybind-info": {
-      "name": "Keybinds",
-      "description": "Default: T. Change in 'Custom Keybinds' mod.",
-      "type": "title"
+    "android-safe-mode": {
+      "type": "bool",
+      "name": "Android Safe Mode",
+      "description": "Disables heavy startup work. Turn off if stable.",
+      "default": true
+    },
+    "gif-ram-cache": {
+      "type": "bool",
+      "name": "Cache GIFs in RAM",
+      "description": "Keep processed GIFs in RAM for faster loading. Warning: High RAM usage.",
+      "default": true
+    },
+    "thumbnail-concurrent-downloads": {
+      "type": "int",
+      "name": "Download Speed (Threads)",
+      "description": "Max simultaneous downloads (8-15 recommended).",
+      "default": 12,
+      "min": 1,
+      "max": 100
     },
     "test-category": {
       "name": "Test / Debug",
       "description": "Developer options",
       "type": "title"
+    },
+    "clear-cache-on-exit": {
+      "type": "bool",
+      "name": "Clear Cache on Exit",
+      "description": "Delete downloaded thumbnails when the game closes. Next session will re-download them.",
+      "default": true
     },
     "debug-password": {
       "type": "string",
@@ -306,9 +368,8 @@
   },
   "dependencies": {
     "geode.node-ids": {
-      "version": ">=1.7.1",
+      "version": ">=1.23.0",
       "required": true
     }
   }
-
 }

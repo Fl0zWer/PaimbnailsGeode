@@ -1,7 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelListLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
-#include <Geode/modify/MenuLayer.hpp>
 #include "../managers/ThumbnailLoader.hpp"
 
 using namespace geode::prelude;
@@ -39,9 +38,4 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     }
 };
 
-class $modify(ContextTrackingMenu, MenuLayer) {
-    bool init() {
-        Mod::get()->setSavedValue("current-list-id", 0);
-        return MenuLayer::init();
-    }
-};
+// NOTE: current-list-id cleanup moved to main MenuLayer hook (main.cpp) to avoid double-hooking MenuLayer::init

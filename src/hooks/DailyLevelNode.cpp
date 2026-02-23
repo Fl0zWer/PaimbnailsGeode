@@ -4,8 +4,8 @@
 
 using namespace geode::prelude;
 
-// shaders
-const char* kVertexShaderDaily = R"(
+// shaders (static pa evitar colisiones de linkage con otros TU)
+static const char* kVertexShaderDaily = R"(
 attribute vec4 a_position;
 attribute vec4 a_color;
 attribute vec2 a_texCoord;
@@ -26,7 +26,7 @@ void main()
 }
 )";
 
-const char* kFragmentShaderBlurDaily = R"(
+static const char* kFragmentShaderBlurDaily = R"(
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -136,6 +136,8 @@ public:
                     }
                 }
                 break;
+            default:
+                break;
         }
         CCSprite::update(dt);
     }
@@ -169,11 +171,9 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         if (!level) return true;
         m_fields->m_levelID = level->m_levelID;
 
-        // saco el size/pos pa la miniatura
+        // saco el size pa la miniatura
         CCSize nodeSize = this->getContentSize();
-        CCPoint nodePos = {0.f, 0.f};
-        CCPoint nodeAnchor = {0.f, 0.f};
-        
+
         CCNode* bg = this->getChildByID("background");
         if (!bg) {
              // intento pillar un scale9sprite si no esta el id
@@ -189,8 +189,6 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
 
         if (bg) {
             nodeSize = bg->getContentSize();
-            nodePos = bg->getPosition();
-            nodeAnchor = bg->getAnchorPoint();
         } else if (nodeSize.width < 10.f) {
             // fallback de size
             nodeSize = CCSize(340.f, 230.f);
@@ -258,15 +256,18 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
                 
                 // seteo shader
                 auto shader = new CCGLProgram();
-                shader->initWithVertexShaderByteArray(kVertexShaderDaily, kFragmentShaderBlurDaily);
-                shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
-                shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
-                shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
-                shader->link();
-                shader->updateUniforms();
-                sprite->setShaderProgram(shader);
-                shader->release();
-                
+                if (shader) {
+                    shader->initWithVertexShaderByteArray(kVertexShaderDaily, kFragmentShaderBlurDaily);
+                    shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
+                    shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
+                    shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
+                    if (shader->link()) {
+                        shader->updateUniforms();
+                        sprite->setShaderProgram(shader);
+                    }
+                    shader->release();
+                }
+
                 // hago aspect fill
                 CCSize containerSize = this->m_fields->m_paimonClipper->getContentSize();
                 float sx = containerSize.width / sprite->getContentWidth();

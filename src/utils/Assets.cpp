@@ -40,7 +40,8 @@ CCSprite* loadButtonSprite(
     std::function<CCSprite*()> fallback
 ) {
     auto path = cfgPathFor(key);
-    if (!std::filesystem::exists(path)) {
+    std::error_code ecAsset;
+    if (!std::filesystem::exists(path, ecAsset)) {
         // si no existe, creo un txt base explicando cómo va
         std::stringstream ss;
         ss << "# Button: " << key << "\n";
@@ -90,7 +91,7 @@ CCSprite* loadButtonSprite(
                 // si es relativa la tomo desde la carpeta del config
                 std::filesystem::path p = pathStr;
                 if (!p.is_absolute()) p = cfgPathFor(key).parent_path() / p;
-                if (std::filesystem::exists(p)) {
+                if (std::filesystem::exists(p, ecAsset)) {
                     if (auto spr = CCSprite::create(geode::utils::string::pathToString(p).c_str())) {
                         limitSpriteSize(spr);
                         return spr;
@@ -102,14 +103,14 @@ CCSprite* loadButtonSprite(
 
     // si no, pruebo en los recursos del mod: resources/buttons/{key}.png y luego resources/{key}.png
     auto modResourcePath = Mod::get()->getResourcesDir() / "buttons" / (key + ".png");
-    if (std::filesystem::exists(modResourcePath)) {
+    if (std::filesystem::exists(modResourcePath, ecAsset)) {
         if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath).c_str())) {
             limitSpriteSize(spr);
             return spr;
         }
     }
     auto modResourcePath2 = Mod::get()->getResourcesDir() / (key + ".png");
-    if (std::filesystem::exists(modResourcePath2)) {
+    if (std::filesystem::exists(modResourcePath2, ecAsset)) {
         if (auto spr = CCSprite::create(geode::utils::string::pathToString(modResourcePath2).c_str())) {
             limitSpriteSize(spr);
             return spr;

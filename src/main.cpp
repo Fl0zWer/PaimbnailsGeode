@@ -1,6 +1,8 @@
 #include <Geode/Geode.hpp>
+#include <Geode/utils/string.hpp>
 #include "managers/ProfileThumbs.hpp"
 #include "managers/LevelColors.hpp"
+#include "managers/TempThumbnails.hpp"
 #include "utils/Localization.hpp"
 #include <thread>
 #include <chrono>
@@ -10,23 +12,116 @@ using namespace geode::prelude;
 
 #include <Geode/modify/EndLevelLayer.hpp>
 #include <Geode/modify/MenuLayer.hpp>
+#include <Geode/loader/GameEvent.hpp>
 
 #include "managers/ThumbnailLoader.hpp"
+
+// limpieza de cache de disco al ABRIR el juego (borra archivos de la sesión anterior)
+// se hace al inicio en vez de al cerrar para evitar tocar objetos Cocos durante el shutdown,
+// que causa EXCEPTION_ACCESS_VIOLATION en CCPoolManager::removeObject.
+static void cleanupDiskCacheOnStartup() {
+    bool clearCache = true;
+    try {
+        clearCache = Mod::get()->getSettingValue<bool>("clear-cache-on-exit");
+    } catch (...) {}
+
+    if (!clearCache) {
+        log::info("[PaimonThumbnails] Cache cleanup disabled by setting");
+        return;
+    }
+
+    log::info("[PaimonThumbnails] Cleaning thumbnail disk cache from previous session...");
+    try {
+        auto cachePath = Mod::get()->getSaveDir() / "cache";
+        if (!std::filesystem::exists(cachePath)) return;
+
+        int deletedCount = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(cachePath)) {
+            if (!entry.is_regular_file()) continue;
+            try {
+                auto stem = geode::utils::string::pathToString(entry.path().stem());
+                int id = 0;
+                if (stem.find("_anim") != std::string::npos) {
+                    std::string idStr = stem.substr(0, stem.find("_anim"));
+                    id = geode::utils::numFromString<int>(idStr).unwrapOr(0);
+                } else {
+                    id = geode::utils::numFromString<int>(stem).unwrapOr(0);
+                }
+                // mantener main levels (1-22) cacheados siempre
+                int realID = std::abs(id);
+                if (realID >= 1 && realID <= 22) continue;
+
+                std::filesystem::remove(entry.path());
+                deletedCount++;
+            } catch (...) {
+                try { std::filesystem::remove(entry.path()); } catch (...) {}
+            }
+        }
+        log::info("[PaimonThumbnails] Deleted {} cached thumbnails on startup", deletedCount);
+    } catch (const std::exception& e) {
+        log::error("[PaimonThumbnails] Error cleaning cache on startup: {}", e.what());
+    } catch (...) {
+        log::error("[PaimonThumbnails] Unknown error cleaning cache on startup");
+    }
+}
+
+// al cerrar el juego:
+// - activamos flags para que los destructores estáticos no hagan release() sobre objetos Cocos2d
+// - limpiamos el caché de disco aquí mismo (operaciones de filesystem, no dependen de Cocos2d)
+$on_game(Exiting) {
+    ProfileCacheEntry::s_shutdownMode = true;
+    TempThumbnails::s_shutdownMode = true;
+
+    // limpiar caché de disco al cerrar (si el setting está activo)
+    bool clearCache = true;
+    try {
+        clearCache = Mod::get()->getSettingValue<bool>("clear-cache-on-exit");
+    } catch (...) {}
+
+    if (clearCache) {
+        try {
+            auto cachePath = Mod::get()->getSaveDir() / "cache";
+            if (std::filesystem::exists(cachePath)) {
+                int deletedCount = 0;
+                for (const auto& entry : std::filesystem::directory_iterator(cachePath)) {
+                    if (!entry.is_regular_file()) continue;
+                    try {
+                        auto stem = geode::utils::string::pathToString(entry.path().stem());
+                        int id = 0;
+                        if (stem.find("_anim") != std::string::npos) {
+                            std::string idStr = stem.substr(0, stem.find("_anim"));
+                            id = geode::utils::numFromString<int>(idStr).unwrapOr(0);
+                        } else {
+                            id = geode::utils::numFromString<int>(stem).unwrapOr(0);
+                        }
+                        // mantener main levels (1-22) cacheados siempre
+                        int realID = std::abs(id);
+                        if (realID >= 1 && realID <= 22) continue;
+
+                        std::filesystem::remove(entry.path());
+                        deletedCount++;
+                    } catch (...) {
+                        try { std::filesystem::remove(entry.path()); } catch (...) {}
+                    }
+                }
+                log::info("[PaimonThumbnails] Deleted {} cached thumbnails on exit", deletedCount);
+            }
+        } catch (const std::exception& e) {
+            log::error("[PaimonThumbnails] Error cleaning cache on exit: {}", e.what());
+        } catch (...) {
+            log::error("[PaimonThumbnails] Unknown error cleaning cache on exit");
+        }
+    }
+}
 
 // no hay un "$on_mod(unloaded)" decente, así que limpio al arrancar
 
 void PaimonOnModLoaded() { // el $on_mod(loaded) está comentado pa evitar el bug del linker
-    bool optimizer = true;
-    try {
-        optimizer = Mod::get()->getSettingValue<bool>("optimizer");
-    } catch(...) {}
-    
-    if (optimizer) {
-        Mod::get()->setLoggingEnabled(false);
-    }
-
-
     log::info("[PaimonThumbnails][Init] Loaded event start");
+
+    // limpiar cache de disco de la sesión anterior ANTES de cargar thumbnails nuevos
+    cleanupDiskCacheOnStartup();
+
     bool safeMode = false;
 #ifdef GEODE_IS_ANDROID
     safeMode = Mod::get()->getSettingValue<bool>("android-safe-mode");
@@ -38,9 +133,6 @@ void PaimonOnModLoaded() { // el $on_mod(loaded) está comentado pa evitar el bu
 #endif
 
     if (!safeMode) {
-        // limpio el cache al empezar pa que esté fresco (si lo hago al salir se bugea)
-        ThumbnailLoader::get().clearDiskCache();
-
         log::info("[PaimonThumbnails] Queueing main level thumbnails...");
         for (int i = 1; i <= 22; i++) {
             std::string fileName = fmt::format("{}.png", i);
@@ -99,6 +191,9 @@ void PaimonOnModLoaded() { // el $on_mod(loaded) está comentado pa evitar el bu
 class $modify(PaimonMenuLayer, MenuLayer) {
     bool init() {
         if (!MenuLayer::init()) return false;
+
+        // limpiar contexto de lista al volver al menu (movido de LevelListLayer.cpp)
+        Mod::get()->setSavedValue("current-list-id", 0);
 
         static bool s_paimonLoaded = false;
         if (!s_paimonLoaded) {

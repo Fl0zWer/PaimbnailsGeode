@@ -2,6 +2,7 @@
 #include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/binding/LoadingCircle.hpp>
@@ -213,8 +214,9 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
             
             // cargo el icono como sea
             auto resPath = Mod::get()->getResourcesDir() / "paim_BotonMostrarThumbnails.png";
-            if (std::filesystem::exists(resPath)) {
-                iconSpr = CCSprite::create(resPath.generic_string().c_str());
+            std::error_code ecRes;
+            if (std::filesystem::exists(resPath, ecRes)) {
+                iconSpr = CCSprite::create(geode::utils::string::pathToString(resPath).c_str());
             }
 
             if (!iconSpr) {

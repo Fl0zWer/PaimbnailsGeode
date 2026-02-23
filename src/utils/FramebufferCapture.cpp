@@ -794,7 +794,7 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
 
         if (!data || W <= 0 || H <= 0) {
             log::error("[FramebufferCapture] Invalid image data: {}x{}", W, H);
-            delete img;
+            img->release();
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
             return;
         }
@@ -803,7 +803,7 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
 
         // ── construye buffer rgba ────────────────────────────────
         auto rgbaBuffer = makeRGBABuffer(data, W, H);
-        delete img;
+        img->release();
 
         // ── crea textura ───────────────────────────────────
         auto* texture = createTextureFromRGBA(rgbaBuffer.get(), W, H);
@@ -885,13 +885,13 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
 
         if (!data || W <= 0 || H <= 0) {
             log::error("[FramebufferCapture] Invalid node image data");
-            delete img;
+            img->release();
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
             return;
         }
 
         auto rgbaBuffer = makeRGBABuffer(data, W, H);
-        delete img;
+        img->release();
 
         auto* texture = createTextureFromRGBA(rgbaBuffer.get(), W, H);
         if (!texture) {

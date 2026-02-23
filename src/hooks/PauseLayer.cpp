@@ -2,6 +2,7 @@
 #include <Geode/binding/PlayLayer.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/loader/Event.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <chrono>
@@ -21,34 +22,14 @@
 #include "../utils/ImageConverter.hpp"
 #include "../utils/GIFDecoder.hpp"
 #include "../utils/FileDialog.hpp"
+#include "../utils/ModeratorUtils.hpp"
 #include <Geode/binding/LoadingCircle.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// helper: verifica si el usuario es moderador
-static bool isUserModerator() {
-    try {
-        auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
-        if (std::filesystem::exists(modDataPath)) {
-            std::ifstream modFile(modDataPath, std::ios::binary);
-            if (modFile) {
-                time_t timestamp{};
-                modFile.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
-                modFile.close();
-                auto now = std::chrono::system_clock::now();
-                auto fileTime = std::chrono::system_clock::from_time_t(timestamp);
-                auto daysDiff = std::chrono::duration_cast<std::chrono::hours>(now - fileTime).count() / 24;
-                if (daysDiff < 30) {
-                    return true;
-                }
-            }
-        }
-        return Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-    } catch (...) {
-        return false;
-    }
-}
+// alias pa mantener compatibilidad con el resto del archivo
+static inline bool isUserModerator() { return PaimonUtils::isUserModerator(); }
 
 static CCSprite* tryCreateIcon() {
     // intenta cargar el asset empaquetado primero
@@ -308,7 +289,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
         auto overlay = CCLayerColor::create({0, 0, 0, 100});
-        overlay->setTag(9999);
+        overlay->setID("paimon-loading-overlay"_spr);
         scene->addChild(overlay, 10000);
 
         auto spinner = CCSprite::create("loadingCircle.png");
@@ -317,6 +298,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             spinner->setPosition(winSize / 2);
             spinner->setScale(1.0f);
             spinner->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
+            spinner->setID("paimon-loading-spinner"_spr);
             overlay->addChild(spinner, 1);
         }
 
@@ -330,24 +312,22 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     void updateSpinner(float dt) {
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
-        auto overlay = scene->getChildByTag(9999);
+        auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
         if (!overlay) {
             CCDirector::sharedDirector()->getScheduler()->unscheduleSelector(
                 schedule_selector(PaimonPauseLayer::updateSpinner), this
             );
             return;
         }
-        auto children = overlay->getChildren();
-        if (children && children->count() > 0) {
-            auto spinner = static_cast<CCNode*>(children->objectAtIndex(0));
-            if (spinner) spinner->setRotation(spinner->getRotation() + dt * 360.0f);
+        if (auto spinner = overlay->getChildByID("paimon-loading-spinner"_spr)) {
+            spinner->setRotation(spinner->getRotation() + dt * 360.0f);
         }
     }
 
     void reShowOverlay(float dt) {
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
-        auto overlay = scene->getChildByTag(9999);
+        auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
         if (overlay) overlay->setVisible(true);
     }
 
@@ -362,7 +342,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
-        auto overlay = scene->getChildByTag(9999);
+        auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
         if (overlay) overlay->removeFromParentAndCleanup(true);
     }
     
@@ -384,7 +364,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             // oculta overlay para captura limpia
             auto scene = CCDirector::sharedDirector()->getRunningScene();
             if (scene) {
-                auto overlay = scene->getChildByTag(9999);
+                auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
                 if (overlay) overlay->setVisible(false);
             }
 
@@ -463,7 +443,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                 std::filesystem::create_directories(tmpDir, dirEc);
                                 auto tempPath = tmpDir / (std::string("thumb_") + std::to_string(lvlID) + ".png");
 
-                                if (!img.saveToFile(tempPath.string().c_str(), false)) {
+                                if (!img.saveToFile(geode::utils::string::pathToString(tempPath).c_str(), false)) {
                                     log::error("[PauseLayer] Failed to save temporary PNG");
                                     Notification::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
                                     return;
@@ -666,10 +646,10 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     
     void processSelectedFile(std::filesystem::path selectedPath, int levelID) {
-        log::info("[PauseLayer] Selected file: {}", selectedPath.string());
+        log::info("[PauseLayer] Selected file: {}", geode::utils::string::pathToString(selectedPath));
         
         // decide formato por extension
-        std::string ext = selectedPath.extension().string();
+        std::string ext = geode::utils::string::pathToString(selectedPath.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext == ".gif") {
 #if !defined(GEODE_IS_WINDOWS) && !defined(_WIN32)
@@ -712,7 +692,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 image->release();
                 
                 if (!ok) {
-                    delete texture;
+                    texture->release();
                     Notification::create(Localization::get().getString("pause.gif_texture_error").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
@@ -817,7 +797,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     popup->show();
                 } else {
                     log::error("[PauseLayer] Failed to create GIF preview popup");
-                    delete texture;
+                    texture->release();
                 }
 
             } catch (std::exception const& e) {
@@ -849,7 +829,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         if (!img->initWithImageData(pngData.data(), fileSize, CCImage::kFmtPng)) {
             log::error("[PauseLayer] Failed to decode selected PNG file");
             Notification::create(Localization::get().getString("pause.png_invalid").c_str(), NotificationIcon::Error)->show();
-            delete img;
+            img->release();
             return;
         }
         
@@ -860,7 +840,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         if (!imgData) {
             log::error("[PauseLayer] Failed to get image pixel data");
             Notification::create(Localization::get().getString("pause.process_image_error").c_str(), NotificationIcon::Error)->show();
-            delete img;
+            img->release();
             return;
         }
         
@@ -893,7 +873,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             }
         }
         
-        delete img;
+        img->release();
         
         log::debug("[PauseLayer] RGBA data ready ({} bytes)", rgbaSize);
         
@@ -914,7 +894,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             CCSize(width, height)
         )) {
             log::error("[PauseLayer] Failed to initialize texture from data");
-            delete texture;
+            texture->release();
             Notification::create(Localization::get().getString("pause.init_texture_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
@@ -975,7 +955,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         std::error_code dirEc;
                         std::filesystem::create_directories(tmpDir, dirEc);
                         auto tempPath = tmpDir / (std::string("thumb_") + std::to_string(lvlID) + ".png");
-                        if (!img.saveToFile(tempPath.string().c_str(), false)) {
+                        if (!img.saveToFile(geode::utils::string::pathToString(tempPath).c_str(), false)) {
                             log::error("[PauseLayer] Failed to save temporary PNG");
                             Notification::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
                         } else {
@@ -1018,7 +998,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             popup->show();
         } else {
             log::error("[PauseLayer] Failed to create preview popup");
-            delete texture;
+            texture->release();
         }
 
     }
@@ -1035,7 +1015,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             
             int levelID = pl->m_level->m_levelID;
             
+            this->setTouchEnabled(false);
             auto result = pt::openImageFileDialog();
+            this->setTouchEnabled(true);
 
             if (result.has_value()) {
                 auto path = result.value();

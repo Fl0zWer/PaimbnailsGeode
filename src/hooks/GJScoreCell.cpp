@@ -16,66 +16,13 @@
 
 using namespace geode::prelude;
 #include "../utils/Shaders.hpp"
+#include "../utils/PaimonShaderSprite.hpp"
 
 using namespace cocos2d;
 using namespace Shaders;
 
-// sprite helper pa blur de fondo GIF en vivo
-class BlurSprite : public CCSprite {
-public:
-    float m_intensity = 0.0f;
-    CCSize m_texSize = {0,0};
-    AnimatedGIFSprite* m_syncTarget = nullptr;
-    
-    static BlurSprite* createWithTexture(CCTexture2D* tex) {
-        auto ret = new BlurSprite();
-        if (ret && ret->initWithTexture(tex)) {
-            ret->autorelease();
-            return ret;
-        }
-        CC_SAFE_DELETE(ret);
-        return nullptr;
-    }
-
-    void update(float dt) override {
-        if (m_syncTarget) {
-            auto frame = m_syncTarget->displayFrame();
-            if (frame) {
-                // siempre poner frame pa sync; comparar igualdad con distintos frames es delicado
-                this->setDisplayFrame(frame);
-            }
-        }
-        CCSprite::update(dt);
-    }
-    
-    void draw() override {
-        if (getShaderProgram()) {
-            getShaderProgram()->use();
-            getShaderProgram()->setUniformsForBuiltins();
-            
-            GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-            if (intensityLoc != -1) {
-                getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
-            }
-            
-            if (m_texSize.width == 0 && getTexture()) {
-                m_texSize = getTexture()->getContentSizeInPixels();
-            }
-            float w = m_texSize.width > 0 ? m_texSize.width : 1.0f;
-            float h = m_texSize.height > 0 ? m_texSize.height : 1.0f;
-            
-            GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-            if (sizeLoc != -1) {
-                getShaderProgram()->setUniformLocationWith2f(sizeLoc, w, h);
-            }
-            GLint screenLoc = getShaderProgram()->getUniformLocationForName("u_screenSize");
-            if (screenLoc != -1) {
-                getShaderProgram()->setUniformLocationWith2f(screenLoc, w, h);
-            }
-        }
-        CCSprite::draw();
-    }
-};
+// alias pa compatibilidad con el resto del archivo
+using BlurSprite = PaimonBlurSprite;
 
 
 
@@ -176,9 +123,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         spinner->setPosition({35.f, cs.height / 2.f + 20.f});
         spinner->setZOrder(999);
         
-        try {
-            spinner->setID("paimon-loading-spinner"_spr);
-        } catch (...) {}
+        spinner->setID("paimon-loading-spinner"_spr);
         
         this->addChild(spinner);
         f->m_loadingSpinner = spinner;
@@ -334,8 +279,6 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 bgType = "thumbnail";
             }
 
-            BlurSprite* pendingBlurSprite = nullptr;
-
             if (bgType == "none") {
                 // no hago nada, dejo el fondo del juego
             }
@@ -349,58 +292,34 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
 
                 // primero intento fondo con GIF
                 if (!gifKey.empty()) {
-                    auto bgSprite = AnimatedGIFSprite::createFromCache(gifKey);
-                    if (bgSprite) {
-                        auto tex = bgSprite->getTexture();
-                        if (tex) {
-                            // pa GIFs: BlurSprite con blur en tiempo real
-                            // se actualiza cada frame
-                            auto blurSprite = BlurSprite::createWithTexture(tex);
-                            if (blurSprite) {
-                                // escalo pa cubrir toda el área
-                                float scaleX = targetSize.width / bgSprite->getContentSize().width;
-                                float scaleY = targetSize.height / bgSprite->getContentSize().height;
-                                float scale = std::max(scaleX, scaleY);
+                    // usar un AnimatedGIFSprite directamente como fondo con shader blur
+                    // así anima solo sin necesidad de sincronizar texturas
+                    auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
+                    if (bgGif) {
+                        // escalo pa cubrir toda el área
+                        float scaleX = targetSize.width / bgGif->getContentSize().width;
+                        float scaleY = targetSize.height / bgGif->getContentSize().height;
+                        float scale = std::max(scaleX, scaleY);
 
-                                blurSprite->setScale(scale);
-                                blurSprite->setAnchorPoint({0.5f, 0.5f});
-                                blurSprite->setPosition(targetSize * 0.5f);
-                                float norm = (blurIntensity - 1.0f) / 9.0f;
-                                blurSprite->m_intensity = std::min(1.7f, norm * 2.5f);
-                                blurSprite->m_texSize = tex->getContentSizeInPixels();
+                        bgGif->setScale(scale);
+                        bgGif->setAnchorPoint({0.5f, 0.5f});
+                        bgGif->setPosition(targetSize * 0.5f);
 
-                                // mismo shader Dual Kawase que uso en LevelInfoLayer
-                                auto shader = Shaders::getBlurSinglePassShader();
-                                if (shader) {
-                                    blurSprite->setShaderProgram(shader);
-                                }
-
-                                blurSprite->scheduleUpdate();
-                                bgNode = blurSprite;
-                                pendingBlurSprite = blurSprite;
-                            } else {
-                                // fallback: blur multi-paso ya prehecho (calidad similar)
-                                float stronger = std::min(10.0f, blurIntensity + 3.0f);
-                                auto staticBg = Shaders::createBlurredSprite(tex, targetSize, stronger);
-                                if (staticBg) {
-                                    staticBg->setPosition(targetSize * 0.5f);
-                                    bgNode = staticBg;
-                                } else {
-                                    auto plain = CCSprite::createWithTexture(tex);
-                                    if (plain) {
-                                        float scaleX = targetSize.width / tex->getContentSize().width;
-                                        float scaleY = targetSize.height / tex->getContentSize().height;
-                                        plain->setScale(std::max(scaleX, scaleY));
-                                        plain->setPosition(targetSize * 0.5f);
-                                        bgNode = plain;
-                                    }
-                                }
-                            }
+                        // configurar blur via shader (usa u_texSize y u_intensity que AnimatedGIFSprite::draw() ya pasa)
+                        float norm = (blurIntensity - 1.0f) / 9.0f;
+                        bgGif->m_intensity = std::min(1.7f, norm * 2.5f);
+                        if (bgGif->getTexture()) {
+                            bgGif->m_texSize = bgGif->getTexture()->getContentSizeInPixels();
                         }
-                        
-                        if (bgNode) {
-                            try { bgNode->setID("paimon-bg-sprite"_spr); } catch(...) {}
+
+                        auto shader = Shaders::getBlurCellShader();
+                        if (shader) {
+                            bgGif->setShaderProgram(shader);
                         }
+
+                        bgGif->play();
+                        bgGif->setID("paimon-bg-sprite"_spr);
+                        bgNode = bgGif;
                     }
                 }
                 
@@ -449,7 +368,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     clipper->setContentSize(cs);
                     clipper->setPosition({0,0});
                     clipper->setZOrder(-2); // bien al fondo
-                    try { clipper->setID("paimon-score-bg-clipper"_spr); } catch (...) {}
+                    clipper->setID("paimon-score-bg-clipper"_spr);
 
                     // escalo bgNode pa llenar la celda
                     // el blur viene a targetSize, aquí lo ajusto al tamaño real
@@ -502,14 +421,10 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                         // aseguro que la animación esté corriendo
                         gifSprite->play();
 
-                        try { gifSprite->setID("paimon-profile-thumb-gif"_spr); } catch(...) {}
+                        gifSprite->setID("paimon-profile-thumb-gif"_spr);
                         log::debug("[GJScoreCell] Created GIF sprite from key: {}, size: {}x{}, frames: {}",
                             gifKey, contentW, contentH, gifSprite->getFrameCount());
 
-                        // engancho el fondo al GIF pa que estén sync
-                        if (pendingBlurSprite) {
-                            pendingBlurSprite->m_syncTarget = gifSprite;
-                        }
                     } else {
                         log::warn("[GJScoreCell] createFromCache returned null for key: {}", gifKey);
                     }
@@ -525,7 +440,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     mainNode = sprite;
                     contentW = sprite->getContentWidth();
                     contentH = sprite->getContentHeight();
-                    try { sprite->setID("paimon-profile-thumb"_spr); } catch(...) {}
+                    sprite->setID("paimon-profile-thumb"_spr);
                 }
             }
 
@@ -584,9 +499,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         clip->setAnchorPoint({1,0});
         // pegado al borde derecho con un pelín de offset pa que no se vea feo
         clip->setPosition({ cs.width, 0.3f });
-        try {
-            clip->setID("paimon-profile-clip"_spr);
-        } catch (...) {}
+        clip->setID("paimon-profile-clip"_spr);
     // lo dejo detrás de textos/iconos pa no tapar stats
     clip->setZOrder(-1);
 
@@ -624,9 +537,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         topBorder->setSkewX(angle);
         topBorder->setPosition({ cs.width, 0.3f + scaledSize.height });
         topBorder->setZOrder(-1);
-        try {
-            topBorder->setID("paimon-profile-border-top"_spr);
-        } catch (...) {}
+        topBorder->setID("paimon-profile-border-top"_spr);
         this->addChild(topBorder);
         
         // animación de brillo solo si es premium
@@ -645,9 +556,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         bottomBorder->setSkewX(angle);
         bottomBorder->setPosition({ cs.width, 0.3f - borderThickness });
         bottomBorder->setZOrder(-1);
-        try {
-            bottomBorder->setID("paimon-profile-border-bottom"_spr);
-        } catch (...) {}
+        bottomBorder->setID("paimon-profile-border-bottom"_spr);
         this->addChild(bottomBorder);
         
         if (isPremiumUser) {
@@ -664,9 +573,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         rightBorder->setAnchorPoint({1,0});
         rightBorder->setPosition({ cs.width, 0.3f - borderThickness });
         rightBorder->setZOrder(-1);
-        try {
-            rightBorder->setID("paimon-profile-border-right"_spr);
-        } catch (...) {}
+        rightBorder->setID("paimon-profile-border-right"_spr);
         this->addChild(rightBorder);
         
         if (isPremiumUser) {
@@ -686,9 +593,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         sep->setAnchorPoint({1,0});
         sep->setPosition({ cs.width - sep->getContentSize().width / 2 - 16.f, 0.3f });
     sep->setZOrder(-2);
-        try {
-            sep->setID("paimon-profile-separator"_spr);
-        } catch (...) {}
+        sep->setID("paimon-profile-separator"_spr);
         this->addChild(sep);
         f->m_profileSeparator = sep;
 

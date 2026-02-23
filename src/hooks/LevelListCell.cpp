@@ -80,10 +80,11 @@ class $modify(PaimonLevelListCell, LevelListCell) {
                 carousel->setZOrder(-1);
                 
                 // attempt to push background behind the carousel
-                // the background is usually the first child
-                if (this->getChildrenCount() > 0) {
-                    auto bg = static_cast<CCNode*>(this->getChildren()->objectAtIndex(0));
-                    if (bg) {
+                // buscar fondo por tipo en vez de indice fragil
+                if (auto bg = this->getChildByType<CCLayerColor>(0)) {
+                    bg->setZOrder(-2);
+                } else if (this->getChildrenCount() > 0) {
+                    if (auto bg = typeinfo_cast<CCNode*>(this->getChildren()->objectAtIndex(0))) {
                         bg->setZOrder(-2);
                     }
                 }

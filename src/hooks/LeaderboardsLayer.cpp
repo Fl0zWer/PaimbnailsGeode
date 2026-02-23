@@ -10,6 +10,7 @@
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Localization.hpp"
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <fstream>
 #include <algorithm>
 #include <random>
@@ -45,16 +46,14 @@ protected:
 
         // recoger config actual
         ProfileConfig config;
-        try {
-            config.backgroundType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
-            config.blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
-            config.darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
-            config.useGradient = false; 
-            config.colorA = {255, 255, 255};
-            config.colorB = {255, 255, 255};
-            config.separatorColor = {0, 0, 0};
-            config.separatorOpacity = 50;
-        } catch (...) {}
+        config.backgroundType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
+        config.blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
+        config.darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
+        config.useGradient = false;
+        config.colorA = {255, 255, 255};
+        config.colorB = {255, 255, 255};
+        config.separatorColor = {0, 0, 0};
+        config.separatorOpacity = 50;
 
         // crear nodo de preview
         CCSize previewSize = {340, 50}; // tamano aprox de celda de puntuacion
@@ -116,53 +115,34 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void updateTabColors(LeaderboardType type) {
-        // buscar el menu que contiene las pestañas
-        CCMenu* tabMenu = nullptr;
-        CCArrayExt<CCNode*> children(this->getChildren());
-        for (auto child : children) {
-            if (auto menu = typeinfo_cast<CCMenu*>(child)) {
-                // heuristica: el menu de tabs suele tener los botones Top, Global, etc
-                if (menu->getChildrenCount() >= 3) {
-                    tabMenu = menu;
-                    break;
+        // usar node IDs oficiales de geode.node-ids para tabs
+        // cada tab es un menu separado: top-100-menu, global-menu, creators-menu, friends-menu
+        std::vector<std::string> tabIDs = {"top-100-menu", "global-menu", "creators-menu", "friends-menu"};
+
+        // reset todos los tabs
+        for (const auto& tabID : tabIDs) {
+            if (auto menu = this->getChildByID(tabID)) {
+                if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
+                    btn->setColor({255, 255, 255});
                 }
             }
         }
 
-        if (!tabMenu) return;
-
-        // reset
-        for (auto item : CCArrayExt<CCNode*>(tabMenu->getChildren())) {
-            if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(item)) {
-                btn->setColor({255, 255, 255});
-            }
-        }
-
-        // resaltar boton activo (mapeo aproximado)
-        // LeaderboardType::Default (Top 100) -> 0?
-        // LeaderboardType::Friends -> ?
-        // LeaderboardType::Relative (Global conmigo) -> ?
-        // LeaderboardType::Creators -> ?
-        
-        int tag = -1;
-        // NOTE: estos valores son suposiciones pa tabs estandar
-        // puede hacer falta ajustar segun checks reales de Geode/GD
-        // Default=Top100, Relative=Global, Creators=Creators, Friends=Friends
+        // mapeo tipo -> ID del menu tab
+        std::string activeID;
         switch (type) {
-            case LeaderboardType::Default: tag = 1; break; // Top (1)
-            case LeaderboardType::Global: tag = 2; break; // Global (2)
-            case LeaderboardType::Creator: tag = 3; break; // Creators (3)
-            case LeaderboardType::Friends: tag = 4; break; // Friends (4)
+            case LeaderboardType::Default: activeID = "top-100-menu"; break;
+            case LeaderboardType::Global: activeID = "global-menu"; break;
+            case LeaderboardType::Creator: activeID = "creators-menu"; break;
+            case LeaderboardType::Friends: activeID = "friends-menu"; break;
             default: break;
         }
-        
-        // en GD suelen ser tags: Top=1, Global=2, Creators=3, Friends=4
-        // comprobar si el hijo tiene ese tag
-        
-        if (tag != -1) {
-             if (auto btn = tabMenu->getChildByTag(tag)) {
-                if (auto spriteBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(btn)) {
-                    spriteBtn->setColor({0, 255, 0});
+
+        // resaltar tab activo
+        if (!activeID.empty()) {
+            if (auto menu = this->getChildByID(activeID)) {
+                if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
+                    btn->setColor({0, 255, 0});
                 }
             }
         }
@@ -228,21 +208,20 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
     void onUploadBanner(CCObject*) {
         // comprobar permisos pa GIF
-        bool isMod = false;
-        bool isAdmin = false;
-        try {
-            isMod = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-            isAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
-        } catch(...) {}
+        bool isVip = Mod::get()->getSavedValue<bool>("is-verified-vip", false);
+        bool isMod = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
+        bool isAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
         
-        bool canUploadGIF = isMod || isAdmin;
+        bool canUploadGIF = isVip || isMod || isAdmin;
 
+        this->setTouchEnabled(false);
         auto result = pt::openImageFileDialog();
+        this->setTouchEnabled(true);
 
         if (result.has_value()) {
             auto path = result.value();
             if (!path.empty()) {
-                std::string ext = path.extension().string();
+                std::string ext = geode::utils::string::pathToString(path.extension());
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
                 if (ext == ".gif") {

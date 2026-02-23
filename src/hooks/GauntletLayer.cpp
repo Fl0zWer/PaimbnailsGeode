@@ -9,7 +9,7 @@
 
 using namespace geode::prelude;
 
-const char* g_vertexShader = R"(
+static const char* g_vertexShader = R"(
     attribute vec4 a_position;
     attribute vec4 a_color;
     attribute vec2 a_texCoord;
@@ -32,7 +32,7 @@ const char* g_vertexShader = R"(
 
 // Gaussian blur 13-tap, linear sampling
 // pesos gaussianos sigma ~4
-const char* g_fragmentShaderGaussianBlur = R"(
+static const char* g_fragmentShaderGaussianBlur = R"(
     #ifdef GL_ES
     precision highp float;
     #endif
@@ -71,7 +71,7 @@ const char* g_fragmentShaderGaussianBlur = R"(
 )";
 
 // Kawase blur 1 pasada, rapido
-const char* g_fragmentShaderKawaseBlur = R"(
+static const char* g_fragmentShaderKawaseBlur = R"(
     #ifdef GL_ES
     precision highp float;
     #endif
@@ -99,7 +99,7 @@ const char* g_fragmentShaderKawaseBlur = R"(
 
 // Dual Kawase
 // una pasada, sampling
-const char* g_fragmentShaderDualKawase = R"(
+static const char* g_fragmentShaderDualKawase = R"(
     #ifdef GL_ES
     precision highp float;
     #endif
@@ -274,13 +274,17 @@ public:
 
         // shader Dual Kawase
         auto shader = new CCGLProgram();
+        if (!shader) return;
         shader->initWithVertexShaderByteArray(g_vertexShader, g_fragmentShaderDualKawase);
 
         shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
         shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
         shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
         
-        shader->link();
+        if (!shader->link()) {
+            shader->release();
+            return;
+        }
         shader->updateUniforms();
 
         shader->use();
@@ -363,9 +367,7 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
             // m_levels = ccarray strings (ids)
             for (int i = 0; i < mapPack->m_levels->count(); ++i) {
                 if (auto str = typeinfo_cast<CCString*>(mapPack->m_levels->objectAtIndex(i))) {
-                    try {
-                        ids.push_back(str->intValue());
-                    } catch(...) {}
+                    ids.push_back(str->intValue());
                 }
             }
         }

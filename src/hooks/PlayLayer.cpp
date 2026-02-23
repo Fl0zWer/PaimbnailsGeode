@@ -1,22 +1,29 @@
+#include "../MSVCFix.hpp"
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/ui/Notification.hpp>
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/HardStreak.hpp>
+#include <Geode/loader/SettingV3.hpp>
+#include <Geode/utils/Keyboard.hpp>
 #include "../layers/CapturePreviewPopup.hpp"
 #include "../utils/FramebufferCapture.hpp"
 #include "../utils/RenderTexture.hpp"
+#include "../utils/PlayerToggleHelper.hpp"
 #include "../utils/Localization.hpp"
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../managers/PendingQueue.hpp"
 #include "../utils/ImageConverter.hpp"
+#include "../utils/ModeratorUtils.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/UILayer.hpp>
 #include "../utils/DominantColors.hpp"
 #include "../managers/LevelColors.hpp"
 #include <cstring>
 #include <memory>
+
+#include "../managers/DynamicSongManager.hpp"
 
 using namespace geode::prelude;
 
@@ -196,18 +203,204 @@ static bool s_hidePlayerForCapture = false;
 class $modify(GIFRecordPlayLayer, PlayLayer) {
     struct Fields {
         float m_frameTimer = 0.0f;
+        ListenerHandle* m_keybindListener = nullptr;
     };
 
+    $override
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+        // DEFENSA FINAL: matar dynamic song al entrar al gameplay
+        // No importa como llegamos aqui (LevelSelect, LevelInfo, etc.)
+        DynamicSongManager::get()->forceKill();
+
         s_hidePlayerForCapture = false;
         log::info("[GIFRecord] init() llamado para level {}", level ? level->m_levelID : 0);
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         log::info("[GIFRecord] PlayLayer::init() exitoso");
 
+        // registra listener para el keybind de captura usando el nuevo sistema de Geode beta.3
+        if (Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
+            m_fields->m_keybindListener = listenForKeybindSettingPresses(
+                "capture-keybind",
+                [this](Keybind const& keybind, bool down, bool repeat, double timestamp) {
+                    // solo actúa cuando se presiona, no cuando se suelta o repite
+                    if (!down || repeat) return;
+
+                    // verifica que no estemos en pausa
+                    if (this->m_isPaused) return;
+
+                    // verifica que el nivel tenga ID válido
+                    if (!this->m_level || this->m_level->m_levelID <= 0) {
+                        log::info("[Keybind] Level ID inválido, ignorando captura");
+                        return;
+                    }
+
+                    // evita capturas simultáneas
+                    if (gCaptureInProgress.load()) return;
+                    gCaptureInProgress.store(true);
+
+                    log::info("[Keybind] Captura activada con tecla: {} (timestamp: {})", keybind.toString(), timestamp);
+
+                    // usa FramebufferCapture (igual que PauseLayer) para diferir
+                    // la captura al siguiente frame completo y evitar artefactos
+                    int levelID = this->m_level->m_levelID;
+                    FramebufferCapture::requestCapture(levelID, [this, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height) {
+                        Loader::get()->queueInMainThread([this, success, texture, rgbaData, width, height, levelID]() {
+                            if (!success || !texture || !rgbaData) {
+                                log::error("[Keybind] FramebufferCapture falló");
+                                gCaptureInProgress.store(false);
+                                return;
+                            }
+
+                            log::info("[Keybind] Captura exitosa: {}x{}", width, height);
+
+                            // pausa el juego para mostrar el popup de preview
+                            bool pausedByPopup = false;
+                            if (!this->m_isPaused) { this->pauseGame(true); pausedByPopup = true; }
+
+                            auto* popup = CapturePreviewPopup::create(
+                                texture,
+                                levelID,
+                                rgbaData,
+                                width,
+                                height,
+                                [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
+                                try {
+                                    gCaptureInProgress.store(false);
+
+                                    if (pausedByPopup) {
+                                        auto* pl = PlayLayer::get();
+                                        if (pl && pl->m_isPaused) {
+                                            bool hasPause = false;
+                                            if (auto* sc = CCDirector::sharedDirector()->getRunningScene()) {
+                                                CCArrayExt<CCNode*> children(sc->getChildren());
+                                                for (auto child : children) { 
+                                                    if (typeinfo_cast<PauseLayer*>(child)) { 
+                                                        hasPause = true; 
+                                                        break; 
+                                                    } 
+                                                }
+                                            }
+                                            if (!hasPause) {
+                                                if (auto* d = CCDirector::sharedDirector()) {
+                                                    if (d->getScheduler() && d->getActionManager()) {
+                                                        d->getScheduler()->resumeTarget(pl);
+                                                        d->getActionManager()->resumeTarget(pl);
+                                                        pl->m_isPaused = false;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (okSave && levelIDAccepted > 0 && buf) {
+                                        std::vector<uint8_t> rgbData(static_cast<size_t>(W) * static_cast<size_t>(H) * 3);
+                                        const uint8_t* src = buf.get();
+                                        for(size_t i=0; i < static_cast<size_t>(W)*H; ++i) {
+                                            rgbData[i*3+0] = src[i*4+0];
+                                            rgbData[i*3+1] = src[i*4+1];
+                                            rgbData[i*3+2] = src[i*4+2];
+                                        }
+
+                                        auto pair = DominantColors::extract(rgbData.data(), W, H);
+                                        ccColor3B A{pair.first.r, pair.first.g, pair.first.b};
+                                        ccColor3B B{pair.second.r, pair.second.g, pair.second.b};
+                                        LevelColors::get().set(levelIDAccepted, A, B);
+
+                                        std::vector<uint8_t> rgbaVec(static_cast<size_t>(W) * static_cast<size_t>(H) * 4);
+                                        memcpy(rgbaVec.data(), buf.get(), rgbaVec.size());
+                                        
+                                        std::vector<uint8_t> pngData;
+                                        if (!ImageConverter::rgbToPng(rgbaVec, static_cast<uint32_t>(W), static_cast<uint32_t>(H), pngData)) {
+                                            Notification::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
+                                        } else {
+                                            std::string username;
+                                            int accountID = 0;
+                                            if (auto* gm = GameManager::sharedState()) {
+                                                username = gm->m_playerName;
+                                                accountID = gm->m_playerUserID;
+                                            }
+                                            if (username.empty()) username = "unknown";
+
+                                            if (accountID <= 0) {
+                                                Notification::create("Tienes que tener cuenta para subir", NotificationIcon::Error)->show();
+                                                return;
+                                            }
+
+                                            Notification::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
+                                            ThumbnailAPI::get().checkModeratorAccount(username, accountID, [levelIDAccepted, pngData, username](bool approved, bool isAdmin) {
+                                                bool allowModeratorFlow = approved;
+                                                if (allowModeratorFlow) {
+                                                    log::info("[Keybind] Usuario verificado como moderador, subiendo thumbnail");
+                                                    Notification::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                                                    ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted](bool success, const std::string& msg){
+                                                        if (success) {
+                                                            Notification::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
+                                                            PendingQueue::get().removeForLevel(levelIDAccepted);
+                                                        } else {
+                                                            Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                                        }
+                                                    });
+                                                } else {
+                                                    log::info("[Keybind] Usuario no es moderador, subiendo sugerencia");
+                                                    Notification::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
+                                                    ThumbnailAPI::get().uploadSuggestion(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, const std::string& msg) {
+                                                        if (success) {
+                                                            log::info("[Keybind] Sugerencia subida exitosamente");
+                                                            PendingQueue::get().addOrBump(levelIDAccepted, PendingCategory::Verify, username, {}, false);
+                                                            Notification::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
+                                                        } else {
+                                                            log::error("[Keybind] Error subiendo sugerencia: {}", msg);
+                                                            Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                                        }
+                                                    });
+                                                }
+                                            });
+                                        }
+                                    }
+                                } catch (const std::exception& e) {
+                                    log::error("[Keybind] Exception en callback: {}", e.what());
+                                    gCaptureInProgress.store(false);
+                                } catch (...) {
+                                    log::error("[Keybind] Exception desconocida en callback");
+                                    gCaptureInProgress.store(false);
+                                }
+                                },
+                                [this](bool hidePlayer, CapturePreviewPopup* popup) {
+                                    s_hidePlayerForCapture = hidePlayer;
+                                    if (popup) popup->setVisible(false);
+                                    gCaptureInProgress = false;
+                                    Loader::get()->queueInMainThread([this, popup]() {
+                                        this->captureScreenshot(popup);
+                                    });
+                                },
+                                s_hidePlayerForCapture
+                            );
+                            if (popup) {
+                                popup->show();
+                            } else {
+                                gCaptureInProgress.store(false);
+                            }
+                        });
+                    });
+                }
+            );
+            log::info("[GIFRecord] Keybind listener registrado para captura");
+        }
+
         log::info("[GIFRecord] init() completado exitosamente");
         return true;
     }
     
+    $override
+    void onQuit() {
+        // limpia el listener cuando salimos del nivel
+        if (m_fields->m_keybindListener) {
+            // el listener se limpia automáticamente con leak(), pero lo marcamos como null
+            m_fields->m_keybindListener = nullptr;
+        }
+        PlayLayer::onQuit();
+    }
+
     void triggerRecapture(float dt) {
         this->captureScreenshot();
     }
@@ -238,127 +431,11 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
 
         std::vector<CCNode*> hidden;
         
-        // estado de visibilidad del player y sus partículas
-        struct PlayerVisState {
-            bool visible = true;
-            bool regTrail = true;
-            bool waveTrail = true;
-            bool ghostTrail = true;
-            bool vehicleGroundPart = true;
-            bool robotFire = true;
-            
-            bool playerGroundPart = true;
-            bool trailingPart = true;
-            bool shipClickPart = true;
-            bool ufoClickPart = true;
-            bool robotBurstPart = true;
-            bool dashPart = true;
-            bool swingBurstPart1 = true;
-            bool swingBurstPart2 = true;
-            bool landPart0 = true;
-            bool landPart1 = true;
-            bool dashFireSprite = true;
-
-            std::vector<std::pair<CCNode*, bool>> otherParticles;
-        };
         PlayerVisState p1State, p2State;
 
-        auto togglePlayer = [](PlayerObject* p, PlayerVisState& state, bool hide) {
-            if (!p) return;
-            
-            auto toggle = [&](CCNode* node, bool& stateVar, bool hideNode) {
-                if (node) {
-                    if (hideNode) {
-                        stateVar = node->isVisible();
-                        node->setVisible(false);
-                    } else {
-                        node->setVisible(stateVar);
-                    }
-                }
-            };
-
-            if (hide) {
-                state.visible = p->isVisible();
-                p->setVisible(false);
-                
-                toggle(p->m_regularTrail, state.regTrail, true);
-                toggle(p->m_waveTrail, state.waveTrail, true);
-                toggle(p->m_ghostTrail, state.ghostTrail, true);
-                toggle(p->m_vehicleGroundParticles, state.vehicleGroundPart, true);
-                toggle(p->m_robotFire, state.robotFire, true);
-                
-                toggle(p->m_playerGroundParticles, state.playerGroundPart, true);
-                toggle(p->m_trailingParticles, state.trailingPart, true);
-                toggle(p->m_shipClickParticles, state.shipClickPart, true);
-                toggle(p->m_ufoClickParticles, state.ufoClickPart, true);
-                toggle(p->m_robotBurstParticles, state.robotBurstPart, true);
-                toggle(p->m_dashParticles, state.dashPart, true);
-                toggle(p->m_swingBurstParticles1, state.swingBurstPart1, true);
-                toggle(p->m_swingBurstParticles2, state.swingBurstPart2, true);
-                toggle(p->m_landParticles0, state.landPart0, true);
-                toggle(p->m_landParticles1, state.landPart1, true);
-                toggle(p->m_dashFireSprite, state.dashFireSprite, true);
-
-                // oculto otras partículas que cuelgan del player
-                auto children = p->getChildren();
-                if (children) {
-                    for (auto* obj : CCArrayExt<CCObject*>(children)) {
-                        if (auto* node = typeinfo_cast<CCNode*>(obj)) {
-                            // me salto miembros que ya manejo arriba para no tocarlos dos veces
-                            if (node == p->m_vehicleGroundParticles || 
-                                node == p->m_robotFire ||
-                                node == p->m_playerGroundParticles ||
-                                node == p->m_trailingParticles ||
-                                node == p->m_shipClickParticles ||
-                                node == p->m_ufoClickParticles ||
-                                node == p->m_robotBurstParticles ||
-                                node == p->m_dashParticles ||
-                                node == p->m_swingBurstParticles1 ||
-                                node == p->m_swingBurstParticles2 ||
-                                node == p->m_landParticles0 ||
-                                node == p->m_landParticles1 ||
-                                node == p->m_dashFireSprite) continue;
-                            
-                            // solo escondo partículas o sprites que parezcan efectos
-                            if (typeinfo_cast<CCParticleSystemQuad*>(node) || typeinfo_cast<CCSprite*>(node)) {
-                                state.otherParticles.push_back({node, node->isVisible()});
-                                node->setVisible(false);
-                            }
-                        }
-                    }
-                }
-
-            } else {
-                p->setVisible(state.visible);
-                
-                toggle(p->m_regularTrail, state.regTrail, false);
-                toggle(p->m_waveTrail, state.waveTrail, false);
-                toggle(p->m_ghostTrail, state.ghostTrail, false);
-                toggle(p->m_vehicleGroundParticles, state.vehicleGroundPart, false);
-                toggle(p->m_robotFire, state.robotFire, false);
-
-                toggle(p->m_playerGroundParticles, state.playerGroundPart, false);
-                toggle(p->m_trailingParticles, state.trailingPart, false);
-                toggle(p->m_shipClickParticles, state.shipClickPart, false);
-                toggle(p->m_ufoClickParticles, state.ufoClickPart, false);
-                toggle(p->m_robotBurstParticles, state.robotBurstPart, false);
-                toggle(p->m_dashParticles, state.dashPart, false);
-                toggle(p->m_swingBurstParticles1, state.swingBurstPart1, false);
-                toggle(p->m_swingBurstParticles2, state.swingBurstPart2, false);
-                toggle(p->m_landParticles0, state.landPart0, false);
-                toggle(p->m_landParticles1, state.landPart1, false);
-                toggle(p->m_dashFireSprite, state.dashFireSprite, false);
-
-                for (auto& pair : state.otherParticles) {
-                    pair.first->setVisible(pair.second);
-                }
-                state.otherParticles.clear();
-            }
-        };
-
         if (s_hidePlayerForCapture) {
-            togglePlayer(this->m_player1, p1State, true);
-            togglePlayer(this->m_player2, p2State, true);
+            paimTogglePlayer(this->m_player1, p1State, true);
+            paimTogglePlayer(this->m_player2, p2State, true);
         }
         
         // oculto UI con checkZ activado en la raíz
@@ -434,8 +511,8 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
         
         // restauro visibilidad de los jugadores
         if (s_hidePlayerForCapture) {
-            togglePlayer(this->m_player1, p1State, false);
-            togglePlayer(this->m_player2, p2State, false);
+            paimTogglePlayer(this->m_player1, p1State, false);
+            paimTogglePlayer(this->m_player2, p2State, false);
         }
         
         if (!data) { 
@@ -478,31 +555,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
             return;
         }
 
-        // helper para ver si el usuario es moderador (copiado de PauseLayer)
-        auto isUserModerator = []() -> bool {
-            try {
-                auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
-                if (std::filesystem::exists(modDataPath)) {
-                    std::ifstream modFile(modDataPath, std::ios::binary);
-                    if (modFile) {
-                        time_t timestamp{};
-                        modFile.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
-                        modFile.close();
-                        auto now = std::chrono::system_clock::now();
-                        auto fileTime = std::chrono::system_clock::from_time_t(timestamp);
-                        auto daysDiff = std::chrono::duration_cast<std::chrono::hours>(now - fileTime).count() / 24;
-                        if (daysDiff < 30) {
-                            return true;
-                        }
-                    }
-                }
-                return Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-            } catch (...) {
-                return false;
-            }
-        };
-
-        bool isMod = isUserModerator();
+        bool isMod = PaimonUtils::isUserModerator();
 
         auto* popup = CapturePreviewPopup::create(
             tex, 

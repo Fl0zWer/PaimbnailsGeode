@@ -54,7 +54,8 @@ bool ImageConverter::rgbToPng(const std::vector<uint8_t>& rgbData, uint32_t widt
     std::ifstream pngFile(tempPath, std::ios::binary);
     if (!pngFile) {
         log::error("[ImageConverter] Failed to open temp PNG file");
-        std::filesystem::remove(tempPath);
+        std::error_code ecRm;
+        std::filesystem::remove(tempPath, ecRm);
         return false;
     }
     

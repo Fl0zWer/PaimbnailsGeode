@@ -4,7 +4,7 @@
 #include <filesystem>
 
 namespace pt {
-    // Open a native file picker dialog to select an image file (png/jpg/jpeg)
+    // Open a native file picker dialog to select an image file (png/jpg/jpeg/webp/gif/bmp/tiff)
     // Windows-only implementation; on other platforms returns std::nullopt.
     std::optional<std::filesystem::path> openImageFileDialog();
 

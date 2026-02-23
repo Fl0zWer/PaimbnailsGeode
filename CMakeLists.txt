@@ -18,6 +18,10 @@ else()
     message(STATUS "Found Geode: $ENV{GEODE_SDK}")
 endif()
 
+if (MSVC)
+    add_compile_options(/FS)
+endif()
+
 add_subdirectory($ENV{GEODE_SDK} ${CMAKE_CURRENT_BINARY_DIR}/geode)
 # target_include_directories(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/geode-deps) removed to prevent ABI conflicts
 
@@ -53,7 +57,8 @@ if (WIN32)
     target_link_libraries(${PROJECT_NAME} winhttp)
     target_compile_definitions(${PROJECT_NAME} PRIVATE GEODE_IS_WINDOWS)
     if (MSVC)
-        target_compile_options(${PROJECT_NAME} PRIVATE /FS)
+        # Fix para __builtin_memset en MSVC (Geode beta.3 + nontype_functional)
+        target_compile_definitions(${PROJECT_NAME} PRIVATE __builtin_memset=memset)
     endif()
     message(STATUS "Building for Windows")
 endif()
@@ -85,5 +90,4 @@ if (APPLE)
     target_link_libraries(${PROJECT_NAME} ${CORE_GRAPHICS} ${IMAGE_IO} ${FOUNDATION})
 endif()
 
-setup_geode_mod(${PROJECT_NAME} EXTERNALS geode.node-ids:1.7.1)
-# Refreshed for PaimonBannerPopup rename
+setup_geode_mod(${PROJECT_NAME} EXTERNALS geode.node-ids:1.23.0)

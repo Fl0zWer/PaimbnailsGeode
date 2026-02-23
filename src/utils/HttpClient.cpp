@@ -265,6 +265,99 @@ void HttpClient::uploadProfileGIF(int accountID, const std::vector<uint8_t>& gif
     );
 }
 
+void HttpClient::uploadProfileImg(int accountID, const std::vector<uint8_t>& imgData, const std::string& username, const std::string& contentType, UploadCallback callback) {
+    PaimonDebug::log("[HttpClient] Uploading profile image for account {} ({} bytes, type: {})", accountID, imgData.size(), contentType);
+
+    std::string url = m_serverURL + "/api/profileimgs/upload";
+
+    // deducir extension del content type
+    std::string ext = "png";
+    if (contentType == "image/gif") ext = "gif";
+    else if (contentType == "image/jpeg") ext = "jpg";
+    else if (contentType == "image/webp") ext = "webp";
+    else if (contentType == "image/bmp") ext = "bmp";
+    else if (contentType == "image/tiff") ext = "tiff";
+
+    std::string filename = "profileimg" + std::to_string(accountID) + "." + ext;
+
+    std::vector<std::pair<std::string, std::string>> formFields = {
+        {"path", "/profileimgs"},
+        {"levelId", std::to_string(accountID)},
+        {"username", username},
+        {"accountID", std::to_string(accountID)}
+    };
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey
+    };
+
+    performUpload(
+        url,
+        "image",
+        filename,
+        imgData,
+        formFields,
+        headers,
+        [callback, accountID](bool success, const std::string& response) {
+            if (success) {
+                PaimonDebug::log("[HttpClient] Profile image upload successful for account {}", accountID);
+                // parse response to detect pending verification
+                std::string resultMsg = "Profile image upload successful";
+                try {
+                    auto jsonRes = matjson::parse(response);
+                    if (jsonRes.isOk()) {
+                        auto json = jsonRes.unwrap();
+                        if (json.contains("pendingVerification") && json["pendingVerification"].asBool().unwrapOr(false)) {
+                            resultMsg = "pending_verification";
+                        }
+                        if (json.contains("message") && json["message"].isString()) {
+                            auto serverMsg = json["message"].asString().unwrapOr("");
+                            if (!serverMsg.empty()) resultMsg = serverMsg;
+                        }
+                    }
+                } catch (...) {}
+                callback(true, resultMsg);
+            } else {
+                log::error("[HttpClient] Profile image upload failed for account {}: {}", accountID, response);
+                callback(false, "Profile image upload failed: " + response);
+            }
+        },
+        contentType
+    );
+}
+
+void HttpClient::uploadProfileImgGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback) {
+    uploadProfileImg(accountID, gifData, username, "image/gif", callback);
+}
+
+void HttpClient::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
+    PaimonDebug::log("[HttpClient] Downloading profile image for account {} (self={})", accountID, isSelf);
+
+    auto now = std::chrono::system_clock::now().time_since_epoch();
+    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Cache-Control: no-cache"
+    };
+
+    std::string url = m_serverURL + "/profileimgs/" + std::to_string(accountID) + "?_ts=" + std::to_string(ts);
+    if (isSelf) {
+        url += "&self=1";
+    }
+
+    performRequest(url, "GET", "", headers, [callback, accountID](bool success, const std::string& resp) {
+        if (success && !resp.empty()) {
+            std::vector<uint8_t> data(resp.begin(), resp.end());
+            PaimonDebug::log("[HttpClient] Profile image downloaded for account {}: {} bytes", accountID, data.size());
+            callback(true, data, 0, 0);
+        } else {
+            PaimonDebug::warn("[HttpClient] No profile image found for account {}", accountID);
+            callback(false, {}, 0, 0);
+        }
+    });
+}
+
 void HttpClient::uploadProfileConfig(int accountID, const std::string& jsonConfig, GenericCallback callback) {
     PaimonDebug::log("[HttpClient] Uploading profile config for account {}", accountID);
     
@@ -680,6 +773,7 @@ void HttpClient::checkModeratorAccount(const std::string& username, int accountI
         if (success) {
             bool isMod = false;
             bool isAdmin = false;
+            bool isVip = false;
             try {
                 auto jsonRes = matjson::parse(response);
                 if (jsonRes.isOk()) {
@@ -689,6 +783,9 @@ void HttpClient::checkModeratorAccount(const std::string& username, int accountI
                     }
                     if (json.contains("isAdmin")) {
                         isAdmin = json["isAdmin"].asBool().unwrapOr(false);
+                    }
+                    if (json.contains("isVip")) {
+                        isVip = json["isVip"].asBool().unwrapOr(false);
                     }
                     // guardo el nuevo mod code si viene del server
                     if (json.contains("newModCode")) {
@@ -704,12 +801,16 @@ void HttpClient::checkModeratorAccount(const std::string& username, int accountI
                 // fallback: busco a mano en el string
                 isMod = response.find("\"isModerator\":true") != std::string::npos || response.find("\"isModerator\": true") != std::string::npos;
                 isAdmin = response.find("\"isAdmin\":true") != std::string::npos || response.find("\"isAdmin\": true") != std::string::npos;
+                isVip = response.find("\"isVip\":true") != std::string::npos || response.find("\"isVip\": true") != std::string::npos;
             } catch (...) {
                 PaimonDebug::warn("[HttpClient] Unknown JSON Error in moderator check, falling back to string search");
                 isMod = response.find("\"isModerator\":true") != std::string::npos || response.find("\"isModerator\": true") != std::string::npos;
                 isAdmin = response.find("\"isAdmin\":true") != std::string::npos || response.find("\"isAdmin\": true") != std::string::npos;
+                isVip = response.find("\"isVip\":true") != std::string::npos || response.find("\"isVip\": true") != std::string::npos;
             }
-            PaimonDebug::log("[HttpClient] User {}#{} => moderator: {}, admin: {}", username, accountID, isMod, isAdmin);
+            // guardar estado VIP como saved value pa uso local
+            Mod::get()->setSavedValue<bool>("is-verified-vip", isVip);
+            PaimonDebug::log("[HttpClient] User {}#{} => moderator: {}, admin: {}, vip: {}", username, accountID, isMod, isAdmin, isVip);
             callback(isMod, isAdmin);
         } else {
             log::error("[HttpClient] Failed secure moderator check for {}#{}: {}", username, accountID, response);
@@ -846,9 +947,8 @@ void HttpClient::submitVote(int levelId, int stars, const std::string& username,
 
 void HttpClient::downloadFromUrl(const std::string& url, DownloadCallback callback) {
     std::vector<std::string> headers = { "X-API-Key: " + m_apiKey };
-    performRequest(url, "GET", "", headers, [callback](bool success, const std::string& resp) {
-        if (success && !resp.empty()) {
-            std::vector<uint8_t> data(resp.begin(), resp.end());
+    performBinaryRequest(url, headers, [callback](bool success, const std::vector<uint8_t>& data) {
+        if (success && !data.empty()) {
             callback(true, data, 0, 0);
         } else {
             callback(false, {}, 0, 0);

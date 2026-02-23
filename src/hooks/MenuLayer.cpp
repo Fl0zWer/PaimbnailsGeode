@@ -61,8 +61,8 @@ class $modify(PaimonMenuLayer, MenuLayer) {
              }
         }
         
-        if (auto lbl = this->getChildByID("player-username")) {
-            static_cast<CCLabelBMFont*>(lbl)->setColor(color);
+        if (auto lbl = typeinfo_cast<CCLabelBMFont*>(this->getChildByID("player-username"))) {
+            lbl->setColor(color);
         }
     } 
 
@@ -91,8 +91,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
 
         // meto el botón de config en el menú de abajo
         if (auto bottomMenu = this->getChildByID("bottom-menu")) {
-            auto btnSpr = CCSprite::createWithSpriteFrameName("GJ_paintBtn_001.png");
-            btnSpr->setScale(0.8f);
+            auto btnSpr = CircleButtonSprite::createWithSpriteFrameName("GJ_paintBtn_001.png", 1.0f, CircleBaseColor::Green, CircleBaseSize::Medium);
             auto btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(PaimonMenuLayer::onBackgroundConfig));
             btn->setID("background-config-btn"_spr);
             bottomMenu->addChild(btn);
@@ -102,8 +101,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             menu->setPosition({0, 0});
             this->addChild(menu);
 
-            auto btnSpr = CCSprite::createWithSpriteFrameName("GJ_paintBtn_001.png");
-            btnSpr->setScale(0.8f);
+            auto btnSpr = CircleButtonSprite::createWithSpriteFrameName("GJ_paintBtn_001.png", 1.0f, CircleBaseColor::Green, CircleBaseSize::Medium);
             auto btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(PaimonMenuLayer::onBackgroundConfig));
             btn->setID("background-config-btn"_spr);
             btn->setPosition({30, 30}); // abajo a la izquierda
@@ -365,7 +363,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         
         if (!profileMenu) return;
 
-        auto profileButton = static_cast<CCMenuItemSpriteExtra*>(profileMenu->getChildByID("profile-button"));
+        auto profileButton = typeinfo_cast<CCMenuItemSpriteExtra*>(profileMenu->getChildByID("profile-button"));
         if (!profileButton) {
              return;
         }

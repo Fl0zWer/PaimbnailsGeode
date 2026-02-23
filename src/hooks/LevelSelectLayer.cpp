@@ -8,6 +8,7 @@
 #include <Geode/binding/FMODAudioEngine.hpp> // acceso directo a FMOD
 #include "../managers/ThumbnailLoader.hpp"
 #include "../managers/DynamicSongManager.hpp"
+#include "../managers/ProfileMusicManager.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/ImageConverter.hpp"
 #include "../utils/Localization.hpp"
@@ -24,16 +25,17 @@
 using namespace geode::prelude;
 using namespace Shaders;
 
-// hook a GameManager para que no pise nuestra canción dinámica
+// hook a GameManager para que no pise nuestra canción dinámica ni la de perfil
 class $modify(PaimonGameManager, GameManager) {
     void fadeInMenuMusic() {
-        if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
-            // si dynamic song esta full activa, probablemente estamos en levelselect o levelinfo.
-            // en estos casos, NO queremos que la musica del menu restaure auto.
-            // la restauro a mano con dynamicsongmanager::stopsong().
-            if (DynamicSongManager::get()->m_isDynamicSongActive) {
-                return;
-            }
+        auto* dsm = DynamicSongManager::get();
+        // Solo bloquear si dynamic song esta activa Y estamos en un layer valido
+        if (dsm->m_isDynamicSongActive && dsm->isInValidLayer()) {
+            return;
+        }
+        // Bloquear si ProfileMusic está reproduciéndose
+        if (ProfileMusicManager::get().isPlaying()) {
+            return;
         }
         GameManager::fadeInMenuMusic();
     }
@@ -52,6 +54,9 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
 
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
+
+        // Registrar que estamos en LevelSelectLayer
+        DynamicSongManager::get()->enterLayer(DynSongLayer::LevelSelect);
 
         // dynamic song + background: setup inicial
         // en GD normal: página 0 = Stereo Madness (id 1)
@@ -347,11 +352,13 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     }
 
     void onBack(CCObject* sender) {
+        DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
         DynamicSongManager::get()->stopSong();
         LevelSelectLayer::onBack(sender);
     }
     
     void keyBackClicked() {
+        DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
         DynamicSongManager::get()->stopSong();
         LevelSelectLayer::keyBackClicked();
     }

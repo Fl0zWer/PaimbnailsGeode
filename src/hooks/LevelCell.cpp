@@ -12,237 +12,13 @@
 #include "../utils/SafeGuard.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/Shaders.hpp"
+#include "../utils/PaimonShaderSprite.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
 using namespace Shaders;
 
 
-
-
-
-
-
-class PaimonShaderSprite : public CCSprite {
-public:
-    float m_intensity = 0.0f;
-    float m_time = 0.0f;
-    float m_brightness = 1.0f;
-    CCSize m_texSize = {0, 0};
-    
-    static PaimonShaderSprite* createWithTexture(CCTexture2D* texture) {
-        auto sprite = new PaimonShaderSprite();
-        if (sprite && sprite->initWithTexture(texture)) {
-            sprite->autorelease();
-            sprite->setID("paimon-shader-sprite"_spr);
-            return sprite;
-        }
-        CC_SAFE_DELETE(sprite);
-        return nullptr;
-    }
-
-    void draw() override {
-        // manual draw implementation pa saltarse hooks potenciales (ej: happy textures)
-        // que puedan crashear con shader sprites custom o texturas generadas.
-
-        CC_NODE_DRAW_SETUP();
-
-        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-        if (intensityLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
-        }
-        
-        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
-        if (timeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
-        }
-
-        GLint brightLoc = getShaderProgram()->getUniformLocationForName("u_brightness");
-        if (brightLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(brightLoc, m_brightness);
-        }
-        
-        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-        if (sizeLoc != -1) {
-            if (m_texSize.width == 0) {
-                    m_texSize = getTexture()->getContentSizeInPixels();
-            }
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, m_texSize.width, m_texSize.height);
-        }
-        
-        ccGLBlendFunc( m_sBlendFunc.src, m_sBlendFunc.dst );
-
-        if (getTexture()) {
-            ccGLBindTexture2D( getTexture()->getName() );
-        } else {
-            ccGLBindTexture2D(0);
-        }
-        
-        // fix: desvincular explicitamente cualquier vbo activo para evitar crashes en drivers (ej: atio6axx.dll)
-        // cuando paso punteros client-side a glvertexattribpointer.
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        ccGLEnableVertexAttribs( kCCVertexAttribFlag_PosColorTex );
-
-        #define kQuadSize sizeof(m_sQuad.bl)
-        uintptr_t offset = (uintptr_t)&m_sQuad;
-
-        // vertex
-        int diff = offsetof( ccV3F_C4B_T2F, vertices);
-        glVertexAttribPointer(kCCVertexAttrib_Position, 3, GL_FLOAT, GL_FALSE, kQuadSize, (void*) (offset + diff));
-
-        // texturas
-        diff = offsetof( ccV3F_C4B_T2F, texCoords);
-        glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
-
-        // color
-        diff = offsetof( ccV3F_C4B_T2F, colors);
-        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, kQuadSize, (void*)(offset + diff));
-
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        
-        CHECK_GL_ERROR_DEBUG();
-        
-        CC_INCREMENT_GL_DRAWS(1);
-    }
-};
-
-class PaimonShaderGradient : public CCSprite {
-public:
-    float m_intensity = 0.0f;
-    float m_time = 0.0f;
-    CCSize m_texSize = {0, 0};
-    ccColor3B m_startColor = {255, 255, 255};
-    ccColor3B m_endColor = {255, 255, 255};
-
-    static PaimonShaderGradient* create(const ccColor4B& start, const ccColor4B& end) {
-        auto sprite = new PaimonShaderGradient();
-        
-        // creo una textura 2x2 blanca manualmente para asegurar que exista
-        unsigned char data[] = {
-            255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255
-        };
-        
-        auto texture = new CCTexture2D();
-        if (texture && texture->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, 2, 2, {2.0f, 2.0f})) {
-            if (sprite && sprite->initWithTexture(texture)) {
-                texture->release(); // el sprite la retiene
-                sprite->autorelease();
-                sprite->setTextureRect({0, 0, 2, 2});
-                sprite->setStartColor({start.r, start.g, start.b});
-                sprite->setEndColor({end.r, end.g, end.b});
-                sprite->setOpacity(start.a);
-                return sprite;
-            }
-        }
-        
-        CC_SAFE_DELETE(texture);
-        CC_SAFE_DELETE(sprite);
-        return nullptr;
-    }
-
-    void setStartColor(const ccColor3B& color) {
-        m_startColor = color;
-        updateGradient();
-    }
-
-    void setEndColor(const ccColor3B& color) {
-        m_endColor = color;
-        updateGradient();
-    }
-    
-    void updateGradient() {
-        GLubyte opacity = getOpacity();
-        ccColor4B start4 = {m_startColor.r, m_startColor.g, m_startColor.b, opacity};
-        ccColor4B end4 = {m_endColor.r, m_endColor.g, m_endColor.b, opacity};
-        
-        // horizontal: izquierda=inicio, derecha=fin
-        // ccsprite quad: bl, br, tl, tr
-        m_sQuad.bl.colors = start4;
-        m_sQuad.tl.colors = start4;
-        m_sQuad.br.colors = end4;
-        m_sQuad.tr.colors = end4;
-    }
-    
-    void setOpacity(GLubyte opacity) override {
-        CCSprite::setOpacity(opacity);
-        updateGradient();
-    }
-    
-    void setContentSize(const CCSize& size) override {
-        CCSprite::setContentSize(size);
-        
-        // fix: actualizo vertices del quad manualmente para coincidir con content size
-        // sprite al tamaño bien, textura 2x2
-        m_sQuad.bl.vertices = {0.0f, 0.0f, 0.0f};
-        m_sQuad.br.vertices = {size.width, 0.0f, 0.0f};
-        m_sQuad.tl.vertices = {0.0f, size.height, 0.0f};
-        m_sQuad.tr.vertices = {size.width, size.height, 0.0f};
-        
-        updateGradient();
-    }
-    
-    // metodo dummy pa coincidir con interfaz cclayergradient
-    void setVector(const CCPoint& vec) {}
-
-    void draw() override {
-        // manual draw implementation pa saltarse hooks potenciales (ej: happy textures)
-        // que puedan crashear con setup de textura costom del gradiente.
-
-        CC_NODE_DRAW_SETUP();
-        
-        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-        if (intensityLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
-        }
-        
-        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
-        if (timeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
-        }
-        
-        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-        if (sizeLoc != -1) {
-            // usar siempre content size actual pa efectos shader en gradiente
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, getContentSize().width, getContentSize().height);
-        }
-
-        ccGLBlendFunc( m_sBlendFunc.src, m_sBlendFunc.dst );
-
-        if (getTexture()) {
-            ccGLBindTexture2D( getTexture()->getName() );
-        } else {
-            ccGLBindTexture2D(0);
-        }
-        
-        // fix: desvincular explicitamente cualquier vbo activo para evitar crashes en drivers (ej: atio6axx.dll)
-        // cuando paso punteros client-side a glvertexattribpointer.
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        ccGLEnableVertexAttribs( kCCVertexAttribFlag_PosColorTex );
-
-        #define kQuadSize sizeof(m_sQuad.bl)
-        uintptr_t offset = (uintptr_t)&m_sQuad;
-
-        // vertex
-        int diff = offsetof( ccV3F_C4B_T2F, vertices);
-        glVertexAttribPointer(kCCVertexAttrib_Position, 3, GL_FLOAT, GL_FALSE, kQuadSize, (void*) (offset + diff));
-
-        // texturas
-        diff = offsetof( ccV3F_C4B_T2F, texCoords);
-        glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
-
-        // color
-        diff = offsetof( ccV3F_C4B_T2F, colors);
-        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, kQuadSize, (void*)(offset + diff));
-
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-        CHECK_GL_ERROR_DEBUG();
-        CC_INCREMENT_GL_DRAWS(1);
-    }
-};
 
 class $modify(PaimonLevelCell, LevelCell) {
     struct Fields {
@@ -277,6 +53,17 @@ class $modify(PaimonLevelCell, LevelCell) {
         Ref<CCTexture2D> m_gifTexture = nullptr;
         Ref<CCTexture2D> m_staticTexture = nullptr;
         bool m_isHovering = false;
+
+        // cache de settings pa no leerlas cada frame (60fps)
+        bool m_settingsCached = false;
+        std::string m_cachedAnimType = "zoom-slide";
+        float m_cachedAnimSpeed = 1.0f;
+        std::string m_cachedAnimEffect = "none";
+        bool m_cachedHoverEnabled = true;
+        bool m_cachedCompactMode = false;
+
+        // version de invalidacion: si cambia, recargar miniatura
+        int m_loadedInvalidationVersion = 0;
     };
     
     // destructor pa marcar celda como destruyendose
@@ -360,9 +147,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         spinner->setZOrder(999);
         
-        try {
-            spinner->setID("paimon-loading-spinner"_spr);
-        } catch (...) {}
+        spinner->setID("paimon-loading-spinner"_spr);
         
         this->addChild(spinner);
         fields->m_loadingSpinner = spinner;
@@ -906,7 +691,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                 this->addChild(ps, bg->getZOrder() + 1); // Above bg
                 
                 ps->resetSystem();
-            } catch (...) {}
+            } catch (const std::exception& e) {
+                log::warn("[LevelCell] Mythic particles failed: {}", e.what());
+            } catch (...) {
+                log::warn("[LevelCell] Mythic particles failed: unknown error");
+            }
         }
     }
 
@@ -1044,7 +833,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                                 };
                                 
                                 if (menuItem->getID() == "paimon-view-button") {
-                                    try { menuItem->setID("view-button"); } catch (...) {}
+                                    menuItem->setID("view-button");
                                 }
                                 fields->m_viewOverlay = menuItem;
                                 menuItem->m_baseScale = menuItem->getScale();
@@ -1136,7 +925,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                                     // if (isDailyCell()) break;
 
                                     if (menuItem->getID() == "paimon-view-button") {
-                                        try { menuItem->setID("view-button"); } catch (...) {}
+                                        menuItem->setID("view-button");
                                     }
                                     fields->m_viewOverlay = menuItem;
                                     menuItem->m_baseScale = menuItem->getScale();
@@ -1407,7 +1196,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         flash->setPosition(centerInParent);
 
         flash->setZOrder(99999);
-        try { flash->setID("paimon-tap-flash"_spr); } catch (...) {}
+        flash->setID("paimon-tap-flash"_spr);
         flashParent->addChild(flash);
         flashParent->reorderChild(flash, 99999);
         log::debug("[LevelCell][Flash] Layer added parent={} (ptr={}, z={})", (void*)flashParent, (void*)flash, flash->getZOrder());
@@ -1528,18 +1317,25 @@ class $modify(PaimonLevelCell, LevelCell) {
         PAIMON_GUARD_END
     }
 
+    void cacheSettings() {
+        auto fields = m_fields.self();
+        if (fields->m_settingsCached) return;
+        fields->m_settingsCached = true;
+        try { fields->m_cachedAnimType = Mod::get()->getSettingValue<std::string>("levelcell-anim-type"); } catch (...) {}
+        try { fields->m_cachedAnimSpeed = Mod::get()->getSettingValue<float>("levelcell-anim-speed"); } catch (...) {}
+        try { fields->m_cachedAnimEffect = Mod::get()->getSettingValue<std::string>("levelcell-anim-effect"); } catch (...) {}
+        try { fields->m_cachedHoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects"); } catch (...) {}
+        try { fields->m_cachedCompactMode = Mod::get()->getSettingValue<bool>("compact-list-mode"); } catch (...) {}
+    }
+
     void checkCenterPosition(float dt) {
         PAIMON_GUARD_BEGIN
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed) return;
             
-            // Check whether hover effects are enabled
-            bool hoverEnabled = true;
-            try {
-                hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
-            } catch (...) {}
-            
-            if (!hoverEnabled) {
+            cacheSettings();
+
+            if (!fields->m_cachedHoverEnabled) {
                 if (fields->m_centerLerp > 0.0f) {
                     fields->m_centerLerp = 0.0f;
                 }
@@ -1563,10 +1359,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             float centerZone = 45.0f;
 
             // Check compact mode
-            bool compactMode = false;
-            try { compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode"); } catch(...) {}
-            
-            if (compactMode) {
+            if (fields->m_cachedCompactMode) {
                 centerZone *= 0.55f; // Reduce by 45% (45px -> 24.75px)
             }
 
@@ -1593,15 +1386,12 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             fields->m_animTime += dt;
 
-            // Read settings
-            std::string animType = "zoom-slide";
-            float speedMult = 1.0f;
-            std::string animEffect = "none";
-            try {
-                animType = Mod::get()->getSettingValue<std::string>("levelcell-anim-type");
-                speedMult = Mod::get()->getSettingValue<float>("levelcell-anim-speed");
-                animEffect = Mod::get()->getSettingValue<std::string>("levelcell-anim-effect");
-            } catch (...) {}
+            cacheSettings();
+
+            // usar settings cacheados en vez de leer cada frame
+            const std::string& animType = fields->m_cachedAnimType;
+            float speedMult = fields->m_cachedAnimSpeed;
+            const std::string& animEffect = fields->m_cachedAnimEffect;
 
             if (animType == "none") {
                  fields->m_centerLerp = 0.0f;
@@ -1660,10 +1450,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
 
             // Apply compact mode reduction
-            bool compactMode = false;
-            try { compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode"); } catch(...) {}
-            
-            if (compactMode) {
+            if (fields->m_cachedCompactMode) {
                 // Reduce intensity of all transformations by 45%
                 float excessZoom = zoomFactor - 1.0f;
                 zoomFactor = 1.0f + (excessZoom * 0.55f);
@@ -2009,6 +1796,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             auto fields = m_fields.self();
             
+            // comprobar si el level cambio
             if (fields->m_lastRequestedLevelID != levelID) {
                 fields->m_thumbnailRequested = false;
                 fields->m_thumbnailApplied = false;
@@ -2016,8 +1804,23 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_hasGif = false;
                 fields->m_gifTexture = nullptr;
                 fields->m_staticTexture = nullptr;
+                fields->m_loadedInvalidationVersion = 0;
             }
-            
+
+            // comprobar si la miniatura fue invalidada (usuario subió una nueva)
+            int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
+            if (fields->m_thumbnailApplied && currentVersion != fields->m_loadedInvalidationVersion) {
+                // la miniatura cambio, forzar recarga
+                log::info("[LevelCell] Thumbnail invalidated for level {}, reloading (v{} -> v{})",
+                    levelID, fields->m_loadedInvalidationVersion, currentVersion);
+                fields->m_thumbnailRequested = false;
+                fields->m_thumbnailApplied = false;
+                fields->m_hasGif = false;
+                fields->m_gifTexture = nullptr;
+                fields->m_staticTexture = nullptr;
+            }
+            fields->m_loadedInvalidationVersion = currentVersion;
+
             if (fields->m_thumbnailRequested) return;
             
             fields->m_requestId++;
@@ -2128,7 +1931,19 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         auto fields = m_fields.self();
         if (!fields) return;
-        
+
+        // comprobar si la miniatura fue invalidada mientras la celda está visible
+        if (fields->m_thumbnailApplied && m_level) {
+            int32_t levelID = m_level->m_levelID.value();
+            if (levelID > 0) {
+                int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
+                if (currentVersion != fields->m_loadedInvalidationVersion) {
+                    // miniatura actualizada, recargar
+                    tryLoadThumbnail();
+                }
+            }
+        }
+
         if (fields->m_hasGif && fields->m_gifTexture && fields->m_thumbSprite) {
             // Check hover
             auto winSize = CCDirector::sharedDirector()->getWinSize();

@@ -66,7 +66,14 @@ public:
     void downloadProfile(int accountID, const std::string& username, DownloadCallback callback);
     // descarga desde url
     void downloadFromUrl(const std::string& url, DownloadCallback callback);
-    
+
+    // sube imagen de perfil (profileimg)
+    void uploadProfileImg(int accountID, const std::vector<uint8_t>& imgData, const std::string& username, const std::string& contentType, UploadCallback callback);
+    // sube gif de perfil (profileimg)
+    void uploadProfileImgGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    // descarga imagen de perfil (profileimg)
+    void downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf = false);
+
     // sube config profile
     void uploadProfileConfig(int accountID, const std::string& jsonConfig, GenericCallback callback);
     // descarga config profile

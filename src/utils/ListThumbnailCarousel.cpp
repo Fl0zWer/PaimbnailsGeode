@@ -12,7 +12,6 @@ using namespace geode::prelude;
 ListThumbnailCarousel::~ListThumbnailCarousel() {
     if (m_alive) *m_alive = false;
     
-    // cancelar descargas, liberar cola
     for (int id : m_levelIDs) {
         ThumbnailLoader::get().cancelLoad(id);
     }
@@ -40,16 +39,12 @@ bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) 
     this->setContentSize(size);
     this->setAnchorPoint({0.5f, 0.5f});
     
-    // no ccclippingnode (scroll visibilidad)
-    // usamos settexturerect en los sprites en su lugar
-    
     m_loadingCircle = CCSprite::create("loadingCircle.png");
     if (m_loadingCircle) {
         this->addChild(m_loadingCircle);
-        // cerca del btn view, padding
         
         m_loadingCircle->setPosition({size.width - 85.0f, size.height / 2});
-        m_loadingCircle->setScale(0.4f); // Slightly smaller
+        m_loadingCircle->setScale(0.4f);
         m_loadingCircle->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.0f)));
     }
 
@@ -59,11 +54,6 @@ bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) 
 void ListThumbnailCarousel::startCarousel() {
     if (m_levelIDs.empty()) return;
     
-    // pre-procesar lista bg (off)
-    // m_alive pa cancelar si nodo se destruye
-    // ListThumbnailManager::get().processList(m_levelIDs, nullptr, m_alive);
-
-    // load primera img
     tryShowNextImage();
 }
 
@@ -75,12 +65,11 @@ void ListThumbnailCarousel::updatePan(float dt) {
     if (!m_currentSprite) return;
     
     m_panElapsed += dt;
-    float duration = 5.0f; // pan lento
+    float duration = 5.0f;
     
     float t = m_panElapsed / duration;
     if (t > 1.0f) t = 1.0f;
     
-    // ease sine in-out
     float easeT = 0.5f * (1.0f - std::cos(t * M_PI));
     
     float currentX = m_panStartRect.origin.x + (m_panEndRect.origin.x - m_panStartRect.origin.x) * easeT;

@@ -9,17 +9,14 @@ using namespace geode::prelude;
 // cacheo el rol: user -> {mod, admin}
 static std::map<std::string, std::pair<bool, bool>> g_moderatorCache;
 
-// guardo profilepage por si hiciera falta (ahora no lo uso)
-static ProfilePage* s_activeProfilePage = nullptr;
-
 void showBadgeInfoPopup(CCNode* sender) {
     std::string title = "Unknown Rank";
     std::string desc = "No description available.";
     
-    if (sender->getID() == "paimon-admin-badge") {
+    if (sender->getID() == "paimon-admin-badge"_spr) {
         title = "Paimbnails Admin";
         desc = "A <cj>Paimbnails Admin</c> is a developer or manager of the <cg>Paimbnails</c> mod. They have full control over the mod's infrastructure and content.";
-    } else if (sender->getID() == "paimon-moderator-badge") {
+    } else if (sender->getID() == "paimon-moderator-badge"_spr) {
         title = "Paimbnails Moderator";
         desc = "A <cj>Paimbnails Moderator</c> is a trusted user who helps review and manage thumbnails for the <cg>Paimbnails</c> mod. They ensure that content follows the guidelines.";
     }
@@ -72,18 +69,18 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (!menu) return;
         
         // si ya esta, no duplico
-        if (menu->getChildByID("paimon-moderator-badge")) return;
-        if (menu->getChildByID("paimon-admin-badge")) return;
+        if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
+        if (menu->getChildByID("paimon-admin-badge"_spr)) return;
 
         CCSprite* badgeSprite = nullptr;
         std::string badgeID;
 
         if (isAdmin) {
             badgeSprite = CCSprite::create("paim_Admin.png"_spr);
-            badgeID = "paimon-admin-badge";
+            badgeID = "paimon-admin-badge"_spr;
         } else if (isMod) {
             badgeSprite = CCSprite::create("paim_Moderador.png"_spr);
-            badgeID = "paimon-moderator-badge";
+            badgeID = "paimon-moderator-badge"_spr;
         }
 
         if (!badgeSprite) return;
@@ -100,15 +97,16 @@ class $modify(BadgeCommentCell, CommentCell) {
         );
         btn->setID(badgeID);
         
-        auto menuNode = static_cast<CCMenu*>(menu);
-        
+        auto menuNode = typeinfo_cast<CCMenu*>(menu);
+        if (!menuNode) return;
+
         // lo meto antes del porcentaje si existe
         if (auto percentage = this->getChildByIDRecursive("percentage-label")) {
             menuNode->insertBefore(btn, percentage);
         } else {
             menuNode->addChild(btn);
         }
-        
+
         menuNode->updateLayout();
     }
 };
@@ -126,18 +124,18 @@ class $modify(BadgeProfilePage, ProfilePage) {
         if (!menu) return;
         
         // si ya esta, no duplico
-        if (menu->getChildByID("paimon-moderator-badge")) return;
-        if (menu->getChildByID("paimon-admin-badge")) return;
+        if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
+        if (menu->getChildByID("paimon-admin-badge"_spr)) return;
 
         CCSprite* badgeSprite = nullptr;
         std::string badgeID;
 
         if (isAdmin) {
             badgeSprite = CCSprite::create("paim_Admin.png"_spr);
-            badgeID = "paimon-admin-badge";
+            badgeID = "paimon-admin-badge"_spr;
         } else if (isMod) {
             badgeSprite = CCSprite::create("paim_Moderador.png"_spr);
-            badgeID = "paimon-moderator-badge";
+            badgeID = "paimon-moderator-badge"_spr;
         }
 
         if (!badgeSprite) return;
@@ -157,8 +155,10 @@ class $modify(BadgeProfilePage, ProfilePage) {
         );
         btn->setID(badgeID);
         
-        static_cast<CCMenu*>(menu)->addChild(btn);
-        static_cast<CCMenu*>(menu)->updateLayout();
+        if (auto menuNode = typeinfo_cast<CCMenu*>(menu)) {
+            menuNode->addChild(btn);
+            menuNode->updateLayout();
+        }
     }
 
     void loadPageFromUserInfo(GJUserScore* score) {
@@ -170,12 +170,10 @@ class $modify(BadgeProfilePage, ProfilePage) {
         std::string username = score->m_userName;
         
         // miro cache primero (pa feedback rapido)
-        bool cachedStatus = false;
         if (g_moderatorCache.contains(username)) {
             auto [isMod, isAdmin] = g_moderatorCache[username];
             if (isMod || isAdmin) {
                 this->addModeratorBadge(isMod, isAdmin);
-                cachedStatus = true;
             }
         }
 
@@ -201,8 +199,6 @@ class $modify(BadgeProfilePage, ProfilePage) {
     }
 
     void onExit() {
-        // el puntero global ya no se usa
-        // if (s_activeProfilePage == this) s_activeProfilePage = nullptr;
         ProfilePage::onExit();
     }
 };

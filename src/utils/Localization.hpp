@@ -88,6 +88,10 @@ private:
             {"layers.recapture_error", "Error al recapturar"},
             {"layers.no_playlayer", "PlayLayer no disponible"},
 
+            // Keybinds
+            {"keybind.capture_triggered", "Captura activada"},
+            {"keybind.capture_paused", "No se puede capturar en pausa"},
+
             // PlayLayer & PauseLayer
             {"capture.action_name", "Capturar Miniatura"},
             {"capture.action_desc", "Toma una captura del nivel actual"},
@@ -332,7 +336,34 @@ private:
             {"ban.popup.error", "Error al banear"},
             {"ban.profile.mod_only", "Solo moderadores/admins"},
             {"ban.profile.self_ban", "No puedes banearte"},
-            {"ban.profile.read_error", "No se pudo leer el usuario"}
+            {"ban.profile.read_error", "No se pudo leer el usuario"},
+
+            // Profile Music
+            {"music.title", "Música de Perfil"},
+            {"music.load_song", "Cargar"},
+            {"music.play_preview", "Reproducir"},
+            {"music.stop_preview", "Detener"},
+            {"music.save", "Guardar"},
+            {"music.delete", "Eliminar"},
+            {"music.song_id_placeholder", "ID de canción..."},
+            {"music.no_song_loaded", "Sin canción cargada"},
+            {"music.loading", "Cargando..."},
+            {"music.download_song", "Descargar canción"},
+            {"music.song_downloaded", "¡Canción descargada!"},
+            {"music.enter_song_id", "Ingresa un ID de canción"},
+            {"music.invalid_song_id", "ID de canción inválido"},
+            {"music.load_error", "No se pudo cargar info. Verifica el ID."},
+            {"music.waveform_error", "No se pudo analizar la forma de onda"},
+            {"music.download_error", "Error al descargar canción"},
+            {"music.fragment_too_long", "El fragmento no puede exceder 20 segundos"},
+            {"music.fragment_too_short", "El fragmento debe ser al menos 5 segundos"},
+            {"music.save_error", "Error al guardar: {}"},
+            {"music.saved", "¡Música de perfil guardada!"},
+            {"music.delete_confirm", "¿Eliminar música de perfil?"},
+            {"music.deleted", "Música de perfil eliminada"},
+            {"music.own_profile_only", "Solo puedes configurar música en tu propio perfil"},
+            {"music.volume", "Volumen:"},
+            {"music.selection", "Selección:"}
         };
 
         // English translations
@@ -371,6 +402,10 @@ private:
             {"layers.recapturing", "Recapturing..."},
             {"layers.recapture_error", "Failed to recapture"},
             {"layers.no_playlayer", "PlayLayer not available"},
+
+            // Keybinds
+            {"keybind.capture_triggered", "Capture triggered"},
+            {"keybind.capture_paused", "Cannot capture while paused"},
 
             // PlayLayer & PauseLayer
             {"capture.action_name", "Capture Thumbnail"},
@@ -616,7 +651,34 @@ private:
             {"ban.popup.error", "Error banning"},
             {"ban.profile.mod_only", "Moderators/Admins only"},
             {"ban.profile.self_ban", "You cannot ban yourself"},
-            {"ban.profile.read_error", "Could not read username"}
+            {"ban.profile.read_error", "Could not read username"},
+
+            // Profile Music
+            {"music.title", "Profile Music"},
+            {"music.load_song", "Load"},
+            {"music.play_preview", "Play"},
+            {"music.stop_preview", "Stop"},
+            {"music.save", "Save"},
+            {"music.delete", "Delete"},
+            {"music.song_id_placeholder", "Song ID..."},
+            {"music.no_song_loaded", "No song loaded"},
+            {"music.loading", "Loading..."},
+            {"music.download_song", "Download song"},
+            {"music.song_downloaded", "Song downloaded!"},
+            {"music.enter_song_id", "Please enter a song ID"},
+            {"music.invalid_song_id", "Invalid song ID"},
+            {"music.load_error", "Could not load song info. Check the ID."},
+            {"music.waveform_error", "Could not analyze song waveform"},
+            {"music.download_error", "Failed to download song"},
+            {"music.fragment_too_long", "Fragment cannot exceed 20 seconds"},
+            {"music.fragment_too_short", "Fragment must be at least 5 seconds"},
+            {"music.save_error", "Failed to save: {}"},
+            {"music.saved", "Profile music saved!"},
+            {"music.delete_confirm", "Delete profile music?"},
+            {"music.deleted", "Profile music deleted"},
+            {"music.own_profile_only", "You can only configure music on your own profile"},
+            {"music.volume", "Volume:"},
+            {"music.selection", "Selection:"}
         };
     }
 

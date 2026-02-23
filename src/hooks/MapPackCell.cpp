@@ -88,10 +88,11 @@ class $modify(PaimonMapPackCell, MapPackCell) {
             // z=-1 pa quedar detras de texto/botones
             carousel->setZOrder(-1); 
             
-            // mandar fondo atras
-            if (this->getChildrenCount() > 0) {
-                auto bg = static_cast<CCNode*>(this->getChildren()->objectAtIndex(0));
-                if (bg) {
+            // mandar fondo atras (buscar por tipo en vez de indice fragil)
+            if (auto bg = this->getChildByType<CCLayerColor>(0)) {
+                bg->setZOrder(-2);
+            } else if (this->getChildrenCount() > 0) {
+                if (auto bg = typeinfo_cast<CCNode*>(this->getChildren()->objectAtIndex(0))) {
                     bg->setZOrder(-2);
                 }
             }

@@ -4,6 +4,7 @@
 #include "../utils/PaimonButtonHighlighter.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -330,7 +331,7 @@ protected:
     */
     
     void setupRating() {
-        if (auto node = m_mainLayer->getChildByID("rating-container")) {
+        if (auto node = m_mainLayer->getChildByID("rating-container"_spr)) {
             node->removeFromParent();
         }
 
@@ -338,7 +339,7 @@ protected:
         
         // container rating arriba
         auto ratingContainer = CCNode::create();
-        ratingContainer->setID("rating-container");
+        ratingContainer->setID("rating-container"_spr);
         ratingContainer->setPosition({contentSize.width / 2.f, 237.f});
         m_mainLayer->addChild(ratingContainer, 100); // z-order alto
         
@@ -1170,10 +1171,11 @@ protected:
 
 #if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
             auto saveDir = Mod::get()->getSaveDir() / "saved_thumbnails";
-            if (!std::filesystem::exists(saveDir)) {
-                std::filesystem::create_directories(saveDir);
+            std::error_code ec;
+            if (!std::filesystem::exists(saveDir, ec)) {
+                std::filesystem::create_directories(saveDir, ec);
             }
-            savePath = (saveDir / fmt::format("thumb_{}.png", m_levelID)).string();
+            savePath = geode::utils::string::pathToString(saveDir / fmt::format("thumb_{}.png", m_levelID));
             Notification::create(Localization::get().getString("level.saving_mod_folder").c_str(), NotificationIcon::Info)->show();
 #else
             auto pathOpt = pt::saveImageFileDialog(L"miniatura.png");
@@ -1182,7 +1184,7 @@ protected:
                 m_isDownloading = false;
                 return;
             }
-            savePath = pathOpt->string();
+            savePath = geode::utils::string::pathToString(*pathOpt);
 #endif
             log::debug("Save path chosen: {}", savePath);
 
@@ -1192,7 +1194,7 @@ protected:
             if (!pathStr) {
                 auto cachePath = ThumbnailLoader::get().getCachePath(m_levelID, ThumbnailLoader::get().hasGIFData(m_levelID));
                 if (std::filesystem::exists(cachePath)) {
-                    pathStr = cachePath.string();
+                    pathStr = geode::utils::string::pathToString(cachePath);
                     fromCache = true;
                 }
             }
@@ -2116,6 +2118,21 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         log::info("[LevelInfoLayer] Fondo aplicado exitosamente (estilo: {}, intensidad: {})", bgStyle, intensity);
     }
     
+    void onEnter() {
+        LevelInfoLayer::onEnter();
+        // delay 0.5s para ganarle a fadeInMenuMusic de GD
+        // (mismo patron probado que funciona en LevelSelectLayer)
+        if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
+            this->scheduleOnce(schedule_selector(PaimonLevelInfoLayer::forcePlayDynamic), 0.5f);
+        }
+    }
+
+    void forcePlayDynamic(float dt) {
+        if (m_level) {
+            DynamicSongManager::get()->playSong(m_level);
+        }
+    }
+
     void onExit() {
         ThumbnailLoader::get().resumeQueue();
         LevelInfoLayer::onExit();
@@ -2145,8 +2162,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 return true;
             }
 
-            // Paimon: cancion dinamica
-            DynamicSongManager::get()->playSong(level);
+            // Paimon: registrar layer y reproducir dynamic song
+            DynamicSongManager::get()->enterLayer(DynSongLayer::LevelInfo);
+            if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
+                // primer intento (puede ser sobreescrito por GD)
+                DynamicSongManager::get()->playSong(level);
+            }
+            // el retry con delay esta en onEnter()
 
             // consumir el flag "abierto desde lista de miniaturas"
             bool fromThumbs = false;
@@ -2368,6 +2390,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         if (leftMenu) {
                             leftMenu->addChild(btn);
                             leftMenu->updateLayout();
+                            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", leftMenu);
                         }
                     }
                     this->release();
@@ -2381,6 +2404,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 log::info("Nivel abierto desde verificación (categoría: {}) - botón listo para usar", verificationQueueCategory);
                 // categoria pa thumbnailviewpopup
                 Mod::get()->setSavedValue("verification-category", verificationQueueCategory);
+            }
+
+            // apply layouts to left menu to restore any vanilla button customizations
+            if (auto menu = static_cast<CCMenu*>(leftMenu)) {
+                ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", menu);
             }
 
             // botones de aceptar/subir ahora se muestran dentro de thumbnailviewpopup
@@ -2557,7 +2585,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         });
     }
 
+    void onPlay(CCObject* sender) {
+        // Fade-out de la dynamic song al entrar al nivel
+        DynamicSongManager::get()->fadeOutForLevelStart();
+        LevelInfoLayer::onPlay(sender);
+    }
+
     void onBack(CCObject* sender) {
+        DynamicSongManager::get()->exitLayer(DynSongLayer::LevelInfo);
         DynamicSongManager::get()->stopSong();
 
         if (m_fields->m_fromVerificationQueue) {
