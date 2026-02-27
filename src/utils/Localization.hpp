@@ -161,6 +161,7 @@ private:
             {"queue.update_tab", "actualizacion"},
             {"queue.report_tab", "reportes"},
             {"queue.no_items", "No hay elementos"},
+            {"queue.select_item", "Selecciona un elemento"},
             {"queue.open_button", "Abrir"},
             {"queue.accept_button", "Aceptar"},
             {"queue.reject_button", "Rechazar"},
@@ -295,6 +296,12 @@ private:
             {"level.no_local_thumb", "No hay miniatura local"},
             {"level.png_error", "Error al generar PNG"},
             {"level.saved_local_server_disabled", "Miniatura guardada localmente (servidor deshabilitado)"},
+            {"level.account_required", "Tienes que tener cuenta para subir"},
+            {"level.no_permissions", "No tienes permisos"},
+            {"level.admin_only_high_votes", "Solo administradores pueden borrar miniaturas con +100 votos"},
+            {"level.confirm_delete_title", "Borrar Miniatura"},
+            {"level.confirm_delete_msg", "Estas seguro de que quieres borrar esta miniatura? Esto tambien eliminara los puntos de rating del creador."},
+            {"level.thumbnail_deleted", "Miniatura borrada"},
 
             // Report Popup
             {"report.title", "Reportar Miniatura"},
@@ -476,6 +483,7 @@ private:
             {"queue.update_tab", "update"},
             {"queue.report_tab", "reports"},
             {"queue.no_items", "No items"},
+            {"queue.select_item", "Select an item"},
             {"queue.open_button", "Open"},
             {"queue.accept_button", "Accept"},
             {"queue.reject_button", "Reject"},
@@ -610,6 +618,12 @@ private:
             {"level.no_local_thumb", "No local thumbnail"},
             {"level.png_error", "Error generating PNG"},
             {"level.saved_local_server_disabled", "Thumbnail saved locally (server disabled)"},
+            {"level.account_required", "You need an account to upload"},
+            {"level.no_permissions", "You don't have permissions"},
+            {"level.admin_only_high_votes", "Only admins can delete thumbnails with 100+ votes"},
+            {"level.confirm_delete_title", "Delete Thumbnail"},
+            {"level.confirm_delete_msg", "Are you sure you want to delete this thumbnail? This will also remove the creator's rating points."},
+            {"level.thumbnail_deleted", "Thumbnail deleted"},
 
             // Report Popup
             {"report.title", "Report Thumbnail"},

@@ -105,6 +105,26 @@ public:
      */
     float getCurrentAmplitude() const;
 
+    /**
+     * Aplica efecto "cueva" a la música del perfil: lowpass filter + pitch más lento.
+     * Usado cuando se abre InfoLayer (comentarios) para distinguirlo del perfil.
+     * Transición suave con fade gradual del DSP.
+     */
+    void applyCaveEffect();
+
+    /**
+     * Quita el efecto "cueva" y restaura la reproducción normal.
+     * Transición suave con fade gradual del DSP.
+     */
+    void removeCaveEffect();
+
+    /**
+     * Fuerza la detención inmediata de toda la reproducción.
+     * Ignora fade-out en curso y limpia todo el estado.
+     * Usar cuando se necesita garantizar que no hay audio activo.
+     */
+    void forceStop();
+
     // === WAVEFORM / VISUALIZACIÓN ===
 
     /**
@@ -218,6 +238,15 @@ private:
     void checkSoundReady();
     void finishPlayback();
     void stopCurrentAudio();
+
+    // Efecto cueva (lowpass + pitch)
+    FMOD::DSP* m_lowpassDSP = nullptr;
+    bool m_caveEffectActive = false;
+    bool m_caveTransitioning = false;
+    float m_originalFrequency = 0.0f;
+    float m_originalVolume = 0.0f;
+    void executeCaveTransitionStep(int step, int totalSteps, float cutoffFrom, float cutoffTo,
+                                    float freqFrom, float freqTo, float volFrom, float volTo, bool applying);
 };
 
 

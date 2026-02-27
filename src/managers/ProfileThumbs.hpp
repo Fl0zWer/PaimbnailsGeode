@@ -1,5 +1,6 @@
 #pragma once
 #include <Geode/DefaultInclude.hpp>
+#include <Geode/utils/cocos.hpp>
 #include <cocos2d.h>
 #include <optional>
 #include <unordered_map>
@@ -23,12 +24,8 @@ float widthFactor = 0.60f; // widthFactor añadido
 };
 
 struct ProfileCacheEntry {
-    // flag global de shutdown: cuando es true, no se debe hacer release() de objetos cocos
-    // porque el CCPoolManager ya puede estar destruido (orden de destructores estáticos indefinido)
-    static inline bool s_shutdownMode = false;
-
-    cocos2d::CCTexture2D* texture;
-    std::string gifKey; // gifKey añadido
+    geode::Ref<cocos2d::CCTexture2D> texture;
+    std::string gifKey;
     cocos2d::ccColor3B colorA;
     cocos2d::ccColor3B colorB;
     float widthFactor;
@@ -40,56 +37,29 @@ struct ProfileCacheEntry {
     
     ProfileCacheEntry(cocos2d::CCTexture2D* tex, cocos2d::ccColor3B ca, cocos2d::ccColor3B cb, float w) 
         : texture(tex), gifKey(""), colorA(ca), colorB(cb), widthFactor(w), 
-          timestamp(std::chrono::steady_clock::now()) {
-        if (texture) texture->retain();
-    }
+          timestamp(std::chrono::steady_clock::now()) {}
 
     ProfileCacheEntry(const std::string& key, cocos2d::ccColor3B ca, cocos2d::ccColor3B cb, float w) 
         : texture(nullptr), gifKey(key), colorA(ca), colorB(cb), widthFactor(w), 
-          timestamp(std::chrono::steady_clock::now()) {
-    }
-    
-    ~ProfileCacheEntry() {
-        if (texture && !s_shutdownMode) texture->release();
-    }
-    
-    // no permito copia
-    ProfileCacheEntry(const ProfileCacheEntry&) = delete;
-    ProfileCacheEntry& operator=(const ProfileCacheEntry&) = delete;
-    
-    // pero sí permito mover
-    ProfileCacheEntry(ProfileCacheEntry&& other) noexcept 
-        : texture(other.texture), gifKey(std::move(other.gifKey)), colorA(other.colorA), colorB(other.colorB), 
-          widthFactor(other.widthFactor), timestamp(other.timestamp), config(other.config) {
-        other.texture = nullptr;
-    }
-    
-    ProfileCacheEntry& operator=(ProfileCacheEntry&& other) noexcept {
-        if (this != &other) {
-            if (texture && !s_shutdownMode) texture->release();
-            texture = other.texture;
-            gifKey = std::move(other.gifKey);
-            colorA = other.colorA;
-            colorB = other.colorB;
-            widthFactor = other.widthFactor;
-            timestamp = other.timestamp;
-            config = other.config;
-            other.texture = nullptr;
-        }
-        return *this;
-    }
+          timestamp(std::chrono::steady_clock::now()) {}
 };
 
 class ProfileThumbs {
 public:
     static ProfileThumbs& get();
     
+    // flag de shutdown: cuando es true, no se liberan objetos cocos en destructores estáticos
+    static inline bool s_shutdownMode = false;
+
     ~ProfileThumbs() {
-        // NO limpiar cache aquí.
         // durante el cierre del proceso los destructores estáticos se ejecutan en orden indefinido
-        // y el CCPoolManager de cocos2d puede ya estar muerto. Llamar release() en texturas
-        // provoca EXCEPTION_ACCESS_VIOLATION en CCPoolManager::removeObject.
-        // El OS libera toda la memoria del proceso al terminar.
+        // y el CCPoolManager de cocos2d puede ya estar muerto. geode::Ref llama release() al destruirse.
+        // en modo shutdown usamos take() para sacar los objetos sin llamar release().
+        if (s_shutdownMode) {
+            for (auto& [id, entry] : m_profileCache) {
+                (void)entry.texture.take();
+            }
+        }
     }
 
     bool saveRGB(int accountID, const uint8_t* rgb, int width, int height);

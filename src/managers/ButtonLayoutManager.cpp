@@ -189,8 +189,7 @@ void ButtonLayoutManager::applyLayoutToMenu(const std::string& sceneKey, cocos2d
     auto children = menu->getChildren();
     if (!children) return;
 
-    for (int i = 0; i < children->count(); ++i) {
-        auto node = static_cast<cocos2d::CCNode*>(children->objectAtIndex(i));
+    for (auto* node : CCArrayExt<cocos2d::CCNode*>(children)) {
         auto item = geode::cast::typeinfo_cast<cocos2d::CCMenuItem*>(node);
         if (!item) continue;
         

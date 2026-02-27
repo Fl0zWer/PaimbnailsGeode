@@ -60,7 +60,6 @@ void HttpClient::performRequest(
     std::vector<std::string> headersCopy = headers;
     std::string modCodeCopy = m_modCode;
     
-        // tiro el request en otro thread
     std::thread([urlCopy, methodCopy, postDataCopy, headersCopy, modCodeCopy, callback]() {
         auto req = web::WebRequest();
 
@@ -83,10 +82,8 @@ void HttpClient::performRequest(
             req.bodyString(postDataCopy);
         }
 
-        // uso la versión sincrona
         web::WebResponse res = (methodCopy == "POST") ? req.postSync(urlCopy) : req.getSync(urlCopy);
 
-        // enviar resultado al main thread
         bool success = res.ok();
         std::string responseStr = success ? res.string().unwrapOr("") : ("HTTP " + std::to_string(res.code()) + ": " + res.string().unwrapOr("Unknown error"));
 

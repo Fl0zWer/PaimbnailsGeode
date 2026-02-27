@@ -664,7 +664,6 @@ void ThumbnailAPI::checkModerator(const std::string& username, ModeratorCallback
 
     std::string url = fmt::format("https://gdbrowser.com/api/profile/{}", username);
 
-    // Usar thread en lugar de async::spawn
     std::thread([this, url, username, currentAccountID, callback]() {
         auto req = web::WebRequest();
         auto response = req.getSync(url);
@@ -766,7 +765,6 @@ void ThumbnailAPI::checkModeratorAccount(const std::string& username, int accoun
 
     std::string url = fmt::format("https://gdbrowser.com/api/profile/{}", username);
 
-    // Usar thread en lugar de async::spawn
     std::thread([this, url, username, currentAccountID, callback]() {
         auto req = web::WebRequest();
         auto response = req.getSync(url);

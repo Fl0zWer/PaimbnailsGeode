@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Geode/DefaultInclude.hpp>
+#include <Geode/utils/cocos.hpp>
 #include <cocos2d.h>
 #include <string>
 #include <deque>
@@ -82,7 +83,7 @@ private:
     std::mutex m_queueMutex;
     
     // cache ram (sesion)
-    std::map<int, cocos2d::CCTexture2D*> m_textureCache;
+    std::map<int, geode::Ref<cocos2d::CCTexture2D>> m_textureCache;
     std::list<int> m_lruOrder;
     const size_t MAX_CACHE_SIZE = 60;
     

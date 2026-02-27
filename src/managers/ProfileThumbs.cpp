@@ -648,15 +648,15 @@ void ProfileThumbs::processQueue() {
 
         ThumbnailAPI::get().downloadProfile(accountID, username, [this, accountID](bool success, CCTexture2D* texture) {
             
-            // retengo la textura para que aguante la siguiente llamada async
-            if (texture) texture->retain();
+            // Ref mantiene la textura viva durante la cadena async
+            Ref<CCTexture2D> texRef = texture;
 
             // engancho la descarga de la config para tener imagen + settings
-            ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, success, texture](bool configSuccess, const ProfileConfig& config) {
+            ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, success, texRef](bool configSuccess, const ProfileConfig& config) {
                 
-                if (success && texture) {
+                if (success && texRef) {
                     // cacheo el perfil con la config (o defaults si la config falló)
-                    this->cacheProfile(accountID, texture, config.colorA, config.colorB, config.widthFactor);
+                    this->cacheProfile(accountID, texRef, config.colorA, config.colorB, config.widthFactor);
                 }
 
                 if (configSuccess) {
@@ -671,13 +671,10 @@ void ProfileThumbs::processQueue() {
                 auto it = m_pendingCallbacks.find(accountID);
                 if (it != m_pendingCallbacks.end()) {
                     for (const auto& cb : it->second) {
-                        if (cb) cb(success, texture);
+                        if (cb) cb(success, texRef);
                     }
                     m_pendingCallbacks.erase(it);
                 }
-                
-                // libero la textura ahora que ya no la necesito
-                if (texture) texture->release();
 
                 // sigo con la cola
                 m_activeDownloads--;

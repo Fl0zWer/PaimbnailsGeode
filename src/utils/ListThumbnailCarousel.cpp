@@ -39,13 +39,10 @@ bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) 
     this->setContentSize(size);
     this->setAnchorPoint({0.5f, 0.5f});
     
-    m_loadingCircle = CCSprite::create("loadingCircle.png");
-    if (m_loadingCircle) {
-        this->addChild(m_loadingCircle);
-        
-        m_loadingCircle->setPosition({size.width - 85.0f, size.height / 2});
-        m_loadingCircle->setScale(0.4f);
-        m_loadingCircle->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.0f)));
+    m_loadingSpinner = geode::LoadingSpinner::create(16.f);
+    if (m_loadingSpinner) {
+        m_loadingSpinner->setPosition({size.width - 85.0f, size.height / 2});
+        this->addChild(m_loadingSpinner);
     }
 
     return true;
@@ -135,13 +132,14 @@ void ListThumbnailCarousel::tryShowNextImage() {
             // double-check padre
             if (!self->getParent()) return;
 
-            if (self->m_loadingCircle) {
-                self->m_loadingCircle->runAction(CCSequence::create(
+            if (self->m_loadingSpinner) {
+                auto* circle = self->m_loadingSpinner;
+                circle->runAction(CCSequence::create(
                     CCFadeOut::create(0.2f),
-                    CCCallFunc::create(self->m_loadingCircle, callfunc_selector(CCNode::removeFromParent)),
+                    CCCallFunc::create(circle, callfunc_selector(CCNode::removeFromParent)),
                     nullptr
                 ));
-                self->m_loadingCircle = nullptr;
+                self->m_loadingSpinner = nullptr;
             }
             if (tex) self->onImageLoaded(tex, levelID);
         }, 0);

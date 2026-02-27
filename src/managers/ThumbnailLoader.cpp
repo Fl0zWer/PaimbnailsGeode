@@ -32,12 +32,12 @@ ThumbnailLoader::ThumbnailLoader() {
 }
 
 ThumbnailLoader::~ThumbnailLoader() {
-    // NO tocar nada aquí.
     // durante el cierre del proceso (destructores estáticos) el orden de destrucción
     // es indefinido: Cocos2d, el autorelease pool, y otros singletons pueden ya estar muertos.
-    // hacer clear() en contenedores con punteros a CCTexture2D puede provocar
-    // EXCEPTION_ACCESS_VIOLATION en CCPoolManager::removeObject.
-    // el OS libera toda la memoria del proceso al terminar, así que es seguro no hacer nada.
+    // geode::Ref llama release() al destruirse. Usamos take() para sacar los punteros sin release().
+    for (auto& [id, ref] : m_textureCache) {
+        (void)ref.take();
+    }
 }
 
 void ThumbnailLoader::initDiskCache() {
@@ -146,6 +146,9 @@ std::filesystem::path ThumbnailLoader::getCachePath(int levelID, bool isGif) {
 void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallback callback, int priority, bool isGif) {
     int key = isGif ? -levelID : levelID;
     
+    // lock protege m_textureCache, m_failedCache y m_tasks de carreras con finishTask
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+
     // 1. reviso cache en RAM
     auto it = m_textureCache.find(key);
     if (it != m_textureCache.end()) {
@@ -155,10 +158,8 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
         
         // fuerzo callback asíncrono pa no trabar la UI
         auto tex = it->second;
-        tex->retain();
         Loader::get()->queueInMainThread([callback, tex]() {
             if (callback) callback(tex, true);
-            tex->release();
         });
         return;
     }
@@ -170,7 +171,6 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     }
 
     // 3. reviso si ya hay una tarea en cola
-    std::lock_guard<std::mutex> lock(m_queueMutex);
     auto taskIt = m_tasks.find(key);
     if (taskIt != m_tasks.end()) {
         // solo agrego el callback a la tarea existente
@@ -493,7 +493,8 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 }
 
 void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success) {
-    // main thread
+    // main thread — lock protege m_textureCache, m_failedCache, m_tasks
+    std::lock_guard<std::mutex> lock(m_queueMutex);
     
     if (success && texture) {
         addToCache(task->levelID, texture);
@@ -503,6 +504,8 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
         }
     }
 
+    // callbacks fuera del lock serían más correctos, pero como estamos en main thread
+    // y los callbacks no deberían re-entrar requestLoad de forma inmediata, es seguro aquí.
     if (!task->cancelled) {
         for (auto& cb : task->callbacks) {
             if (cb) cb(texture, success);
@@ -510,7 +513,6 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
     }
 
     // limpieza
-    std::lock_guard<std::mutex> lock(m_queueMutex);
     m_tasks.erase(task->levelID);
     m_activeTaskCount--;
     
@@ -521,11 +523,6 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
 void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
     if (!texture) return;
     
-    if (m_textureCache.count(levelID)) {
-        m_textureCache[levelID]->release();
-    }
-    
-    texture->retain();
     m_textureCache[levelID] = texture;
     
     m_lruOrder.remove(levelID);
@@ -535,19 +532,11 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
     while (m_lruOrder.size() > MAX_CACHE_SIZE) {
         int removeID = m_lruOrder.front();
         m_lruOrder.pop_front();
-        
-        auto it = m_textureCache.find(removeID);
-        if (it != m_textureCache.end()) {
-            it->second->release();
-            m_textureCache.erase(it);
-        }
+        m_textureCache.erase(removeID);
     }
 }
 
 void ThumbnailLoader::clearCache() {
-    for (auto& [id, tex] : m_textureCache) {
-        tex->release();
-    }
     m_textureCache.clear();
     m_lruOrder.clear();
     m_failedCache.clear();
@@ -561,7 +550,6 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     // quito entrada de la RAM
     auto it = m_textureCache.find(key);
     if (it != m_textureCache.end()) {
-        it->second->release();
         m_textureCache.erase(it);
         m_lruOrder.remove(key);
     }
