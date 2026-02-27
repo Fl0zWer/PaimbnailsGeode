@@ -24,6 +24,8 @@
 #include "../utils/FileDialog.hpp"
 #include "../utils/ModeratorUtils.hpp"
 #include <Geode/binding/LoadingCircle.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
+#include "../utils/PaimonNotification.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -260,7 +262,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         auto pl = PlayLayer::get();
         if (!pl) {
             log::error("[PauseLayer] PlayLayer not available");
-            Notification::create(Localization::get().getString("pause.playlayer_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.playlayer_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
@@ -292,36 +294,11 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         overlay->setID("paimon-loading-overlay"_spr);
         scene->addChild(overlay, 10000);
 
-        auto spinner = CCSprite::create("loadingCircle.png");
-        if (!spinner) spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-        if (spinner) {
-            spinner->setPosition(winSize / 2);
-            spinner->setScale(1.0f);
-            spinner->setBlendFunc({GL_SRC_ALPHA, GL_ONE});
-            spinner->setID("paimon-loading-spinner"_spr);
-            overlay->addChild(spinner, 1);
-        }
-
-        // rota via scheduler (ccactions no corren durante pausa de gd)
-        CCDirector::sharedDirector()->getScheduler()->scheduleSelector(
-            schedule_selector(PaimonPauseLayer::updateSpinner),
-            this, 0.0f, false
-        );
-    }
-
-    void updateSpinner(float dt) {
-        auto scene = CCDirector::sharedDirector()->getRunningScene();
-        if (!scene) return;
-        auto overlay = scene->getChildByID("paimon-loading-overlay"_spr);
-        if (!overlay) {
-            CCDirector::sharedDirector()->getScheduler()->unscheduleSelector(
-                schedule_selector(PaimonPauseLayer::updateSpinner), this
-            );
-            return;
-        }
-        if (auto spinner = overlay->getChildByID("paimon-loading-spinner"_spr)) {
-            spinner->setRotation(spinner->getRotation() + dt * 360.0f);
-        }
+        // geode::LoadingSpinner gira automaticamente via scheduler (funciona durante pausa de GD)
+        auto spinner = geode::LoadingSpinner::create(40.f);
+        spinner->setPosition(winSize / 2);
+        spinner->setID("paimon-loading-spinner"_spr);
+        overlay->addChild(spinner, 1);
     }
 
     void reShowOverlay(float dt) {
@@ -333,9 +310,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     void removeLoadingOverlay() {
         auto scheduler = CCDirector::sharedDirector()->getScheduler();
-        scheduler->unscheduleSelector(
-            schedule_selector(PaimonPauseLayer::updateSpinner), this
-        );
         scheduler->unscheduleSelector(
             schedule_selector(PaimonPauseLayer::reShowOverlay), this
         );
@@ -353,7 +327,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             auto* pl = PlayLayer::get();
             if (!pl || !pl->m_level) {
                 log::error("[PauseLayer] PlayLayer or level not available for capture");
-                Notification::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
                 removeLoadingOverlay();
                 this->setVisible(true);
                 return;
@@ -426,7 +400,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                                 if (username.empty()) {
                                     log::warn("[PauseLayer] No username available");
-                                    Notification::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
+                                    PaimonNotify::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
                                     return;
                                 }
 
@@ -434,7 +408,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                 CCImage img;
                                 if (!img.initWithImageData(buf.get(), w * h * 4, CCImage::kFmtRawData, w, h)) {
                                     log::error("[PauseLayer] Failed to create image for PNG");
-                                    Notification::create(Localization::get().getString("capture.process_error").c_str(), NotificationIcon::Error)->show();
+                                    PaimonNotify::create(Localization::get().getString("capture.process_error").c_str(), NotificationIcon::Error)->show();
                                     return;
                                 }
 
@@ -445,7 +419,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                                 if (!img.saveToFile(geode::utils::string::pathToString(tempPath).c_str(), false)) {
                                     log::error("[PauseLayer] Failed to save temporary PNG");
-                                    Notification::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
+                                    PaimonNotify::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
                                     return;
                                 }
 
@@ -464,38 +438,38 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                 std::filesystem::remove(tempPath);
 
                                 // verifica moderador y sube
-                                Notification::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
 
                                 ThumbnailAPI::get().checkModeratorAccount(username, accountID, [lvlID, pngData, username](bool isMod, bool isAdmin) {
                                     if (isMod || isAdmin) {
                                         // mods/admins suben directamente
                                         log::info("[PauseLayer] User is moderator, uploading directly");
-                                        Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
                                         ThumbnailAPI::get().uploadThumbnail(lvlID, pngData, username, [lvlID](bool success, const std::string& msg) {
                                             if (success) {
                                                 PendingQueue::get().removeForLevel(lvlID);
-                                                Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                                                PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
                                                 log::info("[PauseLayer] Upload successful for level {}", lvlID);
                                             } else {
-                                                Notification::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
+                                                PaimonNotify::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
                                                 log::error("[PauseLayer] Upload failed: {}", msg);
                                             }
                                         });
                                     } else {
                                         // usuarios normales suben sugerencia
                                         log::info("[PauseLayer] User is not moderator, uploading as suggestion");
-                                        Notification::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
 
                                         ThumbnailAPI::get().uploadSuggestion(lvlID, pngData, username, [lvlID, username](bool success, const std::string& msg) {
                                             if (success) {
                                                 ThumbnailAPI::get().checkExists(lvlID, [lvlID, username](bool exists) {
                                                     auto cat = exists ? PendingCategory::Update : PendingCategory::Verify;
                                                     PendingQueue::get().addOrBump(lvlID, cat, username, {}, false);
-                                                    Notification::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                                                    PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
                                                 });
                                             } else {
-                                                Notification::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
+                                                PaimonNotify::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
                                                 log::error("[PauseLayer] Suggestion upload failed: {}", msg);
                                             }
                                         });
@@ -513,7 +487,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         }
                     } else {
                         log::error("[PauseLayer] Capture failed");
-                        Notification::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
                     }
 
                     // restaura menu de pausa
@@ -525,7 +499,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         } catch (std::exception const& e) {
             log::error("[PauseLayer] Failed to perform capture: {}", e.what());
-            Notification::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
             removeLoadingOverlay();
             this->setVisible(true);
         }
@@ -551,7 +525,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             // comprueba existencia miniatura local
             if (!LocalThumbs::get().has(levelID)) {
                 log::warn("[PauseLayer] No local thumbnail for level {}", levelID);
-                Notification::create(Localization::get().getString("pause.no_local_thumb").c_str(), NotificationIcon::Warning)->show();
+                PaimonNotify::create(Localization::get().getString("pause.no_local_thumb").c_str(), NotificationIcon::Warning)->show();
                 return;
             }
             
@@ -571,12 +545,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             
             if (username.empty()) {
                 log::error("[PauseLayer] Username is empty; cannot verify moderator status");
-                Notification::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
                 return;
             }
             
             // no captura puntero nivel (inseguro async)
-            Notification::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
+            PaimonNotify::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
 
             // nota: validacion accountID removida
             ThumbnailAPI::get().checkModeratorAccount(username, 0, [levelID, username](bool approved, bool isAdmin) {
@@ -586,7 +560,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     auto thumbPathOpt = LocalThumbs::get().getThumbPath(levelID);
                     if (!thumbPathOpt.has_value()) {
                         log::error("[PauseLayer] Could not get local thumbnail path");
-                        Notification::create(Localization::get().getString("pause.access_error").c_str(), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("pause.access_error").c_str(), NotificationIcon::Error)->show();
                         return;
                     }
                     
@@ -594,29 +568,29 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     std::vector<uint8_t> pngData;
                     if (!ImageConverter::loadRgbFileToPng(*thumbPathOpt, pngData)) {
                         log::error("[PauseLayer] Failed to convert thumbnail to PNG");
-                        Notification::create(Localization::get().getString("pause.process_thumbnail_error").c_str(), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("pause.process_thumbnail_error").c_str(), NotificationIcon::Error)->show();
                         return;
                     }
                     
                     if (allowModeratorFlow) {
                         log::info("[PauseLayer] Uploading thumbnail ({} bytes) for level {}", pngData.size(), levelID);
-                        Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
                         
                         ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username,
                             [levelID](bool success, const std::string& message) {
                                 if (success) {
-                                    Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                                    PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
                                     PendingQueue::get().removeForLevel(levelID);
                                     log::info("[PauseLayer] Upload successful for level {}", levelID);
                                 } else {
-                                    Notification::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
+                                    PaimonNotify::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
                                     log::error("[PauseLayer] Upload failed for level {}: {}", levelID, message);
                                 }
                             }
                         );
                     } else {
                         log::info("[PauseLayer] User is not moderator; uploading suggestion and enqueueing");
-                        Notification::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
                         
                         ThumbnailAPI::get().uploadSuggestion(levelID, pngData, username, [levelID, username](bool success, const std::string& msg) {
                             if (success) {
@@ -626,11 +600,11 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                     // no puede verificar creador seguro
                                     bool isCreator = false;
                                     PendingQueue::get().addOrBump(levelID, cat, username, {}, isCreator);
-                                    Notification::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                                    PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
                                 });
                             } else {
                                 log::error("[PauseLayer] Failed to upload suggestion: {}", msg);
-                                Notification::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
                             }
                         });
                     }
@@ -639,7 +613,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             
         } catch (std::exception const& e) {
             log::error("[PauseLayer] Exception in onUploadThumbnail: {}", e.what());
-            Notification::create((Localization::get().getString("level.error_prefix") + e.what()).c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create((Localization::get().getString("level.error_prefix") + e.what()).c_str(), NotificationIcon::Error)->show();
         }
     }
     
@@ -653,7 +627,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext == ".gif") {
 #if !defined(GEODE_IS_WINDOWS) && !defined(_WIN32)
-            Notification::create(Localization::get().getString("pause.gif_not_supported").c_str(), NotificationIcon::Warning)->show();
+            PaimonNotify::create(Localization::get().getString("pause.gif_not_supported").c_str(), NotificationIcon::Warning)->show();
             return;
 #else
             // previsualiza gif y permite subir
@@ -661,7 +635,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 std::ifstream gifFile(selectedPath, std::ios::binary | std::ios::ate);
                 if (!gifFile) {
                     log::error("[PauseLayer] Could not open GIF file");
-                    Notification::create(Localization::get().getString("pause.gif_open_error").c_str(), NotificationIcon::Error)->show();
+                    PaimonNotify::create(Localization::get().getString("pause.gif_open_error").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
                 size_t size = static_cast<size_t>(gifFile.tellg());
@@ -679,7 +653,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 
                 if (!loaded) {
                     image->release();
-                    Notification::create(Localization::get().getString("pause.gif_read_error").c_str(), NotificationIcon::Error)->show();
+                    PaimonNotify::create(Localization::get().getString("pause.gif_read_error").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
                 
@@ -693,17 +667,17 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 
                 if (!ok) {
                     texture->release();
-                    Notification::create(Localization::get().getString("pause.gif_texture_error").c_str(), NotificationIcon::Error)->show();
+                    PaimonNotify::create(Localization::get().getString("pause.gif_texture_error").c_str(), NotificationIcon::Error)->show();
                     return;
                 }
                 texture->setAntiAliasTexParameters();
-                texture->retain();
+                // new CCTexture2D() ya da refcount=1. NO retener de nuevo.
                 
                 // obtiene pixeles con ccrendertexture
                 auto renderTex = CCRenderTexture::create(width, height, kCCTexture2DPixelFormat_RGBA8888);
                 if (!renderTex) {
                     texture->release();
-                    Notification::create("Failed to create render texture", NotificationIcon::Error)->show();
+                    PaimonNotify::create("Failed to create render texture", NotificationIcon::Error)->show();
                     return;
                 }
                 
@@ -717,7 +691,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 auto renderedImage = renderTex->newCCImage(false);
                 if (!renderedImage) {
                     texture->release();
-                    Notification::create("Failed to read rendered image", NotificationIcon::Error)->show();
+                    PaimonNotify::create("Failed to read rendered image", NotificationIcon::Error)->show();
                     return;
                 }
                 
@@ -762,22 +736,22 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                             if (auto* gm = GameManager::get()) username = gm->m_playerName;
                         } catch(...) {}
                         if (username.empty()) {
-                            Notification::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
+                            PaimonNotify::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
                             return;
                         }
 
-                        Notification::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
                         // nota: validacion accountID removida
                         ThumbnailAPI::get().checkModeratorAccount(username, 0, [lvlID, username, gifData = std::move(gifData)](bool approved, bool isAdmin) mutable {
                             bool allowModeratorFlow = approved;
                             if (allowModeratorFlow) {
-                                Notification::create(Localization::get().getString("pause.gif_uploading").c_str(), NotificationIcon::Loading)->show();
+                                PaimonNotify::create(Localization::get().getString("pause.gif_uploading").c_str(), NotificationIcon::Loading)->show();
                                 ThumbnailAPI::get().uploadGIF(lvlID, gifData, username, [lvlID](bool ok, const std::string& msg){
                                     if (ok) {
                                         PendingQueue::get().removeForLevel(lvlID);
-                                        Notification::create(Localization::get().getString("pause.gif_uploaded").c_str(), NotificationIcon::Success)->show();
+                                        PaimonNotify::create(Localization::get().getString("pause.gif_uploaded").c_str(), NotificationIcon::Success)->show();
                                     } else {
-                                        Notification::create(Localization::get().getString("pause.gif_upload_error").c_str(), NotificationIcon::Error)->show();
+                                        PaimonNotify::create(Localization::get().getString("pause.gif_upload_error").c_str(), NotificationIcon::Error)->show();
                                     }
                                 });
                             } else {
@@ -786,7 +760,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                     // no puede verificar creador (nivel destruido)
                                     bool isCreator = false;
                                     PendingQueue::get().addOrBump(lvlID, cat, username, {}, isCreator);
-                                    Notification::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Info)->show();
+                                    PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Info)->show();
                                 });
                             }
                         });
@@ -802,7 +776,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
             } catch (std::exception const& e) {
                 log::error("[PauseLayer] Error processing GIF: {}", e.what());
-                Notification::create(Localization::get().getString("pause.gif_process_error").c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create(Localization::get().getString("pause.gif_process_error").c_str(), NotificationIcon::Error)->show();
             }
 #endif  // GEODE_IS_WINDOWS
             return; // detiene flujo png
@@ -812,7 +786,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         std::ifstream pngFile(selectedPath, std::ios::binary | std::ios::ate);
         if (!pngFile) {
             log::error("[PauseLayer] Could not open PNG file");
-            Notification::create(Localization::get().getString("pause.file_open_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.file_open_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
@@ -828,7 +802,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         CCImage* img = new CCImage();
         if (!img->initWithImageData(pngData.data(), fileSize, CCImage::kFmtPng)) {
             log::error("[PauseLayer] Failed to decode selected PNG file");
-            Notification::create(Localization::get().getString("pause.png_invalid").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.png_invalid").c_str(), NotificationIcon::Error)->show();
             img->release();
             return;
         }
@@ -839,7 +813,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         
         if (!imgData) {
             log::error("[PauseLayer] Failed to get image pixel data");
-            Notification::create(Localization::get().getString("pause.process_image_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.process_image_error").c_str(), NotificationIcon::Error)->show();
             img->release();
             return;
         }
@@ -881,7 +855,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         CCTexture2D* texture = new CCTexture2D();
         if (!texture) {
             log::error("[PauseLayer] Failed to create CCTexture2D");
-            Notification::create(Localization::get().getString("pause.create_texture_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.create_texture_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
@@ -895,15 +869,16 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         )) {
             log::error("[PauseLayer] Failed to initialize texture from data");
             texture->release();
-            Notification::create(Localization::get().getString("pause.init_texture_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("pause.init_texture_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
         // mejores parametros
         texture->setAntiAliasTexParameters();
         
-        // retiene textura
-        texture->retain();
+        // new CCTexture2D() ya da refcount=1. NO retener de nuevo.
+        // El popup hará retain al recibirla, y release al cerrar.
+        // Si el popup no se crea, hacemos release abajo.
         
         log::info("[PauseLayer] Texture created successfully using FramebufferCapture method");
 
@@ -949,7 +924,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     CCImage img;
                     if (buf && !img.initWithImageData(buf.get(), w * h * 4, CCImage::kFmtRawData, w, h)) {
                         log::error("[PauseLayer] Failed to create image for PNG");
-                        Notification::create(Localization::get().getString("capture.process_error").c_str(), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.process_error").c_str(), NotificationIcon::Error)->show();
                     } else if (buf) {
                         auto tmpDir = Mod::get()->getSaveDir() / "tmp";
                         std::error_code dirEc;
@@ -957,7 +932,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         auto tempPath = tmpDir / (std::string("thumb_") + std::to_string(lvlID) + ".png");
                         if (!img.saveToFile(geode::utils::string::pathToString(tempPath).c_str(), false)) {
                             log::error("[PauseLayer] Failed to save temporary PNG");
-                            Notification::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
+                            PaimonNotify::create(Localization::get().getString("capture.save_png_error").c_str(), NotificationIcon::Error)->show();
                         } else {
                             std::ifstream pngFile(tempPath, std::ios::binary);
                             if (pngFile) {
@@ -1030,7 +1005,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         } catch (std::exception const& e) {
             log::error("[PauseLayer] Exception in onSelectPNGFile: {}", e.what());
-            Notification::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
         }
     }
 };

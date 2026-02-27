@@ -1,3 +1,18 @@
+# v2.1.3
+
+**Profile Rating System / Sistema de Calificacion de Perfiles**
+
+- <cy>**Rate Profiles**</c>: New star button in profile bottom-menu allows rating other users' profiles with 1-5 stars and an optional message.
+- <cy>**Profile Reviews**</c>: New button in left-menu (always visible) opens a popup showing all profile reviews with star ratings and messages.
+- <cy>**Server Integration**</c>: Profile ratings are stored server-side with duplicate vote handling and average calculation.
+
+**UI Improvements / Mejoras de UI**
+
+- <cy>**Consistent Button Style**</c>: Profile rating button now uses the same small square style as other bottom-menu buttons (message, friend, block).
+- <cy>**Always Visible Reviews**</c>: Profile reviews button is always visible in left-menu, even when user has comments disabled.
+
+---
+
 # v2.1.0
 
 **Leaderboard & Navigation Improvements / Mejoras de Leaderboard y Navegacion**

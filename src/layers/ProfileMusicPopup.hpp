@@ -3,14 +3,14 @@
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/TextInput.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include "../managers/ProfileMusicManager.hpp"
 #include <vector>
 
 using namespace geode::prelude;
 
 /**
- * ProfileMusicPopup - UI para configurar la música del perfil
- * Muestra waveform visual y permite seleccionar fragmento de 20 segundos
+ * ProfileMusicPopup, UI para configurarel perfil
  */
 class ProfileMusicPopup : public geode::Popup {
 protected:
@@ -34,7 +34,7 @@ protected:
     CCLayerColor* m_selectionOverlay = nullptr;
     CCSprite* m_startHandle = nullptr;
     CCSprite* m_endHandle = nullptr;
-    LoadingCircle* m_loadingCircle = nullptr;
+    geode::LoadingSpinner* m_loadingSpinner = nullptr;
 
     // Waveform data
     std::vector<float> m_peaks;
@@ -57,7 +57,7 @@ protected:
     static constexpr int MAX_FRAGMENT_MS = 20000;
     static constexpr int MIN_FRAGMENT_MS = 5000;
 
-    bool setup(int accountID);
+    bool init(int accountID);
 
     void onClose(CCObject*) override;
 

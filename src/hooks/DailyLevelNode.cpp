@@ -1,5 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/DailyLevelNode.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include "../managers/ThumbnailLoader.hpp"
 
 using namespace geode::prelude;
@@ -161,7 +162,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
     struct Fields {
         CCSprite* m_paimonThumb = nullptr;
         CCClippingNode* m_paimonClipper = nullptr;
-        CCSprite* m_loadingSpinner = nullptr;
+        geode::LoadingSpinner* m_loadingSpinner = nullptr;
         int m_levelID = 0;
     };
 
@@ -215,17 +216,11 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         // lo meto con z=1
         this->addChild(m_fields->m_paimonClipper, 1);
 
-        // creo el spinner de carga
-        auto spinner = CCSprite::create("loadingCircle.png");
-        if (!spinner) spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-        if (spinner) {
-            spinner->setScale(0.6f);
-            spinner->setOpacity(200);
-            spinner->setPosition({382.f / 2.f, 116.f / 2.f});
-            spinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.0f)));
-            m_fields->m_paimonClipper->addChild(spinner, 10);
-            m_fields->m_loadingSpinner = spinner;
-        }
+        // creo el spinner de carga (geode::LoadingSpinner gira solo y respeta content size)
+        auto spinner = geode::LoadingSpinner::create(25.f);
+        spinner->setPosition({382.f / 2.f, 116.f / 2.f});
+        m_fields->m_paimonClipper->addChild(spinner, 10);
+        m_fields->m_loadingSpinner = spinner;
 
         // pido la miniatura
         int levelID = level->m_levelID;

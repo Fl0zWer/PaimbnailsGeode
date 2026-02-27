@@ -6,7 +6,7 @@
     "mac": "2.2074",
     "ios": "2.2074"
   },
-  "version": "2.1.0",
+  "version": "2.1.3",
   "id": "flozwer.paimbnails",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -319,8 +319,8 @@
     "optimizer": {
       "type": "bool",
       "name": "Optimizer Mode",
-      "description": "Disables all logs for maximum performance.",
-      "default": true
+      "description": "Disables all logs for maximum performance. Keep OFF for debugging.",
+      "default": false
     },
     "android-safe-mode": {
       "type": "bool",
@@ -340,7 +340,7 @@
       "description": "Max simultaneous downloads (8-15 recommended).",
       "default": 12,
       "min": 1,
-      "max": 100
+      "max": 20
     },
     "test-category": {
       "name": "Test / Debug",
@@ -362,7 +362,7 @@
     "enable-debug-logs": {
       "type": "bool",
       "name": "Enable Debug Logs",
-      "description": "Requires password 'Paimon285'",
+      "description": "Enable verbose debug logging (requires debug password)",
       "default": false
     }
   },

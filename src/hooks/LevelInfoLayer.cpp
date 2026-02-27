@@ -7,6 +7,8 @@
 #include <Geode/utils/string.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <fstream>
@@ -20,7 +22,6 @@
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/PendingQueue.hpp"
 #include "../managers/ThumbnailAPI.hpp"
-// #include "../layers/ThumbnailSelectionPopup.hpp"
 #include "../managers/LevelColors.hpp"
 #include "../managers/ThumbnailLoader.hpp"
 #include "../managers/DynamicSongManager.hpp"
@@ -94,14 +95,14 @@ protected:
     void onPrev(CCObject*) {
         if (m_thumbnails.empty()) return;
         m_currentIndex--;
-        if (m_currentIndex < 0) m_currentIndex = m_thumbnails.size() - 1;
+        if (m_currentIndex < 0) m_currentIndex = static_cast<int>(m_thumbnails.size()) - 1;
         loadThumbnailAt(m_currentIndex);
     }
 
     void onNext(CCObject*) {
         if (m_thumbnails.empty()) return;
         m_currentIndex++;
-        if (m_currentIndex >= m_thumbnails.size()) m_currentIndex = 0;
+        if (m_currentIndex >= static_cast<int>(m_thumbnails.size())) m_currentIndex = 0;
         loadThumbnailAt(m_currentIndex);
     }
 
@@ -255,8 +256,8 @@ protected:
         this->retain();
         
         ThumbnailAPI::get().downloadFromUrl(url, [popupPtr](bool success, CCTexture2D* tex) {
-             if (!popupPtr || !popupPtr->getParent() || !popupPtr->m_mainLayer) {
-                 if (popupPtr) popupPtr->release();
+             if (!popupPtr->getParent() || !popupPtr->m_mainLayer) {
+                 popupPtr->release();
                  return;
              }
              
@@ -274,7 +275,7 @@ protected:
     void onNextSuggestion(CCObject*) {
         if (m_suggestions.empty()) return;
         m_currentIndex++;
-        if (m_currentIndex >= m_suggestions.size()) {
+        if (m_currentIndex >= static_cast<int>(m_suggestions.size())) {
             m_currentIndex = 0;
         }
         loadCurrentSuggestion();
@@ -284,7 +285,7 @@ protected:
         if (m_suggestions.empty()) return;
         m_currentIndex--;
         if (m_currentIndex < 0) {
-            m_currentIndex = m_suggestions.size() - 1;
+            m_currentIndex = static_cast<int>(m_suggestions.size()) - 1;
         }
         loadCurrentSuggestion();
     }
@@ -644,14 +645,17 @@ protected:
     void loadFromVerificationQueue(PendingCategory category, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
         log::info("[ThumbnailViewPopup] Cargando desde cola de verificación - Categoría: {}", static_cast<int>(category));
         
+        // retain antes de capturar this en callbacks async para evitar dangling pointer
+        this->retain();
         LocalThumbnailViewPopup* popupPtr = this;
         
         // bajar segun categoria
         if (category == PendingCategory::Verify) {
             // verify: /suggestions
             ThumbnailAPI::get().downloadSuggestion(m_levelID, [popupPtr, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
-                if (!popupPtr || !popupPtr->getParent() || !popupPtr->m_mainLayer) {
+                if (!popupPtr->getParent() || !popupPtr->m_mainLayer) {
                     log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar suggestion");
+                    popupPtr->release();
                     return;
                 }
                 
@@ -667,8 +671,9 @@ protected:
         } else if (category == PendingCategory::Update) {
             // update: /updates
             ThumbnailAPI::get().downloadUpdate(m_levelID, [popupPtr, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
-                if (!popupPtr || !popupPtr->getParent() || !popupPtr->m_mainLayer) {
+                if (!popupPtr->getParent() || !popupPtr->m_mainLayer) {
                     log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar update");
+                    popupPtr->release();
                     return;
                 }
                 
@@ -684,8 +689,9 @@ protected:
         } else if (category == PendingCategory::Report) {
             // report: thumb reportada
             ThumbnailAPI::get().downloadReported(m_levelID, [popupPtr, maxWidth, maxHeight, content, openedFromReport](bool success, CCTexture2D* tex) {
-                if (!popupPtr || !popupPtr->getParent() || !popupPtr->m_mainLayer) {
+                if (!popupPtr->getParent() || !popupPtr->m_mainLayer) {
                     log::warn("[ThumbnailViewPopup] Popup destruido antes de cargar reported");
+                    popupPtr->release();
                     return;
                 }
                 
@@ -761,43 +767,22 @@ protected:
         ThumbnailLoader::get().requestLoad(m_levelID, fileName, [popupPtr, maxWidth, maxHeight, content, openedFromReport](CCTexture2D* tex, bool) {
             log::info("[ThumbnailViewPopup] === CALLBACK THUMBNAILLOADER ===");
             
-            // popup vivo?
-            try {
-                if (!popupPtr) {
-                    log::warn("[ThumbnailViewPopup] popupPtr es null");
-                    return;
-                }
-                
-                // tiene parent?
-                auto parent = popupPtr->getParent();
-                if (!parent || !popupPtr->m_mainLayer) {
-                    log::warn("[ThumbnailViewPopup] Popup ya no tiene parent o mainLayer válido - objeto destruido");
-                    // release y salir
-                    popupPtr->release();
-                    return;
-                }
-                
-                // usar textura
-                if (tex) {
-                    log::info("[ThumbnailViewPopup] ✓ Textura recibida ({}x{})", 
-                        tex->getPixelsWide(), tex->getPixelsHigh());
-                    popupPtr->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
-                } else {
-                    log::warn("[ThumbnailViewPopup] ✗ ThumbnailLoader no devolvió textura");
-                    log::info("[ThumbnailViewPopup] === TODAS LAS FUENTES FALLARON ===");
-                    popupPtr->showNoThumbnail(content);
-                }
-                
-                // release
+            if (!popupPtr->getParent() || !popupPtr->m_mainLayer) {
+                log::warn("[ThumbnailViewPopup] Popup ya no tiene parent o mainLayer válido");
                 popupPtr->release();
-            } catch (const std::exception& e) {
-                log::error("[ThumbnailViewPopup] Exception en callback: {}", e.what());
-                // release si seguro
-                if (popupPtr) popupPtr->release();
-            } catch (...) {
-                log::error("[ThumbnailViewPopup] Exception desconocida en callback");
-                if (popupPtr) popupPtr->release();
+                return;
             }
+            
+            if (tex) {
+                log::info("[ThumbnailViewPopup] ✓ Textura recibida ({}x{})", 
+                    tex->getPixelsWide(), tex->getPixelsHigh());
+                popupPtr->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
+            } else {
+                log::warn("[ThumbnailViewPopup] ✗ ThumbnailLoader no devolvió textura");
+                popupPtr->showNoThumbnail(content);
+            }
+            
+            popupPtr->release();
         }, 10); // prioridad alta
     }
     
@@ -809,21 +794,9 @@ protected:
         LocalThumbnailViewPopup* popupPtr = this;
         
         HttpClient::get().downloadThumbnail(m_levelID, [popupPtr, maxWidth, maxHeight, content, openedFromReport](bool success, const std::vector<uint8_t>& data, int w, int h) {
-            // popup vivo?
-            try {
-                if (!popupPtr) {
-                    log::warn("[ThumbnailViewPopup] popupPtr es null (descarga servidor)");
-                    return;
-                }
-                
-                auto parent = popupPtr->getParent();
-                if (!parent || !popupPtr->m_mainLayer) {
-                    log::warn("[ThumbnailViewPopup] Popup ya no tiene parent válido (descarga servidor) - no hacer release");
-                    // no release si no existe
-                    return;
-                }
-            } catch (...) {
-                log::error("[ThumbnailViewPopup] Exception al validar popup (descarga servidor)");
+            if (!popupPtr->getParent() || !popupPtr->m_mainLayer) {
+                log::warn("[ThumbnailViewPopup] Popup ya no tiene parent válido (descarga servidor)");
+                popupPtr->release();
                 return;
             }
             
@@ -1176,7 +1149,7 @@ protected:
                 std::filesystem::create_directories(saveDir, ec);
             }
             savePath = geode::utils::string::pathToString(saveDir / fmt::format("thumb_{}.png", m_levelID));
-            Notification::create(Localization::get().getString("level.saving_mod_folder").c_str(), NotificationIcon::Info)->show();
+            PaimonNotify::create(Localization::get().getString("level.saving_mod_folder").c_str(), NotificationIcon::Info)->show();
 #else
             auto pathOpt = pt::saveImageFileDialog(L"miniatura.png");
             if (!pathOpt) {
@@ -1200,7 +1173,7 @@ protected:
             }
             if (!pathStr) {
                 log::error("Thumbnail path not found");
-                Notification::create(Localization::get().getString("level.no_thumbnail").c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create(Localization::get().getString("level.no_thumbnail").c_str(), NotificationIcon::Error)->show();
                 m_isDownloading = false;
                 return;
             }
@@ -1215,25 +1188,41 @@ protected:
                         std::filesystem::copy(srcPath, savePath, std::filesystem::copy_options::overwrite_existing, ec);
                         ok = !ec;
                     } else {
+                        // Load RGB data in background (pure file I/O, no cocos)
                         std::vector<uint8_t> rgbData;
-                        uint32_t width, height;
-                        if (ImageConverter::loadRgbFile(srcPath, rgbData, width, height)) {
+                        uint32_t width = 0, height = 0;
+                        bool loaded = ImageConverter::loadRgbFile(srcPath, rgbData, width, height);
+                        if (loaded) {
                             auto rgba = ImageConverter::rgbToRgba(rgbData, width, height);
-                            auto img = new CCImage();
-                            if (img->initWithImageData(rgba.data(), rgba.size(), CCImage::kFmtRawData, width, height)) {
-                                ok = img->saveToFile(savePath.c_str(), false);
-                            }
-                            img->release();
+                            // CCImage must be used on main thread (inherits CCObject, not thread-safe)
+                            Loader::get()->queueInMainThread([this, rgba = std::move(rgba), width, height, savePath]() {
+                                bool imgOk = false;
+                                auto img = new CCImage();
+                                if (img->initWithImageData(const_cast<uint8_t*>(rgba.data()), rgba.size(), CCImage::kFmtRawData, width, height)) {
+                                    imgOk = img->saveToFile(savePath.c_str(), false);
+                                }
+                                img->release();
+                                m_isDownloading = false;
+                                if (imgOk) {
+                                    log::info("Image saved successfully to {}", savePath);
+                                    PaimonNotify::create(Localization::get().getString("level.saved").c_str(), NotificationIcon::Success)->show();
+                                } else {
+                                    log::error("Failed to save image to {}", savePath);
+                                    PaimonNotify::create(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error)->show();
+                                }
+                                this->release();
+                            });
+                            return; // early return, main thread handles release
                         }
                     }
                     Loader::get()->queueInMainThread([this, ok, savePath]() {
                         m_isDownloading = false;
                         if (ok) {
                             log::info("Image saved successfully to {}", savePath);
-                            Notification::create(Localization::get().getString("level.saved").c_str(), NotificationIcon::Success)->show();
+                            PaimonNotify::create(Localization::get().getString("level.saved").c_str(), NotificationIcon::Success)->show();
                         } else {
                             log::error("Failed to save image to {}", savePath);
-                            Notification::create(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error)->show();
+                            PaimonNotify::create(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error)->show();
                         }
                         this->release();
                     });
@@ -1241,7 +1230,7 @@ protected:
                     Loader::get()->queueInMainThread([this]() {
                         m_isDownloading = false;
                         log::error("Unknown error in save thread");
-                        Notification::create(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("level.save_error").c_str(), NotificationIcon::Error)->show();
                         this->release();
                     });
                 }
@@ -1250,7 +1239,7 @@ protected:
         } catch (std::exception& e) {
             m_isDownloading = false;
             log::error("Exception in onDownloadBtn: {}", e.what());
-            Notification::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
         }
     }
 
@@ -1278,35 +1267,33 @@ protected:
             username = "Unknown";
         }
         
-        // crear circulo de carga
-        auto loading = LoadingCircle::create();
-        loading->setParentLayer(this);
-        loading->setFade(true);
-        loading->show();
-        loading->retain();
+        // spinner de carga
+        auto spinner = geode::LoadingSpinner::create(30.f);
+        spinner->setPosition(m_mainLayer->getContentSize() / 2);
+        spinner->setID("paimon-loading-spinner"_spr);
+        m_mainLayer->addChild(spinner, 100);
+        Ref<geode::LoadingSpinner> loading = spinner;
 
         // check mod antes borrar
         ThumbnailAPI::get().checkModerator(username, [levelID, username, accountID, loading](bool isMod, bool isAdmin) {
             if (!isMod && !isAdmin) {
-                loading->fadeAndRemove();
-                loading->release();
-                Notification::create(Localization::get().getString("level.delete_moderator_only").c_str(), NotificationIcon::Error)->show();
+                if (loading) loading->removeFromParent();
+                PaimonNotify::create(Localization::get().getString("level.delete_moderator_only").c_str(), NotificationIcon::Error)->show();
                 return;
             }
             
             // borrar server + update local
-            // Notification::create(Localization::get().getString("level.deleting_server").c_str(), NotificationIcon::Info)->show();
+            // PaimonNotify::create(Localization::get().getString("level.deleting_server").c_str(), NotificationIcon::Info)->show();
             ThumbnailAPI::get().deleteThumbnail(levelID, username, accountID, [levelID, loading](bool success, const std::string& msg) {
-                loading->fadeAndRemove();
-                loading->release();
+                if (loading) loading->removeFromParent();
 
                 if (success) {
                     // quitar de cola reportes
                     PendingQueue::get().accept(levelID, PendingCategory::Report);
-                    Notification::create(Localization::get().getString("level.deleted_server").c_str(), NotificationIcon::Success)->show();
+                    PaimonNotify::create(Localization::get().getString("level.deleted_server").c_str(), NotificationIcon::Success)->show();
                     log::info("[ThumbnailViewPopup] Miniatura {} eliminada del servidor", levelID);
                 } else {
-                    Notification::create(Localization::get().getString("level.delete_error") + msg, NotificationIcon::Error)->show();
+                    PaimonNotify::create(Localization::get().getString("level.delete_error") + msg, NotificationIcon::Error)->show();
                     log::error("[ThumbnailViewPopup] Error al borrar miniatura: {}", msg);
                 }
             });
@@ -1332,7 +1319,7 @@ protected:
                 log::error("[ThumbnailViewPopup] Excepción al acceder a GameManager");
             }
             
-            Notification::create(Localization::get().getString("level.accepting").c_str(), NotificationIcon::Info)->show();
+            PaimonNotify::create(Localization::get().getString("level.accepting").c_str(), NotificationIcon::Info)->show();
             
             std::string targetFilename = "";
             if (!m_suggestions.empty() && m_currentIndex >= 0 && m_currentIndex < m_suggestions.size()) {
@@ -1348,10 +1335,10 @@ protected:
                     if (success) {
                         // quitar cola local
                         PendingQueue::get().accept(levelID, static_cast<PendingCategory>(category));
-                        Notification::create(Localization::get().getString("level.accepted").c_str(), NotificationIcon::Success)->show();
+                        PaimonNotify::create(Localization::get().getString("level.accepted").c_str(), NotificationIcon::Success)->show();
                         log::info("[ThumbnailViewPopup] Miniatura aceptada para nivel {}", levelID);
                     } else {
-                        Notification::create(Localization::get().getString("level.accept_error") + message, NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("level.accept_error") + message, NotificationIcon::Error)->show();
                         log::error("[ThumbnailViewPopup] Error aceptando miniatura: {}", message);
                     }
                 },
@@ -1367,13 +1354,13 @@ protected:
         // local -> png imageconverter
         auto pathOpt = LocalThumbs::get().getThumbPath(m_levelID);
         if (!pathOpt) {
-            Notification::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
         std::vector<uint8_t> pngData;
         if (!ImageConverter::loadRgbFileToPng(*pathOpt, pngData)) {
-            Notification::create(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
 
@@ -1398,37 +1385,8 @@ protected:
             log::error("[ThumbnailViewPopup] Excepción al acceder a GameManager");
         }
         
-        // upload server off
         log::warn("[ThumbnailViewPopup] Server upload disabled - thumbnail saved locally only");
-        Notification::create(Localization::get().getString("level.saved_local_server_disabled").c_str(), NotificationIcon::Info)->show();
-        
-        /* server code off
-        Notification::create(Localization::get().getString("capture.verifying").c_str(), NotificationIcon::Info)->show();
-        ModeratorVerification::verifyOnline(username, [this, pngData, username](bool approved) {
-            if (approved) {
-                log::info("[ThumbnailViewPopup] User verified as moderator, uploading level {}", m_levelID);
-                Notification::create(Localization::get().getString("capture.uploading").c_str, NotificationIcon::Info)->show();
-                ServerAPI::get().uploadThumbnailPNG(m_levelID, pngData.data(), static_cast<int>(pngData.size()),
-                    [levelID = m_levelID](bool success, const std::string&){
-                        if (success) {
-                            PendingQueue::get().removeForLevel(levelID);
-                            Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
-                        } else {
-                            Notification::create(Localization::get().getString("capture.upload_error").c_str(), NotificationIcon::Error)->show();
-                        }
-                    }
-                );
-            } else {
-                log::info("[ThumbnailViewPopup] Non-moderator user - enqueueing as pending");
-                auto mappedLocal = LocalThumbs::get().getFileName(m_levelID);
-                ServerAPI::get().checkThumbnailExists(m_levelID, [levelID = m_levelID, username, mappedLocal](bool existsServer){
-                    auto cat = (mappedLocal.has_value() || existsServer) ? PendingCategory::Update : PendingCategory::Verify;
-                    PendingQueue::get().addOrBump(levelID, cat, username);
-                    Notification::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Info)->show();
-                });
-            }
-        });
-        */
+        PaimonNotify::create(Localization::get().getString("level.saved_local_server_disabled").c_str(), NotificationIcon::Info)->show();
     }
 
     void onReportBtn(CCObject*) {
@@ -1448,10 +1406,10 @@ protected:
             // enviar report server
             ThumbnailAPI::get().submitReport(levelID, user, reason, [levelID, reason](bool success, const std::string& message) {
                 if (success) {
-                    Notification::create(Localization::get().getString("report.sent_synced") + reason, NotificationIcon::Warning)->show();
+                    PaimonNotify::create(Localization::get().getString("report.sent_synced") + reason, NotificationIcon::Warning)->show();
                     log::info("[ThumbnailViewPopup] Reporte confirmado y enviado al servidor para nivel {}", levelID);
                 } else {
-                    Notification::create(Localization::get().getString("report.saved_local").c_str(), NotificationIcon::Info)->show();
+                    PaimonNotify::create(Localization::get().getString("report.saved_local").c_str(), NotificationIcon::Info)->show();
                     log::warn("[ThumbnailViewPopup] Reporte guardado solo localmente para nivel {}", levelID);
                 }
             });
@@ -1478,38 +1436,37 @@ protected:
         ThumbnailAPI::get().getRating(levelID, username, thumbnailId, [this, levelID, username, accountID](bool success, float avg, int count, int userVote) {
             ThumbnailAPI::get().checkModerator(username, [this, levelID, username, accountID, count](bool isMod, bool isAdmin) {
                 if (!isMod && !isAdmin) {
-                     Notification::create("No tienes permisos", NotificationIcon::Error)->show();
+                     PaimonNotify::create(Localization::get().getString("level.no_permissions"), NotificationIcon::Error)->show();
                      this->release();
                      return;
                 }
                 
                 if (count > 100 && !isAdmin) {
-                    Notification::create("Solo administradores pueden borrar miniaturas con +100 votos", NotificationIcon::Error)->show();
+                    PaimonNotify::create(Localization::get().getString("level.admin_only_high_votes"), NotificationIcon::Error)->show();
                     this->release();
                     return;
                 }
                 
                 geode::createQuickPopup(
-                    "Borrar Miniatura",
-                    "Estas seguro de que quieres borrar esta miniatura? Esto tambien eliminara los puntos de rating del creador.",
-                    "Cancelar", "Borrar",
+                    Localization::get().getString("level.confirm_delete_title").c_str(),
+                    Localization::get().getString("level.confirm_delete_msg").c_str(),
+                    Localization::get().getString("general.cancel").c_str(), Localization::get().getString("level.delete_button").c_str(),
                     [this, levelID, username, accountID](auto, bool btn2) {
                         if (btn2) {
-                            auto loading = LoadingCircle::create();
-                            loading->setParentLayer(this);
-                            loading->setFade(true);
-                            loading->show();
-                            loading->retain();
+                            auto spinner2 = geode::LoadingSpinner::create(30.f);
+                            spinner2->setPosition(m_mainLayer->getContentSize() / 2);
+                            spinner2->setID("paimon-loading-spinner"_spr);
+                            m_mainLayer->addChild(spinner2, 100);
+                            Ref<geode::LoadingSpinner> loading = spinner2;
 
                             ThumbnailAPI::get().deleteThumbnail(levelID, username, accountID, [this, loading](bool success, std::string msg) {
-                                loading->fadeAndRemove();
-                                loading->release();
+                                if (loading) loading->removeFromParent();
 
                                 if (success) {
-                                    Notification::create("Miniatura borrada", NotificationIcon::Success)->show();
+                                    PaimonNotify::create(Localization::get().getString("level.thumbnail_deleted"), NotificationIcon::Success)->show();
                                     this->onClose(nullptr);
                                 } else {
-                                    Notification::create(msg.c_str(), NotificationIcon::Error)->show();
+                                    PaimonNotify::create(msg.c_str(), NotificationIcon::Error)->show();
                                 }
                                 this->release();
                             });
@@ -2213,15 +2170,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 this->retain();
                 auto selfPtr = this;
                 ThumbnailLoader::get().requestLoad(levelID, fileName, [selfPtr, levelID](CCTexture2D* tex, bool success) {
-                    // validar que el layer aun existe antes de usarlo
-                    try {
-                        if (!selfPtr || !selfPtr->getParent()) {
-                            log::warn("[LevelInfoLayer] Layer invalidated before applying pixel background");
-                            // no release si destruido
-                            return;
-                        }
-                    } catch (...) {
-                        log::error("[LevelInfoLayer] Exception validating layer before pixel background");
+                    if (!selfPtr->getParent()) {
+                        log::warn("[LevelInfoLayer] Layer invalidated before applying pixel background");
+                        selfPtr->release();
                         return;
                     }
                     if (tex) {
@@ -2443,15 +2394,15 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 popup->show();
             } else {
                 log::error("Failed to create thumbnail view popup");
-                Notification::create("Error al abrir miniatura", NotificationIcon::Error)->show();
+                PaimonNotify::create("Error al abrir miniatura", NotificationIcon::Error)->show();
             }
             
         } catch (std::exception& e) {
             log::error("Exception in onThumbnailButton: {}", e.what());
-            Notification::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
         } catch (...) {
             log::error("Unknown exception in onThumbnailButton");
-            Notification::create("Error desconocido", NotificationIcon::Error)->show();
+            PaimonNotify::create("Error desconocido", NotificationIcon::Error)->show();
         }
     }
 
@@ -2472,7 +2423,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         log::info("[LevelInfoLayer] Upload local thumbnail button clicked");
         
         if (!m_level) {
-            Notification::create(Localization::get().getString("level.error_prefix") + "nivel no encontrado", NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.error_prefix") + "nivel no encontrado", NotificationIcon::Error)->show();
             return;
         }
         
@@ -2482,7 +2433,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         // existe thumb local?
         if (!LocalThumbs::get().has(levelID)) {
-            Notification::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.no_local_thumb").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
@@ -2504,13 +2455,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         // load local -> png
         auto pathOpt = LocalThumbs::get().getThumbPath(levelID);
         if (!pathOpt) {
-            Notification::create("No se pudo encontrar la miniatura", NotificationIcon::Error)->show();
+            PaimonNotify::create("No se pudo encontrar la miniatura", NotificationIcon::Error)->show();
             return;
         }
         
         std::vector<uint8_t> pngData;
         if (!ImageConverter::loadRgbFileToPng(*pathOpt, pngData)) {
-            Notification::create(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("level.png_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
         
@@ -2522,7 +2473,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             if (isMod || isAdmin) {
                 auto onFinish = [this, levelID](bool success, const std::string& msg) {
                     if (success) {
-                        Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
                         try {
                             auto path = ThumbnailLoader::get().getCachePath(levelID);
                             if (std::filesystem::exists(path)) std::filesystem::remove(path);
@@ -2540,13 +2491,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         });
                         return;
                     } else {
-                        Notification::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
                     }
                     this->release();
                 };
 
                 // subir directo (sobrescribe si hay algo, el servidor hace enforcement)
-                Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+                PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
                 ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username, onFinish);
             } else {
                 // user: existe thumb? suggestion vs update
@@ -2556,26 +2507,26 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     if (exists) {
                         // existe -> update
                         log::info("[LevelInfoLayer] Uploading as update for level {}", levelID);
-                        Notification::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
                         
                         ThumbnailAPI::get().uploadUpdate(levelID, pngData, username, [this](bool success, const std::string& msg) {
                             if (success) {
-                                Notification::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
                             } else {
-                                Notification::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
                             }
                             this->release();
                         });
                     } else {
                         // si no existe -> enviar como sugerencia
                         log::info("[LevelInfoLayer] Uploading as suggestion for level {}", levelID);
-                        Notification::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
                         
                         ThumbnailAPI::get().uploadSuggestion(levelID, pngData, username, [this](bool success, const std::string& msg) {
                             if (success) {
-                                Notification::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.suggested").c_str(), NotificationIcon::Success)->show();
                             } else {
-                                Notification::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.upload_error") + msg, NotificationIcon::Error)->show();
                             }
                             this->release();
                         });

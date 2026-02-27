@@ -14,7 +14,7 @@
 //   asi que tampoco se necesita manejo especial.
 //
 //   el hook se mantiene para logs de diagnostico durante captura y
-//   como punto de extension para mejoras futuras.
+//   como punto de extension para mejoras futuras
 // ─────────────────────────────────────────────────────────────
 
 #include <Geode/Geode.hpp>

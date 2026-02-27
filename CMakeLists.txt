@@ -53,33 +53,27 @@ endif()
 # ==========================================
 
 if (WIN32)
-    # Windows: WinHTTP y definiciones
+    # Windows: WinHTTP para HttpClient
     target_link_libraries(${PROJECT_NAME} winhttp)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE GEODE_IS_WINDOWS)
-    if (MSVC)
-        # Fix para __builtin_memset en MSVC (Geode beta.3 + nontype_functional)
-        target_compile_definitions(${PROJECT_NAME} PRIVATE __builtin_memset=memset)
-    endif()
+    # GEODE_IS_WINDOWS ya lo define el SDK, no redefinir
     message(STATUS "Building for Windows")
 endif()
 
 if (ANDROID)
     # Android: configuraciones específicas
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -u ANativeActivity_onCreate")
-    target_compile_definitions(${PROJECT_NAME} PRIVATE GEODE_IS_ANDROID)
+    target_link_options(${PROJECT_NAME} PRIVATE "-u" "ANativeActivity_onCreate")
+    # GEODE_IS_ANDROID ya lo define el SDK, no redefinir
     target_link_libraries(${PROJECT_NAME} log android)
     message(STATUS "Building for Android")
 endif()
 
 if (APPLE)
     # macOS/iOS: Frameworks del sistema
-    target_compile_definitions(${PROJECT_NAME} PRIVATE GEODE_IS_APPLE)
+    # GEODE_IS_APPLE / GEODE_IS_IOS / GEODE_IS_MACOS ya los define el SDK, no redefinir
     
     if (IOS OR "${CMAKE_SYSTEM_NAME}" STREQUAL "iOS")
-        target_compile_definitions(${PROJECT_NAME} PRIVATE GEODE_IS_IOS)
         message(STATUS "Building for iOS")
     else()
-        target_compile_definitions(${PROJECT_NAME} PRIVATE GEODE_IS_MACOS)
         message(STATUS "Building for macOS")
     endif()
     

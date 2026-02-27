@@ -1,4 +1,5 @@
 #include "ProfileMusicPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "../utils/Localization.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -8,7 +9,7 @@ using namespace geode::prelude;
 
 ProfileMusicPopup* ProfileMusicPopup::create(int accountID) {
     auto ret = new ProfileMusicPopup();
-    if (ret && ret->setup(accountID)) {
+    if (ret && ret->init(accountID)) {
         ret->autorelease();
         return ret;
     }
@@ -16,7 +17,7 @@ ProfileMusicPopup* ProfileMusicPopup::create(int accountID) {
     return nullptr;
 }
 
-bool ProfileMusicPopup::setup(int accountID) {
+bool ProfileMusicPopup::init(int accountID) {
     if (!Popup::init(440.f, 300.f)) return false;
 
     m_accountID = accountID;
@@ -24,10 +25,10 @@ bool ProfileMusicPopup::setup(int accountID) {
     this->setTitle("Profile Music");
 
     m_mainMenu = CCMenu::create();
+    m_mainMenu->setID("main-menu"_spr);
     m_mainMenu->setPosition(CCPointZero);
     m_mainLayer->addChild(m_mainMenu);
 
-    // Touch for waveform dragging - use lower priority than input
     this->setTouchEnabled(true);
     this->setTouchMode(kCCTouchesOneByOne);
     this->setTouchPriority(-200);
@@ -76,13 +77,13 @@ void ProfileMusicPopup::createSongIdInput() {
 void ProfileMusicPopup::createWaveformDisplay() {
     auto winSize = m_mainLayer->getContentSize();
 
-    // Waveform container reducido 75%
+    // Waveform container
     m_waveformWidth = 360.f;
-    m_waveformHeight = 50.f;  // Reducido 75%
+    m_waveformHeight = 50.f; 
     m_waveformX = (winSize.width - m_waveformWidth) / 2;
     m_waveformY = winSize.height - 140.f;
 
-    // Fondo estilo GD con borde
+    // Fondo estilo GD
     auto waveformBg = CCScale9Sprite::create("square02b_001.png", {0, 0, 80, 80});
     waveformBg->setContentSize({m_waveformWidth + 10.f, m_waveformHeight + 10.f});
     waveformBg->setColor({0, 0, 0});
@@ -96,32 +97,32 @@ void ProfileMusicPopup::createWaveformDisplay() {
     m_waveformContainer->setContentSize({m_waveformWidth, m_waveformHeight});
     m_mainLayer->addChild(m_waveformContainer);
 
-    // Selection overlay - OCULTO hasta que se cargue el waveform, MUY SUTIL
-    m_selectionOverlay = CCLayerColor::create({100, 255, 255, 30}); // Muy transparente
+    // Selection overlay
+    m_selectionOverlay = CCLayerColor::create({100, 255, 255, 30}); 
     m_selectionOverlay->setContentSize({m_waveformWidth, m_waveformHeight});
     m_selectionOverlay->setPosition({0, 0});
-    m_selectionOverlay->setVisible(false); // Oculto inicialmente
+    m_selectionOverlay->setVisible(false); 
     m_waveformContainer->addChild(m_selectionOverlay, 1);
 
-    // Start handle - OCULTO hasta que se cargue el waveform
+    // Start handle
     m_startHandle = CCSprite::createWithSpriteFrameName("edit_rightBtn_001.png");
     if (!m_startHandle) m_startHandle = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     if (m_startHandle) {
         m_startHandle->setScale(0.7f);
-        m_startHandle->setColor({0, 255, 100}); // Verde GD
+        m_startHandle->setColor({0, 255, 100}); 
         m_startHandle->setPosition({0, m_waveformHeight / 2});
-        m_startHandle->setVisible(false); // Oculto inicialmente
+        m_startHandle->setVisible(false); 
         m_waveformContainer->addChild(m_startHandle, 3);
     }
 
-    // End handle - OCULTO hasta que se cargue el waveform
+    // End handle
     m_endHandle = CCSprite::createWithSpriteFrameName("edit_leftBtn_001.png");
     if (!m_endHandle) m_endHandle = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
     if (m_endHandle) {
         m_endHandle->setScale(0.7f);
-        m_endHandle->setColor({255, 50, 100}); // Rojo/rosa GD
+        m_endHandle->setColor({255, 50, 100}); 
         m_endHandle->setPosition({m_waveformWidth * 0.5f, m_waveformHeight / 2});
-        m_endHandle->setVisible(false); // Oculto inicialmente
+        m_endHandle->setVisible(false);
         m_waveformContainer->addChild(m_endHandle, 3);
     }
 
@@ -571,7 +572,7 @@ void ProfileMusicPopup::onDownloadSong(CCObject*) {
 
         if (success) {
             m_previewPath = path;
-            Notification::create("Song downloaded! You can now preview.", NotificationIcon::Success)->show();
+            PaimonNotify::create("Song downloaded! You can now preview.", NotificationIcon::Success)->show();
         } else {
             showError("Failed to download song");
         }
@@ -600,7 +601,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
     config.songID = m_songID;
     config.startMs = m_startMs;
     config.endMs = m_endMs;
-    config.volume = 1.0f; // Siempre usar 1.0, el volumen se maneja con el del juego
+    config.volume = 1.0f; // Siempre usar 1.0
     config.enabled = true;
     config.songName = m_songName;
     config.artistName = m_artistName;
@@ -611,7 +612,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
         hideLoading();
 
         if (success) {
-            Notification::create("Profile music saved!", NotificationIcon::Success)->show();
+            PaimonNotify::create("Profile music saved!", NotificationIcon::Success)->show();
             this->onClose(nullptr);
         } else {
             showError(fmt::format("Failed to save: {}", msg));
@@ -620,7 +621,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
 }
 
 void ProfileMusicPopup::onDelete(CCObject*) {
-    // Create a simple confirmation using geode's createQuickPopup
+    // Create a simple confirmation
     geode::createQuickPopup(
         "Delete Music",
         "Are you sure you want to remove your profile music?",
@@ -636,7 +637,7 @@ void ProfileMusicPopup::onDelete(CCObject*) {
                     hideLoading();
 
                     if (success) {
-                        Notification::create("Profile music deleted!", NotificationIcon::Success)->show();
+                        PaimonNotify::create("Profile music deleted!", NotificationIcon::Success)->show();
                         this->onClose(nullptr);
                     } else {
                         showError(fmt::format("Failed to delete: {}", msg));
@@ -672,18 +673,18 @@ void ProfileMusicPopup::loadExistingConfig() {
 }
 
 void ProfileMusicPopup::showLoading() {
-    if (m_loadingCircle) return;
+    if (m_loadingSpinner) return;
 
-    m_loadingCircle = LoadingCircle::create();
-    m_loadingCircle->setParentLayer(this);
-    m_loadingCircle->setFade(true);
-    m_loadingCircle->show();
+    m_loadingSpinner = geode::LoadingSpinner::create(30.f);
+    m_loadingSpinner->setPosition(m_mainLayer->getContentSize() / 2);
+    m_loadingSpinner->setID("paimon-loading-spinner"_spr);
+    m_mainLayer->addChild(m_loadingSpinner, 100);
 }
 
 void ProfileMusicPopup::hideLoading() {
-    if (m_loadingCircle) {
-        m_loadingCircle->fadeAndRemove();
-        m_loadingCircle = nullptr;
+    if (m_loadingSpinner) {
+        m_loadingSpinner->removeFromParent();
+        m_loadingSpinner = nullptr;
     }
 }
 

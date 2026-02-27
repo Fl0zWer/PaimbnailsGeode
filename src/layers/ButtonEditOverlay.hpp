@@ -25,7 +25,7 @@ protected:
     std::string m_sceneKey;
     cocos2d::CCMenu* m_targetMenu = nullptr;
     std::vector<cocos2d::CCMenu*> m_extraMenus;
-    std::vector<cocos2d::CCMenu*> m_disabledMenus;
+    std::vector<geode::Ref<cocos2d::CCMenu>> m_disabledMenus;
     std::vector<EditableButton> m_editableButtons;
     EditableButton* m_selectedButton = nullptr;
     bool m_isClosing = false;

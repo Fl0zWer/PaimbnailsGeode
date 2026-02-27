@@ -2,6 +2,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/binding/UserInfoDelegate.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJUserScore.hpp>
@@ -11,7 +12,7 @@ protected:
     cocos2d::CCArray* m_scores;
     CustomListView* m_listView;
     GJListLayer* m_listLayer;
-    LoadingCircle* m_loadingCircle = nullptr;
+    geode::LoadingSpinner* m_loadingSpinner = nullptr;
     int m_pendingRequests = 0;
     std::vector<std::string> m_moderatorNames;
 

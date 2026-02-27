@@ -5,19 +5,19 @@
 #include <Geode/utils/string.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/binding/BoomScrollLayer.hpp>
-#include <Geode/binding/LoadingCircle.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include "../managers/ThumbnailLoader.hpp"
 
 using namespace geode::prelude;
 
 class SimpleThumbnailPopup : public geode::Popup {
 protected:
-    void setup(std::pair<CCTexture2D*, std::string> const& params) { // not override
-        auto tex = params.first;
-        auto title = params.second;
+    bool init(CCTexture2D* tex, std::string const& title) {
+        if (!Popup::init(400.f, 280.f)) return false;
+
         this->setTitle(title.c_str());
         
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
         auto m_size = this->m_mainLayer->getContentSize();
         
         auto spr = CCSprite::createWithTexture(tex);
@@ -37,13 +37,13 @@ protected:
         
         this->setZOrder(10500);
         this->setID("SimpleThumbnailPopup"_spr);
+        return true;
     }
     
 public:
     static SimpleThumbnailPopup* create(CCTexture2D* tex, std::string const& title) {
         auto ret = new SimpleThumbnailPopup();
-        if (ret && ret->init(400.f, 280.f)) {
-            ret->setup({tex, title});
+        if (ret && ret->init(tex, title)) {
             ret->autorelease();
             return ret;
         }
@@ -284,19 +284,21 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
          else if (levelID == 5003) levelName = "The Cellar";
          else if (levelID == 5004) levelName = "The Secret Hollow";
          
-         auto loading = LoadingCircle::create();
-         loading->setParentLayer(this);
-         loading->setFade(true);
-         loading->show();
+         auto winSz = CCDirector::sharedDirector()->getWinSize();
+         auto spinner = geode::LoadingSpinner::create(30.f);
+         spinner->setPosition(winSz / 2);
+         spinner->setID("paimon-loading-spinner"_spr);
+         this->addChild(spinner, 100);
+         Ref<geode::LoadingSpinner> loading = spinner;
          
          ThumbnailLoader::get().requestLoad(levelID, "", [this, loading, levelName](CCTexture2D* tex, bool success){
-             if (loading) loading->fadeAndRemove();
+             if (loading) loading->removeFromParent();
              
              if (success && tex) {
                   auto popup = SimpleThumbnailPopup::create(tex, levelName);
                   popup->show();
              } else {
-                  Notification::create("Thumbnail not found for this level", NotificationIcon::Error)->show();
+                  PaimonNotify::create("Thumbnail not found for this level", NotificationIcon::Error)->show();
              }
          });
     }

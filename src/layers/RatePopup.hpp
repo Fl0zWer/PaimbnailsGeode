@@ -1,5 +1,6 @@
 #pragma once
 #include <Geode/Geode.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include "../managers/ThumbnailAPI.hpp"
 
 class RatePopup : public geode::Popup {

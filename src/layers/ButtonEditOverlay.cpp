@@ -85,9 +85,9 @@ bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu,
 }
 
 ButtonEditOverlay::~ButtonEditOverlay() {
-    // Re-habilitar menus desactivados
-    for (auto* menu : m_disabledMenus) {
-        if (menu) menu->setEnabled(true);
+    // Re-habilitar menus desactivados (Ref mantiene los punteros válidos)
+    for (auto& menuRef : m_disabledMenus) {
+        if (menuRef && menuRef->getParent()) menuRef->setEnabled(true);
     }
     m_disabledMenus.clear();
 
@@ -161,7 +161,7 @@ void ButtonEditOverlay::disableOtherMenus(CCNode* root) {
             }
             if (!isOurs && menu->isEnabled()) {
                 menu->setEnabled(false);
-                m_disabledMenus.push_back(menu);
+                m_disabledMenus.push_back(geode::Ref<CCMenu>(menu));
             }
         }
 

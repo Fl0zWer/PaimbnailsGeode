@@ -81,8 +81,7 @@ static void sortScoresByPriority(CCArray* scores, const std::vector<std::string>
     if (!scores) return;
     auto toVec = std::vector<GJUserScore*>();
     toVec.reserve(scores->count());
-    for (unsigned i = 0; i < scores->count(); ++i) {
-        auto obj = typeinfo_cast<GJUserScore*>(scores->objectAtIndex(i));
+    for (auto* obj : CCArrayExt<GJUserScore*>(scores)) {
         if (!obj) continue;
         obj->retain(); // no borrar al quitar del array
         toVec.push_back(obj);
@@ -113,9 +112,10 @@ static void sortScoresByPriority(CCArray* scores, const std::vector<std::string>
 }
 
 void ModeratorsLayer::fetchModerators() {
-    m_loadingCircle = LoadingCircle::create();
-    m_loadingCircle->setParentLayer(this);
-    m_loadingCircle->show();
+    m_loadingSpinner = geode::LoadingSpinner::create(40.f);
+    m_loadingSpinner->setPosition(m_mainLayer->getContentSize() / 2);
+    m_loadingSpinner->setID("paimon-loading-spinner"_spr);
+    m_mainLayer->addChild(m_loadingSpinner, 100);
 
     m_scores = CCArray::create();
     m_scores->retain();
@@ -127,9 +127,9 @@ void ModeratorsLayer::fetchModerators() {
         if (!layer) return;
 
         if (!success || moderators.empty()) {
-            if (layer->m_loadingCircle) {
-                layer->m_loadingCircle->fadeAndRemove();
-                layer->m_loadingCircle = nullptr;
+            if (layer->m_loadingSpinner) {
+                layer->m_loadingSpinner->removeFromParent();
+                layer->m_loadingSpinner = nullptr;
             }
             layer->createList();
             return;
@@ -148,7 +148,6 @@ void ModeratorsLayer::fetchGDBrowserProfile(const std::string& username) {
     
     WeakRef<ModeratorsLayer> self = this;
 
-    // usar thread directo en lugar de taskholder
     std::thread([self, username, url]() {
         auto req = web::WebRequest();
         auto res = req.getSync(url);
@@ -220,9 +219,9 @@ void ModeratorsLayer::onProfileFetched(const std::string& username, const std::s
 }
 
 void ModeratorsLayer::onAllProfilesFetched() {
-    if (m_loadingCircle) {
-        m_loadingCircle->fadeAndRemove();
-        m_loadingCircle = nullptr;
+    if (m_loadingSpinner) {
+        m_loadingSpinner->removeFromParent();
+        m_loadingSpinner = nullptr;
     }
     
     sortScoresByPriority(m_scores, m_moderatorNames);
@@ -331,6 +330,7 @@ void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
                 auto s = typeinfo_cast<GJUserScore*>(m_scores->objectAtIndex(i));
                 if (s && s->m_accountID == score->m_accountID) {
                     m_scores->removeObjectAtIndex(i);
+                    break;
                 }
             }
             // inserta pos correcta

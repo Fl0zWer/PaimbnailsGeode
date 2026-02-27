@@ -1,4 +1,5 @@
 #include "AddModeratorPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/Localization.hpp"
@@ -7,6 +8,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/ui/GeodeUI.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -213,7 +215,7 @@ void AddModeratorPopup::onAdd(CCObject*) {
     std::string username = m_usernameInput->getString();
     
     if (username.empty()) {
-        Notification::create(
+        PaimonNotify::create(
             Localization::get().getString("addmod.enter_username").c_str(), 
             NotificationIcon::Warning
         )->show();
@@ -223,22 +225,21 @@ void AddModeratorPopup::onAdd(CCObject*) {
     auto gm = GameManager::get();
     std::string adminUser = gm->m_playerName;
     
-    m_loadingCircle = LoadingCircle::create();
-    if (m_loadingCircle) {
-        m_loadingCircle->setParentLayer(this);
-        m_loadingCircle->show();
-    }
+    m_loadingSpinner = geode::LoadingSpinner::create(30.f);
+    m_loadingSpinner->setPosition(m_mainLayer->getContentSize() / 2);
+    m_loadingSpinner->setID("paimon-loading-spinner"_spr);
+    m_mainLayer->addChild(m_loadingSpinner, 100);
     
     this->retain();
     
     ThumbnailAPI::get().addModerator(username, adminUser, [this, username](bool success, const std::string& message) {
-        if (m_loadingCircle && m_loadingCircle->getParent()) {
-            m_loadingCircle->fadeAndRemove();
+        if (m_loadingSpinner) {
+            m_loadingSpinner->removeFromParent();
         }
-        m_loadingCircle = nullptr;
+        m_loadingSpinner = nullptr;
 
         if (success) {
-            Notification::create(
+            PaimonNotify::create(
                 Localization::get().getString("addmod.success_msg").c_str(),
                 NotificationIcon::Success
             )->show();
@@ -283,20 +284,19 @@ void AddModeratorPopup::onRemove(CCObject* sender) {
             auto gm = GameManager::get();
             std::string adminUser = gm->m_playerName;
 
-            self->m_loadingCircle = LoadingCircle::create();
-            if (self->m_loadingCircle) {
-                self->m_loadingCircle->setParentLayer(self);
-                self->m_loadingCircle->show();
-            }
+            self->m_loadingSpinner = geode::LoadingSpinner::create(30.f);
+            self->m_loadingSpinner->setPosition(self->m_mainLayer->getContentSize() / 2);
+            self->m_loadingSpinner->setID("paimon-loading-spinner"_spr);
+            self->m_mainLayer->addChild(self->m_loadingSpinner, 100);
 
             ThumbnailAPI::get().removeModerator(username, adminUser, [self, username](bool success, const std::string& message) {
-                if (self->m_loadingCircle && self->m_loadingCircle->getParent()) {
-                    self->m_loadingCircle->fadeAndRemove();
+                if (self->m_loadingSpinner) {
+                    self->m_loadingSpinner->removeFromParent();
                 }
-                self->m_loadingCircle = nullptr;
+                self->m_loadingSpinner = nullptr;
 
                 if (success) {
-                    Notification::create(
+                    PaimonNotify::create(
                         Localization::get().getString("addmod.remove_success").c_str(),
                         NotificationIcon::Success
                     )->show();
@@ -305,7 +305,7 @@ void AddModeratorPopup::onRemove(CCObject* sender) {
 
                     self->fetchAndShowModerators();
                 } else {
-                    Notification::create(
+                    PaimonNotify::create(
                         message.empty() 
                             ? Localization::get().getString("addmod.remove_error").c_str() 
                             : message.c_str(),

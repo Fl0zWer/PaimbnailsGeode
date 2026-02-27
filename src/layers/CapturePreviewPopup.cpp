@@ -1,4 +1,5 @@
 #include "CapturePreviewPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "CaptureEditPopup.hpp"
 #include "CaptureLayerEditorPopup.hpp"
 #include "../managers/LocalThumbs.hpp"
@@ -291,7 +292,7 @@ void CapturePreviewPopup::onToggleFillBtn(CCObject* sender) {
     updatePreviewScale();
     
     std::string msg = m_fillMode ? Localization::get().getString("preview.fill_mode_active") : Localization::get().getString("preview.fit_mode_active");
-    Notification::create(msg.c_str(), NotificationIcon::Info)->show();
+    PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
 }
 
 void CapturePreviewPopup::onClose(CCObject* sender) {
@@ -312,7 +313,7 @@ void CapturePreviewPopup::recapture() {
     log::info("[CapturePreviewPopup] Capturando nuevamente el nivel {}", m_levelID);
 
     if (FramebufferCapture::hasPendingCapture()) {
-        Notification::create(
+        PaimonNotify::create(
             Localization::get().getString("layers.recapturing").c_str(),
             NotificationIcon::Warning
         )->show();
@@ -333,7 +334,7 @@ void CapturePreviewPopup::recapture() {
                                   width, height);
                     } else {
                         log::error("[CapturePreviewPopup] La recaptura fallo");
-                        Notification::create(
+                        PaimonNotify::create(
                             Localization::get().getString("layers.recapture_error").c_str(),
                             NotificationIcon::Error
                         )->show();
@@ -502,7 +503,7 @@ void CapturePreviewPopup::onCropBtn(CCObject* sender) {
     if (!sender) return;
 
     if (m_isCropped) {
-        Notification::create(Localization::get().getString("preview.borders_removed").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::create(Localization::get().getString("preview.borders_removed").c_str(), NotificationIcon::Info)->show();
         return;
     }
     
@@ -512,7 +513,7 @@ void CapturePreviewPopup::onCropBtn(CCObject* sender) {
     
     if (cropRect.width == m_width && cropRect.height == m_height) {
         log::info("[CapturePreviewPopup] No se detectaron bordes negros");
-        Notification::create(Localization::get().getString("preview.no_borders").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::create(Localization::get().getString("preview.no_borders").c_str(), NotificationIcon::Info)->show();
         return;
     }
     
@@ -522,7 +523,7 @@ void CapturePreviewPopup::onCropBtn(CCObject* sender) {
     applyCrop(cropRect);
     m_isCropped = true;
     
-    Notification::create(Localization::get().getString("preview.borders_deleted").c_str(), NotificationIcon::Success)->show();
+    PaimonNotify::create(Localization::get().getString("preview.borders_deleted").c_str(), NotificationIcon::Success)->show();
 }
 
 CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
@@ -665,7 +666,7 @@ void CapturePreviewPopup::applyCrop(const CropRect& rect) {
 void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     if (!sender) return;
     if (!m_buffer || m_width <= 0 || m_height <= 0) {
-        Notification::create(Localization::get().getString("preview.no_image").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::create(Localization::get().getString("preview.no_image").c_str(), NotificationIcon::Error)->show();
         return;
     }
 
@@ -675,7 +676,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
         std::filesystem::create_directory(downloadDir, ec);
         if (ec) {
             log::error("Failed to create download directory: {}", ec.message());
-            Notification::create(Localization::get().getString("preview.folder_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
     }
@@ -694,13 +695,13 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
             try {
                 if (img->saveToFile(filePath.generic_string().c_str(), false)) {
                     geode::Loader::get()->queueInMainThread([filePath, levelID]() {
-                        geode::Notification::create(Localization::get().getString("preview.downloaded").c_str(), geode::NotificationIcon::Success)->show();
+                        PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(), geode::NotificationIcon::Success)->show();
                         log::info("[CapturePreviewPopup] Miniatura guardada en: {}", filePath.generic_string());
                         ThumbnailLoader::get().invalidateLevel(levelID);
                     });
                 } else {
                     geode::Loader::get()->queueInMainThread([]() {
-                        geode::Notification::create(Localization::get().getString("preview.save_error").c_str(), geode::NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("preview.save_error").c_str(), geode::NotificationIcon::Error)->show();
                     });
                 }
             } catch(...) {
@@ -712,6 +713,6 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
         }).detach();
     } else {
         img->release();
-        Notification::create(Localization::get().getString("preview.process_error").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::create(Localization::get().getString("preview.process_error").c_str(), NotificationIcon::Error)->show();
     }
 }

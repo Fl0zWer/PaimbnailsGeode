@@ -10,7 +10,7 @@ using namespace geode::prelude;
 class AddModeratorPopup : public Popup {
 protected:
     geode::TextInput* m_usernameInput = nullptr;
-    LoadingCircle* m_loadingCircle = nullptr;
+    geode::LoadingSpinner* m_loadingSpinner = nullptr;
     std::function<void(bool, const std::string&)> m_callback;
 
     cocos2d::CCNode* m_listContainer = nullptr;

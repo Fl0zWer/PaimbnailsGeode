@@ -3,14 +3,20 @@
 #include <Geode/utils/file.hpp>
 #include "../managers/HoverManager.hpp"
 #include "../managers/LocalThumbs.hpp"
-#include "../layers/VerificationQueuePopup.hpp"
+#include "../layers/VerificationCenterLayer.hpp"
 #include "../layers/BackgroundConfigPopup.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/DominantColors.hpp"
+#include "../utils/ImageLoadHelper.hpp"
+#include "../utils/ShapeStencil.hpp"
+#include "../managers/ProfilePicCustomizer.hpp"
 #include <random>
 #include <filesystem>
 
 using namespace geode::prelude;
+
+// declarada en main.cpp — inicialización diferida del mod
+extern void PaimonOnModLoaded();
 
 class $modify(PaimonMenuLayer, MenuLayer) {
     struct Fields {
@@ -66,10 +72,22 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         }
     } 
 
+    $override
     bool init() {
         if (!MenuLayer::init()) {
             return false;
         }
+
+        // inicialización diferida del mod (una sola vez)
+        static bool s_paimonLoaded = false;
+        if (!s_paimonLoaded) {
+            s_paimonLoaded = true;
+            log::info("[PaimonThumbnails] Invoking delayed Mod Loaded initialization from MenuLayer");
+            PaimonOnModLoaded();
+        }
+
+        // limpiar contexto de lista al volver al menu
+        Mod::get()->setSavedValue("current-list-id", 0);
 
         // inicio el HoverManager global
         auto* hoverManager = HoverManager::get();
@@ -125,12 +143,19 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                  this->applyAdaptiveColor({colors.first.r, colors.first.g, colors.first.b});
              }
         }
+
+        // Si el editor de foto guardó cambios, actualizar el botón de perfil
+        if (ProfilePicCustomizer::get().isDirty()) {
+            ProfilePicCustomizer::get().setDirty(false);
+            this->updateProfileButton();
+        }
     }
 
     void openVerificationQueue(float dt) {
-        auto popup = VerificationQueuePopup::create();
-        if (popup) {
-            popup->show();
+        auto scene = VerificationCenterLayer::scene();
+        if (scene) {
+            CCDirector::sharedDirector()->pushScene(
+                CCTransitionFade::create(0.5f, scene));
         }
     }
 
@@ -197,7 +222,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                     this->retain();
                     AnimatedGIFSprite::pinGIF(path);
                     AnimatedGIFSprite::createAsync(path, [this, path, container, winSize](AnimatedGIFSprite* anim) {
-                        this->autorelease();
+                        this->release();
                         if (!anim) {
                              container->removeFromParent();
                              return;
@@ -252,17 +277,18 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                     
                     return; 
                 } else {
-                    auto image = new CCImage();
-                    if (image->initWithImageFile(path.c_str())) {
-                        tex = new CCTexture2D();
-                        if (tex->initWithImage(image)) {
-                            tex->autorelease();
-                        } else {
-                            CC_SAFE_RELEASE(tex);
-                            tex = nullptr;
+                    // Invalidar cache previo para que se recargue si el usuario cambió el archivo
+                    CCTextureCache::sharedTextureCache()->removeTextureForKey(path.c_str());
+                    tex = CCTextureCache::sharedTextureCache()->addImage(path.c_str(), false);
+
+                    // Fallback stb_image si CCTextureCache no pudo (BMP, TGA, PSD, JPEG especiales, etc)
+                    if (!tex) {
+                        auto stbResult = ImageLoadHelper::loadWithSTB(std::filesystem::path(path));
+                        if (stbResult.success && stbResult.texture) {
+                            stbResult.texture->autorelease();
+                            tex = stbResult.texture;
                         }
                     }
-                    image->release();
                 }
             }
         } else if (type == "id") {
@@ -370,23 +396,25 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         
         const float targetSize = 48.0f;
 
+        // Leer config de forma personalizada
+        auto picCfg = ProfilePicCustomizer::get().getConfig();
+        std::string shapeName = picCfg.stencilSprite;
+        if (shapeName.empty()) shapeName = "circle";
+
         if (path.ends_with(".gif") || path.ends_with(".GIF")) {
              this->retain();
              AnimatedGIFSprite::pinGIF(path);
-             AnimatedGIFSprite::createAsync(path, [this, profileButton, targetSize](AnimatedGIFSprite* anim) {
-                this->autorelease();
+             AnimatedGIFSprite::createAsync(path, [this, profileButton, targetSize, shapeName, picCfg](AnimatedGIFSprite* anim) {
+                this->release();
                 if (!anim) return;
 
-                auto stencil = CCSprite::createWithSpriteFrameName("d_circle_02_001.png");
-                if (!stencil) stencil = CCSprite::createWithSpriteFrameName("GJ_circle_01_001.png");
+                auto stencil = createShapeStencil(shapeName, targetSize);
+                if (!stencil) stencil = createShapeStencil("circle", targetSize);
                 if (!stencil) return;
-                
-                stencil->setScale(targetSize / stencil->getContentWidth());
-                stencil->setPosition({targetSize/2, targetSize/2});
                 
                 auto clipper = CCClippingNode::create();
                 clipper->setStencil(stencil);
-                clipper->setAlphaThreshold(0.5f);
+                clipper->setAlphaThreshold(-1.0f);
                 clipper->setContentSize({targetSize, targetSize});
                 clipper->setAnchorPoint({0.5f, 0.5f});
                 
@@ -400,20 +428,35 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 anim->ignoreAnchorPointForPosition(false);
                 
                 clipper->addChild(anim);
+
+                // Contenedor con clip + borde
+                auto container = CCNode::create();
+                container->setContentSize({targetSize, targetSize});
+                container->setAnchorPoint({0.5f, 0.5f});
+                container->addChild(clipper);
+
+                if (picCfg.frameEnabled) {
+                    float borderSize = targetSize + picCfg.frame.thickness * 2;
+                    auto border = createShapeBorder(shapeName, borderSize,
+                        picCfg.frame.thickness, picCfg.frame.color,
+                        static_cast<GLubyte>(picCfg.frame.opacity));
+                    if (border) {
+                        border->setAnchorPoint({0.5f, 0.5f});
+                        border->setPosition({targetSize / 2, targetSize / 2});
+                        container->addChild(border, -1);
+                    }
+                }
                 
-                profileButton->setNormalImage(clipper);
+                profileButton->setNormalImage(container);
             });
         } else {
-            auto stencil = CCSprite::createWithSpriteFrameName("d_circle_02_001.png");
-            if (!stencil) stencil = CCSprite::createWithSpriteFrameName("GJ_circle_01_001.png");
+            auto stencil = createShapeStencil(shapeName, targetSize);
+            if (!stencil) stencil = createShapeStencil("circle", targetSize);
             if (!stencil) return;
-            
-            stencil->setScale(targetSize / stencil->getContentWidth());
-            stencil->setPosition({targetSize/2, targetSize/2});
             
             auto clipper = CCClippingNode::create();
             clipper->setStencil(stencil);
-            clipper->setAlphaThreshold(0.5f);
+            clipper->setAlphaThreshold(-1.0f);
             clipper->setContentSize({targetSize, targetSize});
             
             auto sprite = CCSprite::create(path.c_str());
@@ -427,8 +470,26 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 sprite->setAnchorPoint({0.5f, 0.5f});
                 
                 clipper->addChild(sprite);
+
+                // Contenedor con clip + borde
+                auto container = CCNode::create();
+                container->setContentSize({targetSize, targetSize});
+                container->setAnchorPoint({0.5f, 0.5f});
+                container->addChild(clipper);
+
+                if (picCfg.frameEnabled) {
+                    float borderSize = targetSize + picCfg.frame.thickness * 2;
+                    auto border = createShapeBorder(shapeName, borderSize,
+                        picCfg.frame.thickness, picCfg.frame.color,
+                        static_cast<GLubyte>(picCfg.frame.opacity));
+                    if (border) {
+                        border->setAnchorPoint({0.5f, 0.5f});
+                        border->setPosition({targetSize / 2, targetSize / 2});
+                        container->addChild(border, -1);
+                    }
+                }
                 
-                profileButton->setNormalImage(clipper);
+                profileButton->setNormalImage(container);
             }
         }
     }

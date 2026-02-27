@@ -9,6 +9,7 @@
 #include <Geode/binding/LeaderboardsLayer.hpp>
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Localization.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <fstream>
@@ -226,7 +227,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
                 if (ext == ".gif") {
                     if (!canUploadGIF) {
-                         Notification::create("GIFs are restricted to Mods/Admins/Donators", NotificationIcon::Error)->show();
+                         PaimonNotify::create("GIFs are restricted to Mods/Admins/Donators", NotificationIcon::Error)->show();
                          return;
                     }
                     this->processProfileGIF(path);
@@ -240,26 +241,26 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     void processProfileGIF(std::filesystem::path path) {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
-            Notification::create("Failed to read GIF file", NotificationIcon::Error)->show();
+            PaimonNotify::create("Failed to read GIF file", NotificationIcon::Error)->show();
             return;
         }
         std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         
         if (data.size() > 10 * 1024 * 1024) {
-             Notification::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
+             PaimonNotify::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
              return;
         }
 
         int accountID = GJAccountManager::get()->m_accountID;
         std::string username = GJAccountManager::get()->m_username;
 
-        Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
         ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [this](bool success, const std::string& msg) {
             if (success) {
-                Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
             } else {
-                Notification::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
             }
         });
     }
@@ -269,7 +270,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         std::vector<uint8_t> data;
         CCImage img;
         if (!img.initWithImageFile(path.generic_string().c_str())) { 
-            Notification::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
+            PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
             return; 
         }
 
@@ -279,7 +280,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         std::vector<uint8_t> rawData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
         if (rawData.size() > 7 * 1024 * 1024) {
-             Notification::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
+             PaimonNotify::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
              return;
         }
 
@@ -293,12 +294,12 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         // Let's use it!
         
         ProfilePreviewPopup::create(rawData, username, [rawData, accountID, username]() {
-            Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+            PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
             ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, const std::string& msg) {
                 if (success) {
-                    Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                    PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
                 } else {
-                    Notification::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                    PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
                 }
             });
         })->show();

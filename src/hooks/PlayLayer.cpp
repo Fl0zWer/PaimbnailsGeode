@@ -1,9 +1,11 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/ui/Notification.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/HardStreak.hpp>
 #include <Geode/loader/SettingV3.hpp>
+#include <Geode/loader/GameEvent.hpp>
 #include <Geode/utils/Keyboard.hpp>
 #include "../layers/CapturePreviewPopup.hpp"
 #include "../utils/FramebufferCapture.hpp"
@@ -17,6 +19,7 @@
 #include "../utils/ModeratorUtils.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/UILayer.hpp>
+#include <Geode/binding/CCTextInputNode.hpp>
 #include "../utils/DominantColors.hpp"
 #include "../managers/LevelColors.hpp"
 #include <cstring>
@@ -28,6 +31,29 @@ using namespace geode::prelude;
 
 namespace {
     std::atomic_bool gCaptureInProgress{false};
+
+    // Detecta si hay un campo de texto activo (CCTextInputNode, chat, búsqueda, etc.)
+    // Cuando el usuario está escribiendo, NO debemos interceptar teclas normales.
+    bool isTextInputActive() {
+        auto* scene = CCDirector::sharedDirector()->getRunningScene();
+        if (!scene) return false;
+
+        // Buscar recursivamente si hay algún CCTextInputNode con m_selected == true
+        // (m_selected se activa cuando el campo de texto tiene el foco del IME)
+        std::function<bool(CCNode*)> findActiveInput = [&](CCNode* node) -> bool {
+            if (!node) return false;
+            if (auto* textInput = typeinfo_cast<CCTextInputNode*>(node)) {
+                if (textInput->m_selected) return true;
+            }
+            auto* children = node->getChildren();
+            if (!children) return false;
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                if (findActiveInput(child)) return true;
+            }
+            return false;
+        };
+        return findActiveInput(scene);
+    }
 
     CCNode* findGameplayNode(CCNode* root) {
         if (!root) return nullptr;
@@ -202,7 +228,6 @@ static bool s_hidePlayerForCapture = false;
 class $modify(GIFRecordPlayLayer, PlayLayer) {
     struct Fields {
         float m_frameTimer = 0.0f;
-        ListenerHandle* m_keybindListener = nullptr;
     };
 
     $override
@@ -216,13 +241,22 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
         if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
         log::info("[GIFRecord] PlayLayer::init() exitoso");
 
-        // registra listener para el keybind de captura usando el nuevo sistema de Geode beta.3
+        // registra listener LOCAL para el keybind de captura.
+        // addEventListener se limpia automáticamente cuando PlayLayer se destruye,
+        // evitando dangling pointers y crashes por teclas presionadas fuera del gameplay.
         if (Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
-            m_fields->m_keybindListener = listenForKeybindSettingPresses(
-                "capture-keybind",
+            this->addEventListener(
+                KeybindSettingPressedEventV3(Mod::get(), "capture-keybind"),
                 [this](Keybind const& keybind, bool down, bool repeat, double timestamp) {
                     // solo actúa cuando se presiona, no cuando se suelta o repite
                     if (!down || repeat) return;
+
+                    // GUARD: ignorar si hay un campo de texto activo
+                    // (evita crash al escribir 'T' en chat, búsqueda, etc.)
+                    if (isTextInputActive()) return;
+
+                    // GUARD: verificar que este PlayLayer sigue siendo el activo
+                    if (PlayLayer::get() != this) return;
 
                     // verifica que no estemos en pausa
                     if (this->m_isPaused) return;
@@ -242,11 +276,14 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                     // usa FramebufferCapture (igual que PauseLayer) para diferir
                     // la captura al siguiente frame completo y evitar artefactos
                     int levelID = this->m_level->m_levelID;
+
+                    this->retain();
                     FramebufferCapture::requestCapture(levelID, [this, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height) {
                         Loader::get()->queueInMainThread([this, success, texture, rgbaData, width, height, levelID]() {
                             if (!success || !texture || !rgbaData) {
                                 log::error("[Keybind] FramebufferCapture falló");
                                 gCaptureInProgress.store(false);
+                                this->release();
                                 return;
                             }
 
@@ -310,7 +347,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                                         
                                         std::vector<uint8_t> pngData;
                                         if (!ImageConverter::rgbToPng(rgbaVec, static_cast<uint32_t>(W), static_cast<uint32_t>(H), pngData)) {
-                                            Notification::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
+                                            PaimonNotify::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
                                         } else {
                                             std::string username;
                                             int accountID = 0;
@@ -321,35 +358,35 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                                             if (username.empty()) username = "unknown";
 
                                             if (accountID <= 0) {
-                                                Notification::create("Tienes que tener cuenta para subir", NotificationIcon::Error)->show();
+                                                PaimonNotify::create(Localization::get().getString("level.account_required"), NotificationIcon::Error)->show();
                                                 return;
                                             }
 
-                                            Notification::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
+                                            PaimonNotify::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
                                             ThumbnailAPI::get().checkModeratorAccount(username, accountID, [levelIDAccepted, pngData, username](bool approved, bool isAdmin) {
                                                 bool allowModeratorFlow = approved;
                                                 if (allowModeratorFlow) {
                                                     log::info("[Keybind] Usuario verificado como moderador, subiendo thumbnail");
-                                                    Notification::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                                                    PaimonNotify::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
                                                     ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted](bool success, const std::string& msg){
                                                         if (success) {
-                                                            Notification::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
+                                                            PaimonNotify::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
                                                             PendingQueue::get().removeForLevel(levelIDAccepted);
                                                         } else {
-                                                            Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                                            PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
                                                         }
                                                     });
                                                 } else {
                                                     log::info("[Keybind] Usuario no es moderador, subiendo sugerencia");
-                                                    Notification::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
+                                                    PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
                                                     ThumbnailAPI::get().uploadSuggestion(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, const std::string& msg) {
                                                         if (success) {
                                                             log::info("[Keybind] Sugerencia subida exitosamente");
                                                             PendingQueue::get().addOrBump(levelIDAccepted, PendingCategory::Verify, username, {}, false);
-                                                            Notification::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
+                                                            PaimonNotify::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
                                                         } else {
                                                             log::error("[Keybind] Error subiendo sugerencia: {}", msg);
-                                                            Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                                            PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
                                                         }
                                                     });
                                                 }
@@ -368,8 +405,10 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                                     s_hidePlayerForCapture = hidePlayer;
                                     if (popup) popup->setVisible(false);
                                     gCaptureInProgress = false;
+                                    this->retain();
                                     Loader::get()->queueInMainThread([this, popup]() {
                                         this->captureScreenshot(popup);
+                                        this->release();
                                     });
                                 },
                                 s_hidePlayerForCapture
@@ -379,11 +418,12 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                             } else {
                                 gCaptureInProgress.store(false);
                             }
+                            this->release();
                         });
                     });
                 }
             );
-            log::info("[GIFRecord] Keybind listener registrado para captura");
+            log::info("[GIFRecord] Keybind listener LOCAL registrado para captura");
         }
 
         log::info("[GIFRecord] init() completado exitosamente");
@@ -392,11 +432,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
     
     $override
     void onQuit() {
-        // limpia el listener cuando salimos del nivel
-        if (m_fields->m_keybindListener) {
-            // el listener se limpia automáticamente con leak(), pero lo marcamos como null
-            m_fields->m_keybindListener = nullptr;
-        }
+        // addEventListener se limpia automáticamente al destruir el nodo
         PlayLayer::onQuit();
     }
 
@@ -535,9 +571,13 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
 
         // creo un CCTexture2D con los datos RGBA8888
         auto* tex = new CCTexture2D();
-        tex->initWithData(data.get(), kCCTexture2DPixelFormat_RGBA8888, width, height, CCSize(width, height));
-        tex->autorelease();
-        tex->retain(); // lo retengo mientras lo use el popup
+        if (!tex->initWithData(data.get(), kCCTexture2DPixelFormat_RGBA8888, width, height, CCSize(width, height))) {
+            tex->release();
+            gCaptureInProgress.store(false);
+            return;
+        }
+        // tex tiene refcount=1 desde new. Cada consumidor (popup/updateContent) debe retener.
+        // release final al terminar este scope (líneas abajo).
 
         // copio a un shared_ptr para que el popup lo gestione cómodo
         std::shared_ptr<uint8_t> rgba(new uint8_t[width * height * 4], std::default_delete<uint8_t[]>());
@@ -623,7 +663,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                     
                     std::vector<uint8_t> pngData;
                     if (!ImageConverter::rgbToPng(rgbaData, static_cast<uint32_t>(W), static_cast<uint32_t>(H), pngData)) {
-                        Notification::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
                     } else {
                         // username/accountID del jugador actual
                         std::string username;
@@ -635,25 +675,25 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                         if (username.empty()) username = "unknown";
 
                         if (accountID <= 0) {
-                            Notification::create("Tienes que tener cuenta para subir", NotificationIcon::Error)->show();
+                            PaimonNotify::create(Localization::get().getString("level.account_required"), NotificationIcon::Error)->show();
                             return;
                         }
 
                         // verifico si el usuario es moderador antes de subir
-                        Notification::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
                         // el server igual valida por nombre/accountID
                         ThumbnailAPI::get().checkModeratorAccount(username, accountID, [levelIDAccepted, pngData, username](bool approved, bool isAdmin) {
                             bool allowModeratorFlow = approved;
                             if (allowModeratorFlow) {
                                 // moderador verificado -> subo como thumbnail oficial
                                 log::info("[PlayLayer] Usuario verificado como moderador, subiendo thumbnail");
-                                Notification::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
                                 ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted](bool success, const std::string& msg){
                                     if (success) {
-                                        Notification::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
                                         PendingQueue::get().removeForLevel(levelIDAccepted);
                                     } else {
-                                        Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
                                     }
                                 });
                             } else {
@@ -661,17 +701,17 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                                 log::info("[PlayLayer] Usuario no es moderador, subiendo sugerencia y encolando");
                                 
                                 // primero subo la sugerencia
-                                Notification::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
+                                PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
                                 ThumbnailAPI::get().uploadSuggestion(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, const std::string& msg) {
                                     if (success) {
                                         log::info("[PlayLayer] Sugerencia subida exitosamente");
                                         // suggestions -> cola de Verify
                                         // no puedo saber si es creador aquí, así que uso false
                                         PendingQueue::get().addOrBump(levelIDAccepted, PendingCategory::Verify, username, {}, false);
-                                        Notification::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
                                     } else {
                                         log::error("[PlayLayer] Error subiendo sugerencia: {}", msg);
-                                        Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
                                     }
                                 });
                             }
@@ -694,8 +734,10 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
             if (popup) popup->setVisible(false);
 
             gCaptureInProgress = false;
+            this->retain();
             Loader::get()->queueInMainThread([this, popup]() {
                 this->captureScreenshot(popup);
+                this->release();
             });
         },
         s_hidePlayerForCapture

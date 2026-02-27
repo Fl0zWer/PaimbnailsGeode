@@ -1,4 +1,5 @@
 #include "BanListPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -33,9 +34,11 @@ bool BanListPopup::init() {
     panel->setOpacity(70);
     panel->setContentSize(CCSizeMake(content.width - 20.f, content.height - 60.f));
     panel->setPosition({content.width / 2, content.height / 2 - 10.f});
+    panel->setID("list-panel"_spr);
     this->m_mainLayer->addChild(panel);
 
     m_listMenu = CCMenu::create();
+    m_listMenu->setID("list-menu"_spr);
     m_listMenu->setPosition({0, 0});
 
     m_scroll = cocos2d::extension::CCScrollView::create();
@@ -45,7 +48,6 @@ bool BanListPopup::init() {
     m_scroll->setContainer(m_listMenu);
     this->m_mainLayer->addChild(m_scroll, 5);
 
-    m_listMenu = CCMenu::create();
     auto self = WeakRef<BanListPopup>(this);
     HttpClient::get().getBanList([self](bool success, const std::string& jsonData) {
         auto popup = self.lock();
@@ -209,10 +211,10 @@ void BanListPopup::onUnban(CCObject* sender) {
             if (btn2) {
                 HttpClient::get().unbanUser(username, [self](bool success, const std::string& msg) {
                     if (success) {
-                        Notification::create(Localization::get().getString("ban.unban.success"), NotificationIcon::Success)->show();
+                        PaimonNotify::create(Localization::get().getString("ban.unban.success"), NotificationIcon::Success)->show();
                         self->onClose(nullptr);
                     } else {
-                        Notification::create(Localization::get().getString("ban.unban.error"), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("ban.unban.error"), NotificationIcon::Error)->show();
                     }
                 });
             }

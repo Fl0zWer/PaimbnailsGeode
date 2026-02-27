@@ -32,6 +32,7 @@ protected:
     // acciones profile
     void onProfileCustomImage(cocos2d::CCObject* sender);
     void onProfileClear(cocos2d::CCObject* sender);
+    void onCustomizePhoto(cocos2d::CCObject* sender);
 
     // features
     void onDefaultMenu(cocos2d::CCObject* sender);

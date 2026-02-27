@@ -1,4 +1,6 @@
 #include "BackgroundConfigPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
+#include "ProfilePicEditorPopup.hpp"
 #include "../managers/LocalThumbs.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
@@ -206,7 +208,7 @@ void BackgroundConfigPopup::onDefaultMenu(CCObject*) {
     Mod::get()->setSavedValue("bg-custom-path", std::string(""));
     Mod::get()->setSavedValue("bg-id", 0);
     (void)Mod::get()->saveData();
-    Notification::create("Menu Reverted to Default", NotificationIcon::Success)->show();
+    PaimonNotify::create("Menu Reverted to Default", NotificationIcon::Success)->show();
 }
 
 void BackgroundConfigPopup::onAdaptiveColors(CCObject* sender) {
@@ -243,6 +245,13 @@ CCNode* BackgroundConfigPopup::createProfileTab() {
     clearBtn->setPosition({centerX, centerY - 50});
     btnMenu->addChild(clearBtn);
 
+    // boton de personalizar foto de perfil
+    auto customizeSpr = ButtonSprite::create("Customize Photo", "goldFont.fnt", "GJ_button_03.png", .8f);
+    customizeSpr->setScale(0.6f);
+    auto customizeBtn = CCMenuItemSpriteExtra::create(customizeSpr, this, menu_selector(BackgroundConfigPopup::onCustomizePhoto));
+    customizeBtn->setPosition({centerX, centerY - 95});
+    btnMenu->addChild(customizeBtn);
+
     return node;
 }
 
@@ -276,9 +285,9 @@ void BackgroundConfigPopup::onCustomImage(CCObject*) {
             Mod::get()->setSavedValue<std::string>("bg-custom-path", pathStr);
             auto res = Mod::get()->saveData();
             if (res.isErr()) {
-                Notification::create("Failed to save settings!", NotificationIcon::Error)->show();
+                PaimonNotify::create("Failed to save settings!", NotificationIcon::Error)->show();
             } else {
-                Notification::create("Custom Menu Image Set", NotificationIcon::Success)->show();
+                PaimonNotify::create("Custom Menu Image Set", NotificationIcon::Success)->show();
             }
         }
     }
@@ -287,7 +296,7 @@ void BackgroundConfigPopup::onCustomImage(CCObject*) {
 void BackgroundConfigPopup::onDownloadedThumbnails(CCObject*) {
     Mod::get()->setSavedValue("bg-type", std::string("thumbnails"));
     (void)Mod::get()->saveData();
-    Notification::create("Menu set to Random", NotificationIcon::Success)->show();
+    PaimonNotify::create("Menu set to Random", NotificationIcon::Success)->show();
 }
 
 void BackgroundConfigPopup::onSetID(CCObject*) {
@@ -299,9 +308,9 @@ void BackgroundConfigPopup::onSetID(CCObject*) {
         Mod::get()->setSavedValue("bg-type", std::string("id"));
         Mod::get()->setSavedValue("bg-id", id);
         (void)Mod::get()->saveData();
-        Notification::create("Menu ID Set", NotificationIcon::Success)->show();
+        PaimonNotify::create("Menu ID Set", NotificationIcon::Success)->show();
     } else {
-        Notification::create("Invalid ID", NotificationIcon::Error)->show();
+        PaimonNotify::create("Invalid ID", NotificationIcon::Error)->show();
     }
 }
 
@@ -343,17 +352,22 @@ void BackgroundConfigPopup::onProfileCustomImage(CCObject*) {
             Mod::get()->setSavedValue<std::string>("profile-bg-path", pathStr);
             auto res = Mod::get()->saveData();
             if (res.isErr()) {
-                Notification::create("Failed to save settings!", NotificationIcon::Error)->show();
+                PaimonNotify::create("Failed to save settings!", NotificationIcon::Error)->show();
             } else {
-                Notification::create("Profile Background Set!", NotificationIcon::Success)->show();
+                PaimonNotify::create("Profile Background Set!", NotificationIcon::Success)->show();
             }
         }
     }
+}
+
+void BackgroundConfigPopup::onCustomizePhoto(CCObject*) {
+    auto popup = ProfilePicEditorPopup::create();
+    if (popup) popup->show();
 }
 
 void BackgroundConfigPopup::onProfileClear(CCObject*) {
     Mod::get()->setSavedValue<std::string>("profile-bg-type", "none");
     Mod::get()->setSavedValue<std::string>("profile-bg-path", "");
     (void)Mod::get()->saveData();
-    Notification::create("Profile Background Cleared", NotificationIcon::Success)->show();
+    PaimonNotify::create("Profile Background Cleared", NotificationIcon::Success)->show();
 }

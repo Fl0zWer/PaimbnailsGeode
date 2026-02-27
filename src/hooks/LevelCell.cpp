@@ -3,6 +3,7 @@
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include <cmath>
 #include <unordered_set>
 #include "../managers/LocalThumbs.hpp"
@@ -28,11 +29,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         CCParticleSystemQuad* m_mythicParticles = nullptr;
         CCLayerColor* m_darkOverlay = nullptr;
         float m_gradientTime = 0.0f;
-        ccColor3B m_gradientColorA;
-        ccColor3B m_gradientColorB;
+        ccColor3B m_gradientColorA = {0, 0, 0};
+        ccColor3B m_gradientColorB = {0, 0, 0};
         CCSprite* m_gradientLayer = nullptr;
         bool m_loaderConfigured = false;
-        CCSprite* m_loadingSpinner = nullptr;
+        geode::LoadingSpinner* m_loadingSpinner = nullptr;
         bool m_isBeingDestroyed = false;
         CCSprite* m_thumbSprite = nullptr;
         CCPoint m_thumbBasePos = {0.f, 0.f};
@@ -119,22 +120,8 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_loadingSpinner = nullptr;
         }
         
-        // crear spinner de carga con efecto de pulso
-        auto spinner = CCSprite::create("loadingCircle.png");
-        if (!spinner) {
-            // fallback a sprite frame si no se encuentra archivo
-            spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-        }
-        if (!spinner) {
-            // fallback: crear circulo simple
-            spinner = CCSprite::create();
-            auto circle = CCLayerColor::create({100, 100, 100, 200});
-            circle->setContentSize({40, 40});
-            spinner->addChild(circle);
-        }
-        
-        spinner->setScale(0.25f);
-        spinner->setOpacity(180);
+        // crear spinner usando geode::LoadingSpinner (10px diametro ≈ loadingCircle.png * 0.25)
+        auto spinner = geode::LoadingSpinner::create(10.f);
         
         // posicionar en el centro del area de miniatura
         auto bg = m_backgroundLayer;
@@ -152,13 +139,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         this->addChild(spinner);
         fields->m_loadingSpinner = spinner;
         
-        // animacion: solo rotacion
-        auto rotateAction = CCRepeatForever::create(
-            CCRotateBy::create(0.8f, 360.0f)
-        );
-        
-        spinner->runAction(rotateAction);
-        
         // fade-in suave
         spinner->setOpacity(0);
         spinner->runAction(CCFadeTo::create(0.3f, 180));
@@ -167,13 +147,13 @@ class $modify(PaimonLevelCell, LevelCell) {
     void hideLoadingSpinner() {
         auto fields = m_fields.self();
         if (fields->m_loadingSpinner) {
-            fields->m_loadingSpinner->stopAllActions();
-            
-            // animacion fade out
-            auto fadeOut = CCFadeOut::create(0.2f);
-            auto remove = CCCallFunc::create(fields->m_loadingSpinner, callfunc_selector(CCNode::removeFromParent));
-            auto sequence = CCSequence::create(fadeOut, remove, nullptr);
-            fields->m_loadingSpinner->runAction(sequence);
+            // animacion fade out y remover
+            auto* spinnerNode = fields->m_loadingSpinner;
+            spinnerNode->runAction(CCSequence::create(
+                CCFadeOut::create(0.2f),
+                CCCallFunc::create(spinnerNode, callfunc_selector(CCNode::removeFromParent)),
+                nullptr
+            ));
             
             fields->m_loadingSpinner = nullptr;
         }
@@ -615,7 +595,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         try { enableMythic = Mod::get()->getSettingValue<bool>("levelcell-mythic-particles"); } catch (...) {}
         if (androidSafe) enableMythic = false;
         
-        if (enableMythic && m_level->m_isEpic >= 3) {
+        if (enableMythic && m_level && m_level->m_isEpic >= 3) {
              try {
                 auto brighten = [](ccColor3B c) {
                     auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
@@ -1840,7 +1820,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             // 1. Request Static Thumbnail
             ThumbnailLoader::get().requestLoad(levelID, fileName, [cellPtr, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool fromServer) {
-                if (!cellPtr) return;
                 auto* cell = static_cast<PaimonLevelCell*>(cellPtr);
                 auto fields = cell->m_fields.self();
                 
@@ -1901,7 +1880,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             this->retain(); // Retain for GIF callback
             ThumbnailLoader::get().requestLoad(levelID, fileName, [cellPtr, levelID, currentRequestId](CCTexture2D* tex, bool fromServer) {
-                if (!cellPtr) return;
                 auto* cell = static_cast<PaimonLevelCell*>(cellPtr);
                 auto fields = cell->m_fields.self();
                 

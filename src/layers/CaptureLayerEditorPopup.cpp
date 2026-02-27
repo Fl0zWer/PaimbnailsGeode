@@ -1,4 +1,5 @@
 #include "CaptureLayerEditorPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "CapturePreviewPopup.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
@@ -479,7 +480,7 @@ void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     // muestra estado restaurado
     updateMiniPreview();
 
-    Notification::create(
+    PaimonNotify::create(
         Localization::get().getString("layers.restored").c_str(),
         NotificationIcon::Success
     )->show();

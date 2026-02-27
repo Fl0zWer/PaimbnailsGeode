@@ -1,4 +1,5 @@
 #include "RatePopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 
 using namespace geode::prelude;
@@ -22,6 +23,7 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
     this->setTitle("Rate Thumbnail");
 
     auto menu = CCMenu::create();
+    menu->setID("stars-menu"_spr);
     menu->setPosition({m_mainLayer->getContentSize().width / 2, m_mainLayer->getContentSize().height / 2});
     m_mainLayer->addChild(menu);
 
@@ -43,6 +45,7 @@ bool RatePopup::init(int levelID, std::string thumbnailId) {
 
     auto submitSpr = ButtonSprite::create("Submit", "goldFont.fnt", "GJ_button_01.png", 0.8f);
     auto submitBtn = CCMenuItemSpriteExtra::create(submitSpr, this, menu_selector(RatePopup::onSubmit));
+    submitBtn->setID("submit-btn"_spr);
     submitBtn->setPosition({0, -50});
     menu->addChild(submitBtn);
 
@@ -68,7 +71,7 @@ void RatePopup::onStar(CCObject* sender) {
 
 void RatePopup::onSubmit(CCObject* sender) {
     if (m_rating == 0) {
-        Notification::create("Please select a rating", NotificationIcon::Error)->show();
+        PaimonNotify::create("Please select a rating", NotificationIcon::Error)->show();
         return;
     }
     
@@ -78,15 +81,15 @@ void RatePopup::onSubmit(CCObject* sender) {
     }
     
     if (username.empty() || username == "unknown") {
-        Notification::create("You must be logged in to vote", NotificationIcon::Error)->show();
+        PaimonNotify::create("You must be logged in to vote", NotificationIcon::Error)->show();
         return;
     }
     
     // loading
-    auto loadingCircle = LoadingCircle::create();
-    loadingCircle->setParentLayer(this);
-    loadingCircle->setFade(true);
-    loadingCircle->show();
+    auto spinner = geode::LoadingSpinner::create(30.f);
+    spinner->setPosition(m_mainLayer->getContentSize() / 2);
+    spinner->setID("paimon-loading-spinner"_spr);
+    m_mainLayer->addChild(spinner, 100);
 
     // desactivo btn para no spamear
     auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
@@ -94,12 +97,13 @@ void RatePopup::onSubmit(CCObject* sender) {
     
     // weakref por si async
     WeakRef<RatePopup> self = this;
-    ThumbnailAPI::get().submitVote(m_levelID, m_rating, username, m_thumbnailId, [self, loadingCircle, btn](bool success, const std::string& msg) {
+    Ref<geode::LoadingSpinner> spinnerRef = spinner;
+    ThumbnailAPI::get().submitVote(m_levelID, m_rating, username, m_thumbnailId, [self, spinnerRef, btn](bool success, const std::string& msg) {
         if (auto popup = self.lock()) {
-            loadingCircle->fadeAndRemove();
+            if (spinnerRef) spinnerRef->removeFromParent();
             
             if (success) {
-                Notification::create("Rating submitted!", NotificationIcon::Success)->show();
+                PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
                 if (popup->m_onRateCallback) {
                     popup->m_onRateCallback();
                 }
@@ -111,7 +115,7 @@ void RatePopup::onSubmit(CCObject* sender) {
                 if (!msg.empty()) {
                     errorMsg += ": " + msg;
                 }
-                Notification::create(errorMsg.c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create(errorMsg.c_str(), NotificationIcon::Error)->show();
             }
         }
     });

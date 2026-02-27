@@ -1,4 +1,5 @@
 #include "SetDailyWeeklyPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "../utils/HttpClient.hpp"
 #include <Geode/utils/web.hpp>
 
@@ -87,7 +88,7 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                     {"accountID", accountID}
                 });
                 
-                Notification::create("Setting daily...", NotificationIcon::Info)->show();
+                PaimonNotify::create("Setting daily...", NotificationIcon::Info)->show();
                 
                 // weakref para no crash si cierra antes
                 WeakRef<SetDailyWeeklyPopup> self = this;
@@ -95,10 +96,10 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                 HttpClient::get().post("/api/daily/set", json.dump(), [self](bool success, const std::string& msg) {
                     if (auto popup = self.lock()) {
                         if (success) {
-                            Notification::create("Daily set successfully", NotificationIcon::Success)->show();
+                            PaimonNotify::create("Daily set successfully", NotificationIcon::Success)->show();
                             popup->onClose(nullptr);
                         } else {
-                            Notification::create("Failed to set daily: " + msg, NotificationIcon::Error)->show();
+                            PaimonNotify::create("Failed to set daily: " + msg, NotificationIcon::Error)->show();
                         }
                     }
                 });
@@ -124,7 +125,7 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                     {"accountID", accountID}
                 });
                 
-                Notification::create("Setting weekly...", NotificationIcon::Info)->show();
+                PaimonNotify::create("Setting weekly...", NotificationIcon::Info)->show();
                 
                 // usar weakref por seguridad
                 WeakRef<SetDailyWeeklyPopup> self = this;
@@ -132,10 +133,10 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                 HttpClient::get().post("/api/weekly/set", json.dump(), [self](bool success, const std::string& msg) {
                     if (auto popup = self.lock()) {
                         if (success) {
-                            Notification::create("Weekly set successfully", NotificationIcon::Success)->show();
+                            PaimonNotify::create("Weekly set successfully", NotificationIcon::Success)->show();
                             popup->onClose(nullptr);
                         } else {
-                            Notification::create("Failed to set weekly: " + msg, NotificationIcon::Error)->show();
+                            PaimonNotify::create("Failed to set weekly: " + msg, NotificationIcon::Error)->show();
                         }
                     }
                 });
@@ -160,17 +161,17 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
                     {"username", username}
                 });
                 
-                Notification::create("Unsetting...", NotificationIcon::Info)->show();
+                PaimonNotify::create("Unsetting...", NotificationIcon::Info)->show();
                 
                 WeakRef<SetDailyWeeklyPopup> self = this;
 
                 HttpClient::get().post("/api/admin/set-daily", json.dump(), [self](bool success, const std::string& msg) {
                     if (auto popup = self.lock()) {
                         if (success) {
-                            Notification::create("Unset successfully", NotificationIcon::Success)->show();
+                            PaimonNotify::create("Unset successfully", NotificationIcon::Success)->show();
                             popup->onClose(nullptr);
                         } else {
-                            Notification::create("Failed to unset: " + msg, NotificationIcon::Error)->show();
+                            PaimonNotify::create("Failed to unset: " + msg, NotificationIcon::Error)->show();
                         }
                     }
                 });

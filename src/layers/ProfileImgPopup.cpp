@@ -6,7 +6,7 @@ using namespace cocos2d;
 
 ProfileImgPopup* ProfileImgPopup::create(int accountID, CCTexture2D* texture) {
     auto ret = new ProfileImgPopup();
-    if (ret && ret->setup(accountID, texture)) {
+    if (ret && ret->init(accountID, texture)) {
         ret->autorelease();
         return ret;
     }
@@ -14,7 +14,7 @@ ProfileImgPopup* ProfileImgPopup::create(int accountID, CCTexture2D* texture) {
     return nullptr;
 }
 
-bool ProfileImgPopup::setup(int accountID, CCTexture2D* texture) {
+bool ProfileImgPopup::init(int accountID, CCTexture2D* texture) {
     // mismo tamaño que el ProfilePage popup de GD (440 x 290 aprox)
     if (!Popup::init(440.f, 290.f)) return false;
 

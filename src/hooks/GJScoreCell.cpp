@@ -4,6 +4,7 @@
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include <algorithm>
 
 #include "../managers/ProfileThumbs.hpp"
@@ -85,7 +86,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         CCNode* m_profileBg = nullptr;
         CCLayerColor* m_darkOverlay = nullptr;
         bool m_buttonsMoved = false; // pa no andar moviendo botones mil veces
-        CCSprite* m_loadingSpinner = nullptr;
+        geode::LoadingSpinner* m_loadingSpinner = nullptr;
         bool m_isBeingDestroyed = false; // pa no tocar celdas que ya se mueren
     };
     
@@ -98,21 +99,8 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             f->m_loadingSpinner = nullptr;
         }
         
-        // crea el iconito de carga
-        auto spinner = CCSprite::create("loadingCircle.png");
-        if (!spinner) {
-            spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-        }
-        if (!spinner) {
-            // último recurso: cuadro gris cutre
-            spinner = CCSprite::create();
-            auto circle = CCLayerColor::create({100, 100, 100, 200});
-            circle->setContentSize({40, 40});
-            spinner->addChild(circle);
-        }
-        
-        spinner->setScale(0.25f);
-        spinner->setOpacity(200);
+        // crear spinner usando geode::LoadingSpinner (10px diametro ≈ loadingCircle.png * 0.25)
+        auto spinner = geode::LoadingSpinner::create(10.f);
         
         // lo pongo a la derecha donde iría la mini
         auto cs = this->getContentSize();
@@ -127,18 +115,11 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         
         this->addChild(spinner);
         f->m_loadingSpinner = spinner;
-        
-        // lo pongo a girar sin parar
-        auto rotateAction = CCRepeatForever::create(
-            CCRotateBy::create(1.0f, 360.0f)
-        );
-        spinner->runAction(rotateAction);
     }
     
     void hideLoadingSpinner() {
         auto f = m_fields.self();
         if (f->m_loadingSpinner) {
-            f->m_loadingSpinner->stopAllActions();
             f->m_loadingSpinner->removeFromParent();
             f->m_loadingSpinner = nullptr;
         }
