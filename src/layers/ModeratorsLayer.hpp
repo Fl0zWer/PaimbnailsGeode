@@ -9,7 +9,7 @@
 
 class ModeratorsLayer : public geode::Popup, public UserInfoDelegate {
 protected:
-    cocos2d::CCArray* m_scores;
+    geode::Ref<cocos2d::CCArray> m_scores;
     CustomListView* m_listView;
     GJListLayer* m_listLayer;
     geode::LoadingSpinner* m_loadingSpinner = nullptr;
@@ -20,8 +20,8 @@ protected:
     void setup();
     void createList();
     void fetchModerators();
-    void fetchGDBrowserProfile(const std::string& username);
-    void onProfileFetched(const std::string& username, const std::string& response);
+    void fetchGDBrowserProfile(std::string const& username);
+    void onProfileFetched(std::string const& username, std::string const& response);
     void onAllProfilesFetched();
     
     void getUserInfoFinished(GJUserScore* score) override;

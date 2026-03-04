@@ -22,130 +22,128 @@ ProfilePicConfig ProfilePicCustomizer::getConfig() const {
     return m_config;
 }
 
-void ProfilePicCustomizer::setConfig(const ProfilePicConfig& config) {
+void ProfilePicCustomizer::setConfig(ProfilePicConfig const& config) {
     m_config = config;
 }
 
 void ProfilePicCustomizer::save() {
-    try {
-        auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
+    auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
 
-        matjson::Value root;
-        root["scaleX"] = m_config.scaleX;
-        root["scaleY"] = m_config.scaleY;
-        root["size"] = m_config.size;
-        root["frameEnabled"] = m_config.frameEnabled;
-        root["stencilSprite"] = m_config.stencilSprite;
-        root["offsetX"] = m_config.offsetX;
-        root["offsetY"] = m_config.offsetY;
+    matjson::Value root;
+    root["scaleX"] = m_config.scaleX;
+    root["scaleY"] = m_config.scaleY;
+    root["size"] = m_config.size;
+    root["frameEnabled"] = m_config.frameEnabled;
+    root["stencilSprite"] = m_config.stencilSprite;
+    root["offsetX"] = m_config.offsetX;
+    root["offsetY"] = m_config.offsetY;
 
-        // Frame
-        matjson::Value frameObj;
-        frameObj["spriteFrame"] = m_config.frame.spriteFrame;
-        frameObj["colorR"] = static_cast<int>(m_config.frame.color.r);
-        frameObj["colorG"] = static_cast<int>(m_config.frame.color.g);
-        frameObj["colorB"] = static_cast<int>(m_config.frame.color.b);
-        frameObj["opacity"] = m_config.frame.opacity;
-        frameObj["thickness"] = m_config.frame.thickness;
-        frameObj["offsetX"] = m_config.frame.offsetX;
-        frameObj["offsetY"] = m_config.frame.offsetY;
-        root["frame"] = frameObj;
+    // Frame
+    matjson::Value frameObj;
+    frameObj["spriteFrame"] = m_config.frame.spriteFrame;
+    frameObj["colorR"] = static_cast<int>(m_config.frame.color.r);
+    frameObj["colorG"] = static_cast<int>(m_config.frame.color.g);
+    frameObj["colorB"] = static_cast<int>(m_config.frame.color.b);
+    frameObj["opacity"] = m_config.frame.opacity;
+    frameObj["thickness"] = m_config.frame.thickness;
+    frameObj["offsetX"] = m_config.frame.offsetX;
+    frameObj["offsetY"] = m_config.frame.offsetY;
+    root["frame"] = frameObj;
 
-        // Decorations
-        matjson::Value decoArray = matjson::Value::array();
-        for (const auto& deco : m_config.decorations) {
-            matjson::Value d;
-            d["spriteName"] = deco.spriteName;
-            d["posX"] = deco.posX;
-            d["posY"] = deco.posY;
-            d["scale"] = deco.scale;
-            d["rotation"] = deco.rotation;
-            d["colorR"] = static_cast<int>(deco.color.r);
-            d["colorG"] = static_cast<int>(deco.color.g);
-            d["colorB"] = static_cast<int>(deco.color.b);
-            d["opacity"] = deco.opacity;
-            d["flipX"] = deco.flipX;
-            d["flipY"] = deco.flipY;
-            d["zOrder"] = deco.zOrder;
-            decoArray.push(std::move(d));
-        }
-        root["decorations"] = decoArray;
-
-        auto jsonStr = root.dump();
-        std::ofstream out(savePath);
-        if (out) {
-            out << jsonStr;
-            out.close();
-        }
-
-        log::info("[ProfilePicCustomizer] Config saved");
-    } catch (const std::exception& e) {
-        log::error("[ProfilePicCustomizer] Failed to save: {}", e.what());
+    // Decorations
+    matjson::Value decoArray = matjson::Value::array();
+    for (auto const& deco : m_config.decorations) {
+        matjson::Value d;
+        d["spriteName"] = deco.spriteName;
+        d["posX"] = deco.posX;
+        d["posY"] = deco.posY;
+        d["scale"] = deco.scale;
+        d["rotation"] = deco.rotation;
+        d["colorR"] = static_cast<int>(deco.color.r);
+        d["colorG"] = static_cast<int>(deco.color.g);
+        d["colorB"] = static_cast<int>(deco.color.b);
+        d["opacity"] = deco.opacity;
+        d["flipX"] = deco.flipX;
+        d["flipY"] = deco.flipY;
+        d["zOrder"] = deco.zOrder;
+        decoArray.push(std::move(d));
     }
+    root["decorations"] = decoArray;
+
+    auto jsonStr = root.dump();
+    std::ofstream out(savePath);
+    if (out) {
+        out << jsonStr;
+        out.close();
+    } else {
+        log::error("[ProfilePicCustomizer] Failed to open file for saving");
+        return;
+    }
+
+    log::info("[ProfilePicCustomizer] Config saved");
 }
 
 void ProfilePicCustomizer::load() {
-    try {
-        auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
-        
-        std::ifstream in(savePath);
-        if (!in) return;
+    auto savePath = Mod::get()->getSaveDir() / "profile_pic_config.json";
 
-        std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        in.close();
+    std::ifstream in(savePath);
+    if (!in) return;
 
-        auto parsed = matjson::parse(content);
-        if (!parsed.isOk()) return;
-        auto root = parsed.unwrap();
+    std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    in.close();
 
-        if (root.contains("scaleX")) m_config.scaleX = root["scaleX"].asDouble().unwrapOr(1.0);
-        if (root.contains("scaleY")) m_config.scaleY = root["scaleY"].asDouble().unwrapOr(1.0);
-        if (root.contains("size")) m_config.size = root["size"].asDouble().unwrapOr(120.0);
-        if (root.contains("frameEnabled")) m_config.frameEnabled = root["frameEnabled"].asBool().unwrapOr(false);
-        if (root.contains("stencilSprite")) m_config.stencilSprite = root["stencilSprite"].asString().unwrapOr("circle");
-        if (root.contains("offsetX")) m_config.offsetX = root["offsetX"].asDouble().unwrapOr(0.0);
-        if (root.contains("offsetY")) m_config.offsetY = root["offsetY"].asDouble().unwrapOr(0.0);
+    auto parsed = matjson::parse(content);
+    if (!parsed.isOk()) return;
+    auto root = parsed.unwrap();
 
-        // Frame
-        if (root.contains("frame")) {
-            auto& f = root["frame"];
-            if (f.contains("spriteFrame")) m_config.frame.spriteFrame = f["spriteFrame"].asString().unwrapOr("");
-            if (f.contains("colorR")) m_config.frame.color.r = f["colorR"].asInt().unwrapOr(255);
-            if (f.contains("colorG")) m_config.frame.color.g = f["colorG"].asInt().unwrapOr(255);
-            if (f.contains("colorB")) m_config.frame.color.b = f["colorB"].asInt().unwrapOr(255);
-            if (f.contains("opacity")) m_config.frame.opacity = f["opacity"].asDouble().unwrapOr(255.0);
-            if (f.contains("thickness")) m_config.frame.thickness = f["thickness"].asDouble().unwrapOr(4.0);
-            if (f.contains("offsetX")) m_config.frame.offsetX = f["offsetX"].asDouble().unwrapOr(0.0);
-            if (f.contains("offsetY")) m_config.frame.offsetY = f["offsetY"].asDouble().unwrapOr(0.0);
-        }
+    if (root.contains("scaleX")) m_config.scaleX = root["scaleX"].asDouble().unwrapOr(1.0);
+    if (root.contains("scaleY")) m_config.scaleY = root["scaleY"].asDouble().unwrapOr(1.0);
+    if (root.contains("size")) m_config.size = root["size"].asDouble().unwrapOr(120.0);
+    if (root.contains("frameEnabled")) m_config.frameEnabled = root["frameEnabled"].asBool().unwrapOr(false);
+    if (root.contains("stencilSprite")) m_config.stencilSprite = root["stencilSprite"].asString().unwrapOr("circle");
+    if (root.contains("offsetX")) m_config.offsetX = root["offsetX"].asDouble().unwrapOr(0.0);
+    if (root.contains("offsetY")) m_config.offsetY = root["offsetY"].asDouble().unwrapOr(0.0);
 
-        // Decorations
-        if (root.contains("decorations") && root["decorations"].isArray()) {
-            m_config.decorations.clear();
-            for (auto& d : root["decorations"].asArray().unwrap()) {
-                PicDecoration deco;
-                deco.spriteName = d["spriteName"].asString().unwrapOr("");
-                deco.posX = d["posX"].asDouble().unwrapOr(0.0);
-                deco.posY = d["posY"].asDouble().unwrapOr(0.0);
-                deco.scale = d["scale"].asDouble().unwrapOr(1.0);
-                deco.rotation = d["rotation"].asDouble().unwrapOr(0.0);
-                deco.color.r = d["colorR"].asInt().unwrapOr(255);
-                deco.color.g = d["colorG"].asInt().unwrapOr(255);
-                deco.color.b = d["colorB"].asInt().unwrapOr(255);
-                deco.opacity = d["opacity"].asDouble().unwrapOr(255.0);
-                deco.flipX = d["flipX"].asBool().unwrapOr(false);
-                deco.flipY = d["flipY"].asBool().unwrapOr(false);
-                deco.zOrder = d["zOrder"].asInt().unwrapOr(0);
-                if (!deco.spriteName.empty()) {
-                    m_config.decorations.push_back(deco);
-                }
+    // Frame
+    if (root.contains("frame")) {
+        auto& f = root["frame"];
+        if (f.contains("spriteFrame")) m_config.frame.spriteFrame = f["spriteFrame"].asString().unwrapOr("");
+        if (f.contains("colorR")) m_config.frame.color.r = f["colorR"].asInt().unwrapOr(255);
+        if (f.contains("colorG")) m_config.frame.color.g = f["colorG"].asInt().unwrapOr(255);
+        if (f.contains("colorB")) m_config.frame.color.b = f["colorB"].asInt().unwrapOr(255);
+        if (f.contains("opacity")) m_config.frame.opacity = f["opacity"].asDouble().unwrapOr(255.0);
+        if (f.contains("thickness")) m_config.frame.thickness = f["thickness"].asDouble().unwrapOr(4.0);
+        if (f.contains("offsetX")) m_config.frame.offsetX = f["offsetX"].asDouble().unwrapOr(0.0);
+        if (f.contains("offsetY")) m_config.frame.offsetY = f["offsetY"].asDouble().unwrapOr(0.0);
+    }
+
+    // Decorations
+    if (root.contains("decorations") && root["decorations"].isArray()) {
+        m_config.decorations.clear();
+        auto decoArr = root["decorations"].asArray();
+        if (decoArr.isOk()) {
+        for (auto& d : decoArr.unwrap()) {
+            PicDecoration deco;
+            deco.spriteName = d["spriteName"].asString().unwrapOr("");
+            deco.posX = d["posX"].asDouble().unwrapOr(0.0);
+            deco.posY = d["posY"].asDouble().unwrapOr(0.0);
+            deco.scale = d["scale"].asDouble().unwrapOr(1.0);
+            deco.rotation = d["rotation"].asDouble().unwrapOr(0.0);
+            deco.color.r = d["colorR"].asInt().unwrapOr(255);
+            deco.color.g = d["colorG"].asInt().unwrapOr(255);
+            deco.color.b = d["colorB"].asInt().unwrapOr(255);
+            deco.opacity = d["opacity"].asDouble().unwrapOr(255.0);
+            deco.flipX = d["flipX"].asBool().unwrapOr(false);
+            deco.flipY = d["flipY"].asBool().unwrapOr(false);
+            deco.zOrder = d["zOrder"].asInt().unwrapOr(0);
+            if (!deco.spriteName.empty()) {
+                m_config.decorations.push_back(deco);
             }
         }
-
-        log::info("[ProfilePicCustomizer] Config loaded ({} decorations)", m_config.decorations.size());
-    } catch (const std::exception& e) {
-        log::error("[ProfilePicCustomizer] Failed to load: {}", e.what());
+        } // if (decoArr.isOk())
     }
+
+    log::info("[ProfilePicCustomizer] Config loaded ({} decorations)", m_config.decorations.size());
 }
 
 std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvailableFrames() {
@@ -214,7 +212,7 @@ std::vector<std::pair<std::string, std::string>> ProfilePicCustomizer::getAvaila
         {"modBadge_02_001.png", "Elder Mod Badge"},
         {"modBadge_03_001.png", "Leaderboard Badge"},
         
-        // Partículas y efectos
+        // Particulas y efectos
         {"particle_01_001.png", "Particle Circle"},
         {"particle_02_001.png", "Particle Square"},
         {"particle_03_001.png", "Particle Triangle"},

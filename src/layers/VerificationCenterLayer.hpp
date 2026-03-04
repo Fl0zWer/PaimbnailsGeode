@@ -40,7 +40,7 @@ protected:
     void onTabUpdate(cocos2d::CCObject*);
     void onTabReport(cocos2d::CCObject*);
     void onTabBanner(cocos2d::CCObject*);
-    void onTabProfileImg(cocos2d::CCObject*);
+    void onTabProfile(cocos2d::CCObject*);
 
     // lista
     void rebuildList();
@@ -62,7 +62,7 @@ protected:
     void onViewReport(cocos2d::CCObject* sender);
     void onViewThumb(cocos2d::CCObject* sender);
     void onViewBanner(cocos2d::CCObject* sender);
-    void onViewProfileImg(cocos2d::CCObject* sender);
+    void onViewPendingProfile(cocos2d::CCObject* sender);
     void onOpenProfile(cocos2d::CCObject* sender);
     void onViewBans(cocos2d::CCObject*);
     void checkLevelDownloaded(float dt);

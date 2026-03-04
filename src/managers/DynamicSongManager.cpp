@@ -26,19 +26,11 @@ void DynamicSongManager::exitLayer(DynSongLayer layer) {
 }
 
 bool DynamicSongManager::isCrossfadeEnabled() const {
-    try {
-        return Mod::get()->getSettingValue<bool>("profile-music-crossfade");
-    } catch (...) {
-        return true;
-    }
+    return Mod::get()->getSettingValue<bool>("profile-music-crossfade");
 }
 
 float DynamicSongManager::getFadeDurationMs() const {
-    try {
-        return Mod::get()->getSettingValue<float>("profile-music-fade-duration") * 1000.0f;
-    } catch (...) {
-        return 800.0f;
-    }
+    return Mod::get()->getSettingValue<float>("profile-music-fade-duration") * 1000.0f;
 }
 
 // Helper: Carga la pista de Menu en m_backgroundMusicChannel con volumen deseado.
@@ -167,7 +159,7 @@ void DynamicSongManager::stopSong() {
         fadeOutAndRestore();
     } else {
         stopCurrentAudio();
-        // Restaurar menú directamente
+        // Restaurar menu directamente
         loadMenuTrack(FMODAudioEngine::sharedEngine()->m_musicVolume);
         m_isDynamicSongActive = false;
     }
@@ -181,7 +173,7 @@ void DynamicSongManager::fadeOutAndRestore() {
     m_isFadingOut = true;
     m_isFadingIn = false;
     
-    // Cargar track de menú silenciosamente ANTES de hacer fadeIn
+    // Cargar track de menu silenciosamente ANTES de hacer fadeIn
     loadMenuTrack(0.0f);
     
     auto engine = FMODAudioEngine::sharedEngine();
@@ -290,7 +282,7 @@ void DynamicSongManager::executeLevelStartFade(int step, int totalSteps, float v
 void DynamicSongManager::forceKill() {
     // Restaurar siempre el volumen del Background Channel.
     // Esto es crucial porque nuestro crossfade pone el volumen a 0, 
-    // y si no lo restauramos aquí, la música del nivel en PlayLayer sonará en 0.
+    // y si no lo restauramos aqui, la musica del nivel en PlayLayer sonara en 0.
     restoreBgChannel();
 
     // Si esta haciendo fade-out hacia un nivel, NO matar el canal abruptamente
@@ -315,13 +307,13 @@ void DynamicSongManager::pauseDynamicChannel() {
     if (!m_musicChannel) return;
     if (m_channelPaused) return;
 
-    // Pausar el canal dinámico (no lo destruimos, solo lo silenciamos)
+    // Pausar el canal dinamico (no lo destruimos, solo lo silenciamos)
     m_musicChannel->setPaused(true);
     m_channelPaused = true;
 
-    // Cancelar fades en curso para que no sigan tocando volúmenes
+    // Cancelar fades en curso para que no sigan tocando volumenes
     m_isFadingIn = false;
-    // No cancelamos m_isFadingOut porque podría ser un fade hacia nivel
+    // No cancelamos m_isFadingOut porque podria ser un fade hacia nivel
 
     log::info("[DynamicSong] Canal pausado por sistema externo");
 }

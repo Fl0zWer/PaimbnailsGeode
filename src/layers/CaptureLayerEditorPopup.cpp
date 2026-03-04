@@ -3,7 +3,6 @@
 #include "CapturePreviewPopup.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
-#include "../utils/FramebufferCapture.hpp"
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -25,10 +24,10 @@ static std::vector<std::pair<CCNode*, bool>> s_originalVisibilities;
 
 // ─── auxiliares ───────────────────────────────────────────────────
 
-static std::string simplifyClassName(const std::string& cls) {
+static std::string simplifyClassName(std::string const& cls) {
     std::string name = cls;
 
-    for (const char* prefix : {"class ", "struct "}) {
+    for (char const* prefix : {"class ", "struct "}) {
         if (name.find(prefix) == 0) {
             name = name.substr(std::strlen(prefix));
         }
@@ -45,8 +44,8 @@ static std::string simplifyClassName(const std::string& cls) {
 
 CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* previewPopup) {
     auto ret = new CaptureLayerEditorPopup();
-    ret->m_previewPopup = previewPopup;
-    if (ret->init()) {
+    if (ret && ret->init()) {
+        ret->m_previewPopup = previewPopup;
         ret->autorelease();
         return ret;
     }
@@ -159,7 +158,7 @@ void CaptureLayerEditorPopup::populateLayers() {
 
     // registra nodo con visibilidad real (sin ocultar auto)
     // editor muestra lo que hay en pantalla; usuario decide
-    auto addEntry = [&](CCNode* node, const std::string& name) {
+    auto addEntry = [&](CCNode* node, std::string const& name) {
         if (!node || added.count(node)) return;
         added.insert(node);
         if (needRecordOriginals) {

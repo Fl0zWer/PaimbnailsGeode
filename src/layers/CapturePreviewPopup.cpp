@@ -31,8 +31,8 @@ CapturePreviewPopup* CapturePreviewPopup::create(
     std::shared_ptr<uint8_t> buffer,
     int width,
     int height,
-    std::function<void(bool, int, std::shared_ptr<uint8_t>, int, int, std::string, std::string)> callback,
-    std::function<void(bool, CapturePreviewPopup*)> recaptureCallback,
+    geode::CopyableFunction<void(bool, int, std::shared_ptr<uint8_t>, int, int, std::string, std::string)> callback,
+    geode::CopyableFunction<void(bool, CapturePreviewPopup*)> recaptureCallback,
     bool isPlayerHidden,
     bool isModerator
 ) {
@@ -44,8 +44,6 @@ CapturePreviewPopup* CapturePreviewPopup::create(
     }
     
     auto ret = new CapturePreviewPopup();
-    
-    texture->retain();
     
     ret->m_texture = texture;
     ret->m_levelID = levelID;
@@ -64,8 +62,6 @@ CapturePreviewPopup* CapturePreviewPopup::create(
     }
     log::error("[CapturePreviewPopup] No se pudo inicializar el popup de vista previa");
     
-    texture->release();
-    
     CC_SAFE_DELETE(ret);
     return nullptr;
 }
@@ -73,11 +69,6 @@ CapturePreviewPopup* CapturePreviewPopup::create(
 void CapturePreviewPopup::updateContent(CCTexture2D* texture, std::shared_ptr<uint8_t> buffer, int width, int height) {
     if (!texture) return;
 
-    if (m_texture) {
-        m_texture->release();
-    }
-
-    texture->retain();
     m_texture = texture;
     m_buffer = buffer;
     m_width = width;
@@ -97,10 +88,7 @@ void CapturePreviewPopup::updateContent(CCTexture2D* texture, std::shared_ptr<ui
 }
 
 CapturePreviewPopup::~CapturePreviewPopup() {
-    if (m_texture) {
-        m_texture->release();
-        m_texture = nullptr;
-    }
+    // m_texture is a Ref<T>, automatically releases
 }
 
 bool CapturePreviewPopup::init() {
@@ -108,11 +96,10 @@ bool CapturePreviewPopup::init() {
 
     log::info("[CapturePreviewPopup] Configurando popup de vista previa");
     
-    try {
-        this->setTitle(Localization::get().getString("preview.title").c_str());
-        
+    this->setTitle(Localization::get().getString("preview.title").c_str());
+
         auto content = this->m_mainLayer->getContentSize();
-        log::debug("[CapturePreviewPopup] Tamaño de la capa principal: {}x{}", content.width, content.height);
+        log::debug("[CapturePreviewPopup] Tamano de la capa principal: {}x{}", content.width, content.height);
 
         if (!m_texture) {
             log::error("[CapturePreviewPopup] La textura es nula en la configuracion");
@@ -243,13 +230,6 @@ bool CapturePreviewPopup::init() {
         log::info("[CapturePreviewPopup] Configuracion del popup de vista previa completada");
 
         return true;
-    } catch (std::exception& e) {
-        log::error("[CapturePreviewPopup] Excepcion en CapturePreviewPopup::setup: {}", e.what());
-        return false;
-    } catch (...) {
-        log::error("[CapturePreviewPopup] Excepcion desconocida en CapturePreviewPopup::setup");
-        return false;
-    }
 }
 
 void CapturePreviewPopup::onTogglePlayerBtn(CCObject* sender) {
@@ -320,16 +300,16 @@ void CapturePreviewPopup::recapture() {
         return;
     }
 
-    this->retain();
+    Ref<CapturePreviewPopup> safeRef = this;
     this->setVisible(false);
 
     FramebufferCapture::requestCapture(m_levelID,
-        [this](bool success, CCTexture2D* texture,
+        [safeRef](bool success, CCTexture2D* texture,
                std::shared_ptr<uint8_t> rgbaData, int width, int height) {
             Loader::get()->queueInMainThread(
-                [this, success, texture, rgbaData, width, height]() {
+                [safeRef, success, texture, rgbaData, width, height]() {
                     if (success && texture && rgbaData) {
-                        this->updateContent(texture, rgbaData, width, height);
+                        safeRef->updateContent(texture, rgbaData, width, height);
                         log::info("[CapturePreviewPopup] Recapture OK: {}x{}",
                                   width, height);
                     } else {
@@ -339,8 +319,7 @@ void CapturePreviewPopup::recapture() {
                             NotificationIcon::Error
                         )->show();
                     }
-                    this->setVisible(true);
-                    this->release();
+                    safeRef->setVisible(true);
                 });
         });
 }
@@ -692,21 +671,15 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     auto img = new CCImage();
     if (img->initWithImageData(const_cast<uint8_t*>(m_buffer.get()), dataSize, CCImage::kFmtRawData, m_width, m_height, 8)) {
         std::thread([img, filePath = filePath, levelID = m_levelID]() {
-            try {
-                if (img->saveToFile(filePath.generic_string().c_str(), false)) {
-                    geode::Loader::get()->queueInMainThread([filePath, levelID]() {
-                        PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(), geode::NotificationIcon::Success)->show();
-                        log::info("[CapturePreviewPopup] Miniatura guardada en: {}", filePath.generic_string());
-                        ThumbnailLoader::get().invalidateLevel(levelID);
-                    });
-                } else {
-                    geode::Loader::get()->queueInMainThread([]() {
-                        PaimonNotify::create(Localization::get().getString("preview.save_error").c_str(), geode::NotificationIcon::Error)->show();
-                    });
-                }
-            } catch(...) {
-                 geode::Loader::get()->queueInMainThread([]() {
-                    log::error("[CapturePreviewPopup] Error desconocido en hilo de guardado");
+            if (img->saveToFile(geode::utils::string::pathToString(filePath).c_str(), false)) {
+                geode::Loader::get()->queueInMainThread([filePath, levelID]() {
+                    PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(), geode::NotificationIcon::Success)->show();
+                    log::info("[CapturePreviewPopup] Miniatura guardada en: {}", geode::utils::string::pathToString(filePath));
+                    ThumbnailLoader::get().invalidateLevel(levelID);
+                });
+            } else {
+                geode::Loader::get()->queueInMainThread([]() {
+                    PaimonNotify::create(Localization::get().getString("preview.save_error").c_str(), geode::NotificationIcon::Error)->show();
                 });
             }
             img->release();

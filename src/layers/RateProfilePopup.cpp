@@ -5,7 +5,7 @@
 
 using namespace geode::prelude;
 
-RateProfilePopup* RateProfilePopup::create(int accountID, const std::string& targetUsername) {
+RateProfilePopup* RateProfilePopup::create(int accountID, std::string const& targetUsername) {
     auto ret = new RateProfilePopup();
     if (ret && ret->init(accountID, targetUsername)) {
         ret->autorelease();
@@ -15,7 +15,7 @@ RateProfilePopup* RateProfilePopup::create(int accountID, const std::string& tar
     return nullptr;
 }
 
-bool RateProfilePopup::init(int accountID, const std::string& targetUsername) {
+bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     if (!Popup::init(340.f, 240.f)) return false;
 
     m_accountID = accountID;
@@ -134,7 +134,7 @@ void RateProfilePopup::loadExistingRating() {
     std::string endpoint = fmt::format("/api/profile-ratings/{}?username={}", m_accountID, username);
 
     WeakRef<RateProfilePopup> self = this;
-    HttpClient::get().get(endpoint, [self, this](bool ok, const std::string& resp) {
+    HttpClient::get().get(endpoint, [self, this](bool ok, std::string const& resp) {
         auto popup = self.lock();
         if (!popup) return;
 
@@ -144,16 +144,15 @@ void RateProfilePopup::loadExistingRating() {
             return;
         }
 
-        try {
-            auto parsed = matjson::parse(resp);
+        auto parsed = matjson::parse(resp);
             if (!parsed.isOk()) return;
             auto root = parsed.unwrap();
 
             float avg = 0.f;
             int count = 0;
 
-            if (root["average"].isNumber()) avg = static_cast<float>(root["average"].asDouble().unwrap());
-            if (root["count"].isNumber()) count = static_cast<int>(root["count"].asInt().unwrap());
+            if (root["average"].isNumber()) avg = static_cast<float>(root["average"].asDouble().unwrapOr(0.0));
+            if (root["count"].isNumber()) count = static_cast<int>(root["count"].asInt().unwrapOr(0));
 
             m_currentAverage = avg;
             m_totalVotes = count;
@@ -173,14 +172,13 @@ void RateProfilePopup::loadExistingRating() {
             if (root["userVote"].isObject()) {
                 auto uv = root["userVote"];
                 if (uv["stars"].isNumber()) {
-                    m_rating = static_cast<int>(uv["stars"].asInt().unwrap());
+                    m_rating = static_cast<int>(uv["stars"].asInt().unwrapOr(0));
                     updateStarVisuals();
                 }
                 if (uv["message"].isString() && m_messageInput) {
-                    m_messageInput->setString(uv["message"].asString().unwrap());
+                    m_messageInput->setString(uv["message"].asString().unwrapOr(""));
                 }
             }
-        } catch (...) {}
     });
 }
 
@@ -222,33 +220,31 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
 
     WeakRef<RateProfilePopup> self = this;
     Ref<geode::LoadingSpinner> spinnerRef = spinner;
-    HttpClient::get().post("/api/profile-ratings/vote", body, [self, spinnerRef, btn](bool success, const std::string& msg) {
+    HttpClient::get().post("/api/profile-ratings/vote", body, [self, spinnerRef, btn](bool success, std::string const& msg) {
         auto popup = self.lock();
         if (!popup) return;
 
         if (spinnerRef) spinnerRef->removeFromParent();
 
         if (success) {
-            try {
-                auto parsed = matjson::parse(msg);
-                if (parsed.isOk()) {
-                    auto root = parsed.unwrap();
-                    if (root["error"].isString()) {
-                        if (btn) btn->setEnabled(true);
-                        PaimonNotify::create(root["error"].asString().unwrap(), NotificationIcon::Error)->show();
-                        return;
-                    }
-                    bool updated = false;
-                    if (root["updated"].isBool()) updated = root["updated"].asBool().unwrap();
-                    if (updated) {
-                        PaimonNotify::create("Rating updated!", NotificationIcon::Success)->show();
-                    } else {
-                        PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
-                    }
-                    popup->onClose(nullptr);
+            auto parsed = matjson::parse(msg);
+            if (parsed.isOk()) {
+                auto root = parsed.unwrap();
+                if (root["error"].isString()) {
+                    if (btn) btn->setEnabled(true);
+                    PaimonNotify::create(root["error"].asString().unwrapOr("Unknown error"), NotificationIcon::Error)->show();
                     return;
                 }
-            } catch (...) {}
+                bool updated = false;
+                if (root["updated"].isBool()) updated = root["updated"].asBool().unwrapOr(false);
+                if (updated) {
+                    PaimonNotify::create("Rating updated!", NotificationIcon::Success)->show();
+                } else {
+                    PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
+                }
+                popup->onClose(nullptr);
+                return;
+            }
 
             PaimonNotify::create("Rating submitted!", NotificationIcon::Success)->show();
             popup->onClose(nullptr);
@@ -256,15 +252,13 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
             if (btn) btn->setEnabled(true);
             std::string errorMsg = "Failed to submit rating";
             if (!msg.empty()) {
-                try {
-                    auto parsed = matjson::parse(msg);
-                    if (parsed.isOk()) {
-                        auto root = parsed.unwrap();
-                        if (root["error"].isString()) {
-                            errorMsg = root["error"].asString().unwrap();
-                        }
+                auto parsed = matjson::parse(msg);
+                if (parsed.isOk()) {
+                    auto root = parsed.unwrap();
+                    if (root["error"].isString()) {
+                        errorMsg = root["error"].asString().unwrapOr(errorMsg);
                     }
-                } catch (...) {
+                } else {
                     errorMsg += ": " + msg;
                 }
             }

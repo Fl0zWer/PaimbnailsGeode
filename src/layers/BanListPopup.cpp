@@ -49,49 +49,49 @@ bool BanListPopup::init() {
     this->m_mainLayer->addChild(m_scroll, 5);
 
     auto self = WeakRef<BanListPopup>(this);
-    HttpClient::get().getBanList([self](bool success, const std::string& jsonData) {
+    HttpClient::get().getBanList([self](bool success, std::string const& jsonData) {
         auto popup = self.lock();
         if (!popup) return;
 
         std::vector<std::string> users;
 
         if (success) {
-            try {
-                auto parsed = matjson::parse(jsonData);
-                if (parsed.isOk()) {
-                    auto root = parsed.unwrap();
-                    if (root.isObject()) {
-                        auto banned = root["banned"];
-                        if (banned.isArray()) {
-                            for (auto const& v : banned.asArray().unwrap()) {
+            auto parsed = matjson::parse(jsonData);
+            if (parsed.isOk()) {
+                auto root = parsed.unwrap();
+                if (root.isObject()) {
+                    auto banned = root["banned"];
+                    if (banned.isArray()) {
+                        auto arrRes = banned.asArray();
+                        if (arrRes.isOk()) {
+                            for (auto const& v : arrRes.unwrap()) {
                                 if (v.isString()) {
-                                    users.push_back(v.asString().unwrap());
-                                }
-                            }
-                        }
-
-                        if (root.contains("details") && root["details"].isObject()) {
-                            for (auto const& val : root["details"]) {
-                                if (val.isObject()) {
-                                    auto keyOpt = val.getKey();
-                                    if (!keyOpt) continue;
-                                    std::string key = *keyOpt;
-
-                                    BanDetail d;
-                                    if (val.contains("reason") && val["reason"].isString()) 
-                                        d.reason = val["reason"].asString().unwrap();
-                                    if (val.contains("bannedBy") && val["bannedBy"].isString()) 
-                                        d.bannedBy = val["bannedBy"].asString().unwrap();
-                                    if (val.contains("date") && val["date"].isString()) 
-                                        d.date = val["date"].asString().unwrap();
-                                    
-                                    popup->m_banDetails[key] = d;
+                                    users.push_back(v.asString().unwrapOr(""));
                                 }
                             }
                         }
                     }
+
+                    if (root.contains("details") && root["details"].isObject()) {
+                        for (auto const& val : root["details"]) {
+                            if (val.isObject()) {
+                                auto keyOpt = val.getKey();
+                                if (!keyOpt) continue;
+                                std::string key = *keyOpt;
+
+                                BanDetail d;
+                                if (val.contains("reason") && val["reason"].isString())
+                                    d.reason = val["reason"].asString().unwrapOr("");
+                                if (val.contains("bannedBy") && val["bannedBy"].isString())
+                                    d.bannedBy = val["bannedBy"].asString().unwrapOr("");
+                                if (val.contains("date") && val["date"].isString())
+                                    d.date = val["date"].asString().unwrapOr("");
+
+                                popup->m_banDetails[key] = d;
+                            }
+                        }
+                    }
                 }
-            } catch (...) {
             }
         }
 
@@ -103,7 +103,7 @@ bool BanListPopup::init() {
     return true;
 }
 
-void BanListPopup::rebuildList(const std::vector<std::string>& users) {
+void BanListPopup::rebuildList(std::vector<std::string> const& users) {
     m_listMenu->removeAllChildren();
     
     m_listMenu->setLayout(ColumnLayout::create()->setGap(5.f)->setAxisReverse(true)->setAxisAlignment(AxisAlignment::End));
@@ -118,7 +118,7 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         return;
     }
 
-    for (const auto& user : users) {
+    for (auto const& user : users) {
         auto cellContainer = CCNode::create();
         cellContainer->setContentSize({viewSize.width - 20.f, 30.f});
         cellContainer->setID("user-cell"_spr);
@@ -145,12 +145,14 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         auto infoSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
         infoSpr->setScale(0.6f);
         auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(BanListPopup::onInfo));
+        infoBtn->setID("ban-info-btn"_spr);
         infoBtn->setUserObject(CCString::create(user));
         btnMenu->addChild(infoBtn);
 
         auto unbanSpr = ButtonSprite::create(Localization::get().getString("ban.list.unban_btn").c_str(), 50, true, "goldFont.fnt", "GJ_button_05.png", 30.f, 0.6f);
         unbanSpr->setScale(0.7f);
         auto unbanBtn = CCMenuItemSpriteExtra::create(unbanSpr, this, menu_selector(BanListPopup::onUnban));
+        unbanBtn->setID("unban-btn"_spr);
         unbanBtn->setUserObject(CCString::create(user));
         btnMenu->addChild(unbanBtn);
         
@@ -209,7 +211,7 @@ void BanListPopup::onUnban(CCObject* sender) {
         "Cancel", Localization::get().getString("ban.list.unban_btn").c_str(),
         [self, username](auto, bool btn2) {
             if (btn2) {
-                HttpClient::get().unbanUser(username, [self](bool success, const std::string& msg) {
+                HttpClient::get().unbanUser(username, [self](bool success, std::string const& msg) {
                     if (success) {
                         PaimonNotify::create(Localization::get().getString("ban.unban.success"), NotificationIcon::Success)->show();
                         self->onClose(nullptr);

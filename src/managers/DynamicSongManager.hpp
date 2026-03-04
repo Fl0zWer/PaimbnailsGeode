@@ -29,12 +29,12 @@ public:
     // Limpieza forzada desde PlayLayer::init
     void forceKill();
 
-    // Pausar/reanudar el canal dinámico (para ProfileMusic u otros popups)
+    // Pausar/reanudar el canal dinamico (para ProfileMusic u otros popups)
     void pauseDynamicChannel();
     void resumeDynamicChannel();
     bool isDynamicChannelPaused() const { return m_channelPaused; }
 
-    // Acceso al volumen del canal dinámico para crossfade desde ProfileMusic
+    // Acceso al volumen del canal dinamico para crossfade desde ProfileMusic
     float getDynamicVolume() const;
     void setDynamicVolume(float vol);
 

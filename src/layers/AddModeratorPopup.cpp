@@ -13,9 +13,9 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-AddModeratorPopup* AddModeratorPopup::create(std::function<void(bool, const std::string&)> callback) {
+AddModeratorPopup* AddModeratorPopup::create(geode::CopyableFunction<void(bool, std::string const&)> callback) {
     auto ret = new AddModeratorPopup();
-    if (ret && ret->init(callback)) {
+    if (ret && ret->init(std::move(callback))) {
         ret->autorelease();
         return ret;
     }
@@ -23,7 +23,7 @@ AddModeratorPopup* AddModeratorPopup::create(std::function<void(bool, const std:
     return nullptr;
 }
 
-bool AddModeratorPopup::init(std::function<void(bool, const std::string&)> callback) {
+bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string const&)> callback) {
     if (!Popup::init(380.f, 290.f)) return false;
     
     m_callback = callback;
@@ -116,7 +116,7 @@ void AddModeratorPopup::fetchAndShowModerators() {
     m_listContainer->setContentSize(viewSize);
 
     WeakRef<AddModeratorPopup> self = this;
-    HttpClient::get().getModerators([self](bool success, const std::vector<std::string>& moderators) {
+    HttpClient::get().getModerators([self](bool success, std::vector<std::string> const& moderators) {
         auto popup = self.lock();
         if (!popup) return;
 
@@ -160,7 +160,7 @@ void AddModeratorPopup::rebuildList() {
 
     // construyo celdas manualmente (posicion absoluta, sin autoScale que comprima)
     float yPos = totalH - cellHeight / 2;
-    for (const auto& modName : m_moderatorNames) {
+    for (auto const& modName : m_moderatorNames) {
         auto cell = CCNode::create();
         cell->setContentSize({viewSize.width - 10.f, cellHeight});
         cell->setAnchorPoint({0.5f, 0.5f});
@@ -230,13 +230,13 @@ void AddModeratorPopup::onAdd(CCObject*) {
     m_loadingSpinner->setID("paimon-loading-spinner"_spr);
     m_mainLayer->addChild(m_loadingSpinner, 100);
     
-    this->retain();
-    
-    ThumbnailAPI::get().addModerator(username, adminUser, [this, username](bool success, const std::string& message) {
-        if (m_loadingSpinner) {
-            m_loadingSpinner->removeFromParent();
+    Ref<AddModeratorPopup> safeRef = this;
+
+    ThumbnailAPI::get().addModerator(username, adminUser, [safeRef, username](bool success, std::string const& message) {
+        if (safeRef->m_loadingSpinner) {
+            safeRef->m_loadingSpinner->removeFromParent();
         }
-        m_loadingSpinner = nullptr;
+        safeRef->m_loadingSpinner = nullptr;
 
         if (success) {
             PaimonNotify::create(
@@ -244,11 +244,11 @@ void AddModeratorPopup::onAdd(CCObject*) {
                 NotificationIcon::Success
             )->show();
             
-            m_usernameInput->setString("");
-            
-            if (m_callback) m_callback(true, username);
-            
-            this->fetchAndShowModerators();
+            safeRef->m_usernameInput->setString("");
+
+            if (safeRef->m_callback) safeRef->m_callback(true, username);
+
+            safeRef->fetchAndShowModerators();
         } else {
             createQuickPopup(
                 Localization::get().getString("addmod.error_title").c_str(),
@@ -256,8 +256,6 @@ void AddModeratorPopup::onAdd(CCObject*) {
                 "OK", nullptr, nullptr
             );
         }
-        
-        this->release();
     });
 }
 
@@ -289,7 +287,7 @@ void AddModeratorPopup::onRemove(CCObject* sender) {
             self->m_loadingSpinner->setID("paimon-loading-spinner"_spr);
             self->m_mainLayer->addChild(self->m_loadingSpinner, 100);
 
-            ThumbnailAPI::get().removeModerator(username, adminUser, [self, username](bool success, const std::string& message) {
+            ThumbnailAPI::get().removeModerator(username, adminUser, [self, username](bool success, std::string const& message) {
                 if (self->m_loadingSpinner) {
                     self->m_loadingSpinner->removeFromParent();
                 }

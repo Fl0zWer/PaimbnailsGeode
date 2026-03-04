@@ -1,8 +1,8 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/utils/function.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
-#include <functional>
 #include <string>
 #include <vector>
 #include <filesystem>
@@ -10,82 +10,82 @@
 using namespace geode::prelude;
 
 /**
- * ProfileMusicManager - Gestiona la música personalizada de perfiles
+ * ProfileMusicManager - Gestiona la musica personalizada de perfiles
  * Descarga, cachea y reproduce fragmentos de audio de Newgrounds
  */
 class ProfileMusicManager {
 public:
-    // Configuración de música del perfil
+    // Configuracion de musica del perfil
     struct ProfileMusicConfig {
-        int songID = 0;           // ID de la canción en Newgrounds
+        int songID = 0;           // ID de la cancion en Newgrounds
         int startMs = 0;          // Milisegundo de inicio
-        int endMs = 20000;        // Milisegundo de fin (máx 20 segundos)
+        int endMs = 20000;        // Milisegundo de fin (max 20 segundos)
         float volume = 0.7f;      // Volumen (0.0 - 1.0)
-        bool enabled = true;      // Si está habilitada
-        std::string songName;     // Nombre de la canción
+        bool enabled = true;      // Si esta habilitada
+        std::string songName;     // Nombre de la cancion
         std::string artistName;   // Nombre del artista
     };
 
-    // Callbacks
-    using ConfigCallback = std::function<void(bool success, const ProfileMusicConfig& config)>;
-    using UploadCallback = std::function<void(bool success, const std::string& message)>;
-    using DownloadCallback = std::function<void(bool success, const std::string& localPath)>;
-    using WaveformCallback = std::function<void(bool success, const std::vector<float>& peaks, int durationMs)>;
-    using SongInfoCallback = std::function<void(bool success, const std::string& name, const std::string& artist, int durationMs)>;
+    // Callbacks — Geode v5: CopyableFunction
+    using ConfigCallback = geode::CopyableFunction<void(bool success, const ProfileMusicConfig& config)>;
+    using UploadCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
+    using DownloadCallback = geode::CopyableFunction<void(bool success, std::string const& localPath)>;
+    using WaveformCallback = geode::CopyableFunction<void(bool success, std::vector<float> const& peaks, int durationMs)>;
+    using SongInfoCallback = geode::CopyableFunction<void(bool success, std::string const& name, std::string const& artist, int durationMs)>;
 
     static ProfileMusicManager& get() {
         static ProfileMusicManager instance;
         return instance;
     }
 
-    // === CONFIGURACIÓN ===
+    // === CONFIGURACIoN ===
 
     /**
-     * Obtiene la configuración de música de un perfil desde el servidor
+     * Obtiene la configuracion de musica de un perfil desde el servidor
      */
     void getProfileMusicConfig(int accountID, ConfigCallback callback);
 
     /**
-     * Sube la configuración de música del perfil al servidor
-     * El servidor descargará y cortará el audio de Newgrounds
+     * Sube la configuracion de musica del perfil al servidor
+     * El servidor descargara y cortara el audio de Newgrounds
      */
-    void uploadProfileMusic(int accountID, const std::string& username, const ProfileMusicConfig& config, UploadCallback callback);
+    void uploadProfileMusic(int accountID, std::string const& username, const ProfileMusicConfig& config, UploadCallback callback);
 
     /**
-     * Elimina la música del perfil
+     * Elimina la musica del perfil
      */
-    void deleteProfileMusic(int accountID, const std::string& username, UploadCallback callback);
+    void deleteProfileMusic(int accountID, std::string const& username, UploadCallback callback);
 
-    // === REPRODUCCIÓN ===
+    // === REPRODUCCIoN ===
 
     /**
-     * Reproduce la música del perfil de un usuario
-     * Descarga el fragmento si no está en cache
+     * Reproduce la musica del perfil de un usuario
+     * Descarga el fragmento si no esta en cache
      */
     void playProfileMusic(int accountID);
 
     /**
-     * Pausa la música del perfil actual
+     * Pausa la musica del perfil actual
      */
     void pauseProfileMusic();
 
     /**
-     * Reanuda la música pausada
+     * Reanuda la musica pausada
      */
     void resumeProfileMusic();
 
     /**
-     * Detiene completamente la música del perfil
+     * Detiene completamente la musica del perfil
      */
     void stopProfileMusic();
 
     /**
-     * Verifica si hay música reproduciéndose
+     * Verifica si hay musica reproduciendose
      */
     bool isPlaying() const { return m_isPlaying; }
 
     /**
-     * Verifica si la música está pausada
+     * Verifica si la musica esta pausada
      */
     bool isPaused() const { return m_isPaused; }
 
@@ -95,7 +95,7 @@ public:
     bool isFadingOut() const { return m_isFadingOut; }
 
     /**
-     * Obtiene el accountID del perfil que está sonando
+     * Obtiene el accountID del perfil que esta sonando
      */
     int getCurrentPlayingProfile() const { return m_currentProfileID; }
 
@@ -106,47 +106,47 @@ public:
     float getCurrentAmplitude() const;
 
     /**
-     * Aplica efecto "cueva" a la música del perfil: lowpass filter + pitch más lento.
+     * Aplica efecto "cueva" a la musica del perfil: lowpass filter + pitch mas lento.
      * Usado cuando se abre InfoLayer (comentarios) para distinguirlo del perfil.
-     * Transición suave con fade gradual del DSP.
+     * Transicion suave con fade gradual del DSP.
      */
     void applyCaveEffect();
 
     /**
-     * Quita el efecto "cueva" y restaura la reproducción normal.
-     * Transición suave con fade gradual del DSP.
+     * Quita el efecto "cueva" y restaura la reproduccion normal.
+     * Transicion suave con fade gradual del DSP.
      */
     void removeCaveEffect();
 
     /**
-     * Fuerza la detención inmediata de toda la reproducción.
+     * Fuerza la detencion inmediata de toda la reproduccion.
      * Ignora fade-out en curso y limpia todo el estado.
      * Usar cuando se necesita garantizar que no hay audio activo.
      */
     void forceStop();
 
-    // === WAVEFORM / VISUALIZACIÓN ===
+    // === WAVEFORM / VISUALIZACIoN ===
 
     /**
-     * Obtiene los picos de audio de una canción de Newgrounds para visualización
-     * Descarga la canción temporalmente y analiza su waveform
+     * Obtiene los picos de audio de una cancion de Newgrounds para visualizacion
+     * Descarga la cancion temporalmente y analiza su waveform
      */
     void getWaveformPeaks(int songID, WaveformCallback callback);
 
     /**
-     * Obtiene información de una canción de Newgrounds (nombre, artista, duración)
+     * Obtiene informacion de una cancion de Newgrounds (nombre, artista, duracion)
      */
     void getSongInfo(int songID, SongInfoCallback callback);
 
     /**
-     * Descarga una canción de Newgrounds para preview
+     * Descarga una cancion de Newgrounds para preview
      */
     void downloadSongForPreview(int songID, DownloadCallback callback);
 
     /**
-     * Reproduce un preview de la canción desde un punto específico
+     * Reproduce un preview de la cancion desde un punto especifico
      */
-    void playPreview(const std::string& filePath, int startMs, int endMs);
+    void playPreview(std::string const& filePath, int startMs, int endMs);
 
     /**
      * Detiene el preview
@@ -156,7 +156,7 @@ public:
     // === CACHE ===
 
     /**
-     * Verifica si el fragmento de música de un perfil está en cache
+     * Verifica si el fragmento de musica de un perfil esta en cache
      */
     bool isCached(int accountID);
 
@@ -166,19 +166,19 @@ public:
     std::filesystem::path getCachePath(int accountID);
 
     /**
-     * Limpia el cache de música de perfiles
+     * Limpia el cache de musica de perfiles
      */
     void clearCache();
 
     // === SETTINGS ===
 
     /**
-     * Verifica si la música de perfiles está habilitada globalmente
+     * Verifica si la musica de perfiles esta habilitada globalmente
      */
     bool isEnabled() const;
 
     /**
-     * Obtiene el volumen de música del juego (para aplicar a la música de perfil)
+     * Obtiene el volumen de musica del juego (para aplicar a la musica de perfil)
      */
     float getGlobalVolume() const;
 
@@ -189,25 +189,25 @@ private:
     ProfileMusicManager(const ProfileMusicManager&) = delete;
     ProfileMusicManager& operator=(const ProfileMusicManager&) = delete;
 
-    // Estado de reproducción
+    // Estado de reproduccion
     bool m_isPlaying = false;
     bool m_isPaused = false;
     int m_currentProfileID = 0;
     std::string m_currentAudioPath;
 
-    // FMOD channel para música de perfil (usamos canal separado)
+    // FMOD channel para musica de perfil (usamos canal separado)
     FMOD::Channel* m_musicChannel = nullptr;
     FMOD::Sound* m_currentSound = nullptr;
 
-    // Parámetros pendientes para reproducción asíncrona
+    // Parametros pendientes para reproduccion asincrona
     int m_pendingStartMs = 0;
     int m_pendingEndMs = 0;
 
-    // Crossfade / transición suave
-    static constexpr int FADE_STEPS = 20;               // Pasos de interpolación
+    // Crossfade / transicion suave
+    static constexpr int FADE_STEPS = 20;               // Pasos de interpolacion
     bool m_isFadingIn = false;
     bool m_isFadingOut = false;
-    float m_bgVolumeBeforeFade = 1.0f;  // Volumen original de la música de fondo
+    float m_bgVolumeBeforeFade = 1.0f;  // Volumen original de la musica de fondo
 
     bool isCrossfadeEnabled() const;
     float getFadeDurationMs() const;
@@ -227,14 +227,14 @@ private:
     // Descarga el fragmento de audio del servidor
     void downloadMusicFragment(int accountID, DownloadCallback callback);
 
-    // Analiza waveform de un archivo de audio y devuelve duración
-    std::vector<float> analyzeWaveform(const std::string& filePath, int numPeaks, int& outDurationMs);
+    // Analiza waveform de un archivo de audio y devuelve duracion
+    std::vector<float> analyzeWaveform(std::string const& filePath, int numPeaks, int& outDurationMs);
 
     // Extrae un fragmento de audio como WAV
-    std::vector<uint8_t> extractAudioFragment(const std::string& filePath, int startMs, int endMs);
+    std::vector<uint8_t> extractAudioFragment(std::string const& filePath, int startMs, int endMs);
 
     // Helpers
-    void playAudioFile(const std::string& path, bool loop, int startMs = 0, int endMs = 0);
+    void playAudioFile(std::string const& path, bool loop, int startMs = 0, int endMs = 0);
     void checkSoundReady();
     void finishPlayback();
     void stopCurrentAudio();

@@ -97,17 +97,18 @@ void PaimonSupportLayer::loadShowcaseThumbnails() {
     std::error_code ec;
     if (!std::filesystem::exists(cachePath, ec)) return;
 
-    try {
-        for (const auto& entry : std::filesystem::directory_iterator(cachePath, ec)) {
-            if (!entry.is_regular_file()) continue;
-            auto ext = entry.path().extension().string();
-            // solo png y webp (no gifs animados para el fondo)
-            if (ext != ".png" && ext != ".webp") continue;
-            // ignorar archivos muy pequeños (< 5kb, posible error)
-            if (entry.file_size() < 5000) continue;
-            m_cachedThumbPaths.push_back(geode::utils::string::pathToString(entry.path()));
-        }
-    } catch (...) {}
+    for (auto const& entry : std::filesystem::directory_iterator(cachePath, ec)) {
+        if (ec) break;
+        if (!entry.is_regular_file()) continue;
+        auto ext = geode::utils::string::pathToString(entry.path().extension());
+        // solo png y webp (no gifs animados para el fondo)
+        if (ext != ".png" && ext != ".webp") continue;
+        // ignorar archivos muy pequenos (< 5kb, posible error)
+        std::error_code sizeEc;
+        auto fsize = entry.file_size(sizeEc);
+        if (sizeEc || fsize < 5000) continue;
+        m_cachedThumbPaths.push_back(geode::utils::string::pathToString(entry.path()));
+    }
 
     if (m_cachedThumbPaths.empty()) return;
 
@@ -137,52 +138,42 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
     m_currentThumbIndex++;
 
     // cargar la imagen desde disco en un thread para no trabar UI
-    this->retain();
+    Ref<PaimonSupportLayer> self = this;
 
-    std::thread([this, filePath]() {
+    std::thread([self, filePath]() {
         geode::utils::thread::setName("SupportLayer BG Loader");
 
         CCTexture2D* tex = nullptr;
-        try {
-            std::ifstream file(filePath, std::ios::binary | std::ios::ate);
-            if (!file.is_open()) {
-                Loader::get()->queueInMainThread([this]() {
-                    m_loadingThumb = false;
-                    this->release();
-                });
-                return;
-            }
-
-            auto size = file.tellg();
-            file.seekg(0, std::ios::beg);
-            std::vector<uint8_t> data(size);
-            file.read(reinterpret_cast<char*>(data.data()), size);
-            file.close();
-
-            Loader::get()->queueInMainThread([this, data = std::move(data)]() {
-                auto image = new CCImage();
-                if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-                    auto tex = new CCTexture2D();
-                    if (tex->initWithImage(image)) {
-                        image->release();
-                        tex->autorelease();
-                        applyThumbnailBackground(tex);
-                        m_loadingThumb = false;
-                        this->release();
-                        return;
-                    }
-                    tex->release();
-                }
-                image->release();
-                m_loadingThumb = false;
-                this->release();
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            Loader::get()->queueInMainThread([self]() {
+                self->m_loadingThumb = false;
             });
-        } catch (...) {
-            Loader::get()->queueInMainThread([this]() {
-                m_loadingThumb = false;
-                this->release();
-            });
+            return;
         }
+
+        auto size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        std::vector<uint8_t> data(size);
+        file.read(reinterpret_cast<char*>(data.data()), size);
+        file.close();
+
+        Loader::get()->queueInMainThread([self, data = std::move(data)]() {
+            auto image = new CCImage();
+            if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
+                auto tex = new CCTexture2D();
+                if (tex->initWithImage(image)) {
+                    image->release();
+                    tex->autorelease();
+                    self->applyThumbnailBackground(tex);
+                    self->m_loadingThumb = false;
+                    return;
+                }
+                tex->release();
+            }
+            image->release();
+            self->m_loadingThumb = false;
+        });
     }).detach();
 }
 
@@ -381,8 +372,8 @@ void PaimonSupportLayer::createBenefitsPanel() {
 
     // lista de beneficios
     struct Benefit {
-        const char* icon;
-        const char* text;
+        char const* icon;
+        char const* text;
         ccColor3B color;
     };
 
@@ -500,6 +491,7 @@ void PaimonSupportLayer::createButtons() {
     auto backBtn = CCMenuItemSpriteExtra::create(
         backSpr, this, menu_selector(PaimonSupportLayer::onBack)
     );
+    backBtn->setID("back-btn"_spr);
     backBtn->setPosition({-winSize.width / 2 + 25.f, winSize.height / 2 - 25.f});
     backMenu->addChild(backBtn);
     backMenu->setPosition({winSize.width / 2, winSize.height / 2});
@@ -560,6 +552,5 @@ void PaimonSupportLayer::keyBackClicked() {
 }
 
 void PaimonSupportLayer::onDonate(CCObject*) {
-    // URL placeholder — cambiala a tu pagina de donaciones real
-    geode::utils::web::openLinkInBrowser("https://paimonalcuadrado.workers.dev/donate");
+    geode::utils::web::openLinkInBrowser("https://ko-fi.com/flozwer");
 }

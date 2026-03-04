@@ -15,8 +15,8 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 // CCScale9Sprite::create crashea si el sprite no existe (no retorna nullptr).
-// Esta función verifica primero que la textura sea válida.
-static CCScale9Sprite* safeCreateScale9(const char* file) {
+// Esta funcion verifica primero que la textura sea valida.
+static CCScale9Sprite* safeCreateScale9(char const* file) {
     // Intentar cargar la textura sin crear el Scale9
     auto* tex = CCTextureCache::sharedTextureCache()->addImage(file, false);
     if (!tex) return nullptr;
@@ -111,12 +111,14 @@ bool ProfilePicEditorPopup::init() {
     auto saveSpr = ButtonSprite::create("Save", "goldFont.fnt", "GJ_button_01.png", 0.8f);
     saveSpr->setScale(0.7f);
     auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(ProfilePicEditorPopup::onSave));
+    saveBtn->setID("save-btn"_spr);
     saveBtn->setPosition({centerX - 50, 25});
     bottomMenu->addChild(saveBtn);
 
     auto resetSpr = ButtonSprite::create("Reset", "goldFont.fnt", "GJ_button_05.png", 0.8f);
     resetSpr->setScale(0.6f);
     auto resetBtn = CCMenuItemSpriteExtra::create(resetSpr, this, menu_selector(ProfilePicEditorPopup::onReset));
+    resetBtn->setID("reset-btn"_spr);
     resetBtn->setPosition({centerX + 50, 25});
     bottomMenu->addChild(resetBtn);
 
@@ -137,7 +139,7 @@ void ProfilePicEditorPopup::createTabs() {
     tabMenu->setPosition({0, 0});
     m_mainLayer->addChild(tabMenu, 12);
 
-    const char* tabNames[] = {"Frame", "Shape", "Decorate"};
+    char const* tabNames[] = {"Frame", "Shape", "Decorate"};
     float positions[] = {panelX - 90, panelX, panelX + 90};
 
     for (int i = 0; i < 3; i++) {
@@ -229,7 +231,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     node->addChild(colorLbl);
 
     // Paleta de colores: blanco, negro, rojo, verde, azul, amarillo, naranja, rosa, cyan, morado
-    struct ColorOption { ccColor3B color; const char* name; };
+    struct ColorOption { ccColor3B color; char const* name; };
     std::vector<ColorOption> colors = {
         {{255, 255, 255}, "White"},
         {{0, 0, 0}, "Black"},
@@ -412,7 +414,7 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
     m_sizeLabel->setPosition({panelX + 115, sizeY});
     node->addChild(m_sizeLabel);
 
-    // Stencil shape selection (formas geométricas + sprites)
+    // Stencil shape selection (formas geometricas + sprites)
     float shapeY = sizeY - 35;
     auto shapeLbl = CCLabelBMFont::create("Shape", "bigFont.fnt");
     shapeLbl->setScale(0.35f);
@@ -433,20 +435,20 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
         auto shapeNode = createShapeStencil(shapeName, cellSz - 4);
         if (!shapeNode) continue;
 
-        // Colorear verde si está seleccionado
+        // Colorear verde si esta seleccionado
         if (m_editConfig.stencilSprite == shapeName) {
             // Iterar hijos para pintar de verde
             for (auto* child : CCArrayExt<CCNode*>(shapeNode->getChildren())) {
-                if (auto* drawNode = dynamic_cast<CCDrawNode*>(child)) {
-                    // CCDrawNode no tiene setColor fácil, usamos un tinte
+                if (auto* drawNode = typeinfo_cast<CCDrawNode*>(child)) {
+                    // CCDrawNode no tiene setColor facil, usamos un tinte
                 }
-                if (auto* s9 = dynamic_cast<CCScale9Sprite*>(child)) {
+                if (auto* s9 = typeinfo_cast<CCScale9Sprite*>(child)) {
                     s9->setColor({0, 255, 0});
                 }
             }
         }
 
-        // Envolver en un sprite para el botón (CCMenuItemSpriteExtra necesita CCNode derivado de CCSprite-like)
+        // Envolver en un sprite para el boton (CCMenuItemSpriteExtra necesita CCNode derivado de CCSprite-like)
         // Truco: poner un CCLayerColor de fondo y la forma encima
         auto btnContainer = CCNode::create();
         btnContainer->setContentSize({cellSz, cellSz});
@@ -636,7 +638,7 @@ void ProfilePicEditorPopup::onAddDeco(CCObject* sender) {
 
     PicDecoration deco;
     deco.spriteName = decos[idx].first;
-    // Posición aleatoria alrededor del borde
+    // Posicion aleatoria alrededor del borde
     float angle = static_cast<float>(rand() % 360) * 3.14159f / 180.f;
     deco.posX = cosf(angle) * 0.7f;
     deco.posY = sinf(angle) * 0.7f;
@@ -692,7 +694,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
     picNode->setScaleX(m_editConfig.scaleX * previewScale);
     picNode->setScaleY(m_editConfig.scaleY * previewScale);
 
-    // Stencil con forma geométrica o sprite
+    // Stencil con forma geometrica o sprite
     auto stencil = createShapeStencil(m_editConfig.stencilSprite, thumbSize);
     if (!stencil) stencil = createShapeStencil("circle", thumbSize);
     if (!stencil) return;
@@ -741,7 +743,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 3) Cargar desde disco vía ProfileThumbs::loadTexture (RGB guardado)
+    // 3) Cargar desde disco via ProfileThumbs::loadTexture (RGB guardado)
     if (!hasContent) {
         auto tex = ProfileThumbs::get().loadTexture(myAccountID);
         if (tex) {
@@ -883,7 +885,7 @@ void ProfilePicEditorPopup::onReset(CCObject*) {
     PaimonNotify::create("Photo config reset!", NotificationIcon::Success)->show();
 }
 
-CCMenuItemSpriteExtra* ProfilePicEditorPopup::makeBtn(const char* text, SEL_MenuHandler sel, CCNode* parent, float scale) {
+CCMenuItemSpriteExtra* ProfilePicEditorPopup::makeBtn(char const* text, SEL_MenuHandler sel, CCNode* parent, float scale) {
     auto spr = ButtonSprite::create(text);
     spr->setScale(scale);
     auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);

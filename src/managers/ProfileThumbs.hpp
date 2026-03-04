@@ -1,6 +1,7 @@
 #pragma once
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/function.hpp>
 #include <cocos2d.h>
 #include <optional>
 #include <unordered_map>
@@ -18,9 +19,9 @@ struct ProfileConfig {
     cocos2d::ccColor3B colorB = {255,255,255};
     cocos2d::ccColor3B separatorColor = {0,0,0};
     int separatorOpacity = 50;
-float widthFactor = 0.60f; // widthFactor añadido
+    float widthFactor = 0.60f;
     bool hasConfig = false;
-    std::string gifKey = ""; // gifKey añadido para referencia en cache local
+    std::string gifKey = ""; // gifKey anadido para referencia en cache local
 };
 
 struct ProfileCacheEntry {
@@ -39,7 +40,7 @@ struct ProfileCacheEntry {
         : texture(tex), gifKey(""), colorA(ca), colorB(cb), widthFactor(w), 
           timestamp(std::chrono::steady_clock::now()) {}
 
-    ProfileCacheEntry(const std::string& key, cocos2d::ccColor3B ca, cocos2d::ccColor3B cb, float w) 
+    ProfileCacheEntry(std::string const& key, cocos2d::ccColor3B ca, cocos2d::ccColor3B cb, float w) 
         : texture(nullptr), gifKey(key), colorA(ca), colorB(cb), widthFactor(w), 
           timestamp(std::chrono::steady_clock::now()) {}
 };
@@ -48,11 +49,11 @@ class ProfileThumbs {
 public:
     static ProfileThumbs& get();
     
-    // flag de shutdown: cuando es true, no se liberan objetos cocos en destructores estáticos
+    // flag de shutdown: cuando es true, no se liberan objetos cocos en destructores estaticos
     static inline bool s_shutdownMode = false;
 
     ~ProfileThumbs() {
-        // durante el cierre del proceso los destructores estáticos se ejecutan en orden indefinido
+        // durante el cierre del proceso los destructores estaticos se ejecutan en orden indefinido
         // y el CCPoolManager de cocos2d puede ya estar muerto. geode::Ref llama release() al destruirse.
         // en modo shutdown usamos take() para sacar los objetos sin llamar release().
         if (s_shutdownMode) {
@@ -67,27 +68,27 @@ public:
     void deleteProfile(int accountID); // borra local + cache
     cocos2d::CCTexture2D* loadTexture(int accountID);
     bool loadRGB(int accountID, std::vector<uint8_t>& out, int& w, int& h);
-    
+
     // cache temporal de perfiles
     void cacheProfile(int accountID, cocos2d::CCTexture2D* texture, 
                      cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor);
     
-    void cacheProfileGIF(int accountID, const std::string& gifKey, 
+    void cacheProfileGIF(int accountID, std::string const& gifKey, 
                      cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor);
     
-    void cacheProfileConfig(int accountID, const ProfileConfig& config);
+    void cacheProfileConfig(int accountID, ProfileConfig const& config);
     ProfileConfig getProfileConfig(int accountID);
 
     ProfileCacheEntry* getCachedProfile(int accountID);
-    void clearCache(int accountID); // elimina entrada específica
-    void clearOldCache(); // elimina entradas más viejas de 14 días
+    void clearCache(int accountID); // elimina entrada especifica
+    void clearOldCache(); // elimina entradas mas viejas de 14 dias
     void clearAllCache(); // limpia todas las entradas cacheadas
 
     // crea un nodo con fondo + imagen de perfil
-    cocos2d::CCNode* createProfileNode(cocos2d::CCTexture2D* texture, const ProfileConfig& config, cocos2d::CCSize size, bool onlyBackground = false);
+    cocos2d::CCNode* createProfileNode(cocos2d::CCTexture2D* texture, ProfileConfig const& config, cocos2d::CCSize size, bool onlyBackground = false);
 
     // mete en cola la descarga de un perfil
-    void queueLoad(int accountID, const std::string& username, std::function<void(bool, cocos2d::CCTexture2D*)> callback);
+    void queueLoad(int accountID, std::string const& username, geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)> callback);
 
     // notifica que un perfil es visible en pantalla (sube prioridad)
     void notifyVisible(int accountID);
@@ -104,14 +105,14 @@ private:
     void processQueue();
     
     std::unordered_map<int, ProfileCacheEntry> m_profileCache;
-    std::unordered_map<int, std::chrono::steady_clock::time_point> m_visibilityMap; // cuándo se vio por última vez el perfil
+    std::unordered_map<int, std::chrono::steady_clock::time_point> m_visibilityMap; // cuando se vio por ultima vez el perfil
     std::unordered_set<int> m_noProfileCache; // cuentas sin perfil, pa no spamear requests
     std::unordered_map<int, std::string> m_usernameMap; // accountID -> username para descargas pendientes
-    static constexpr auto CACHE_DURATION = std::chrono::hours(24 * 14); // 14 días
+    static constexpr auto CACHE_DURATION = std::chrono::hours(24 * 14); // 14 dias
 
     // sistema de cola
     std::deque<int> m_downloadQueue;
-    std::unordered_map<int, std::vector<std::function<void(bool, cocos2d::CCTexture2D*)>>> m_pendingCallbacks;
+    std::unordered_map<int, std::vector<geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)>>> m_pendingCallbacks;
     int m_activeDownloads = 0;
     const int MAX_CONCURRENT_DOWNLOADS = 50;
 };

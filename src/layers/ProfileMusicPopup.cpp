@@ -37,7 +37,7 @@ bool ProfileMusicPopup::init(int accountID) {
     createWaveformDisplay();
     createControlButtons();
 
-    // Cargar configuración existente si la hay
+    // Cargar configuracion existente si la hay
     loadExistingConfig();
 
     return true;
@@ -126,7 +126,7 @@ void ProfileMusicPopup::createWaveformDisplay() {
         m_waveformContainer->addChild(m_endHandle, 3);
     }
 
-    // Selection label más compacto
+    // Selection label mas compacto
     m_selectionLabel = CCLabelBMFont::create("0:00 - 0:20", "bigFont.fnt");
     m_selectionLabel->setScale(0.38f);
     m_selectionLabel->setPosition({winSize.width / 2, m_waveformY - 18.f});
@@ -152,7 +152,7 @@ void ProfileMusicPopup::createWaveformDisplay() {
 void ProfileMusicPopup::createControlButtons() {
     auto winSize = m_mainLayer->getContentSize();
 
-    // Primera fila de botones - controles de reproducción (más arriba)
+    // Primera fila de botones - controles de reproduccion (mas arriba)
     float row1Y = 80.f;
 
     // Play preview
@@ -177,7 +177,7 @@ void ProfileMusicPopup::createControlButtons() {
     downloadBtn->setPosition({winSize.width / 2 + 40.f, row1Y});
     m_mainMenu->addChild(downloadBtn);
 
-    // Segunda fila de botones - Save y Delete (más abajo)
+    // Segunda fila de botones - Save y Delete (mas abajo)
     float row2Y = 45.f;
 
     // Save button
@@ -214,8 +214,8 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
 
     showLoading();
 
-    // Obtener info de la canción
-    ProfileMusicManager::get().getSongInfo(m_songID, [this](bool success, const std::string& name, const std::string& artist, int durationMs) {
+    // Obtener info de la cancion
+    ProfileMusicManager::get().getSongInfo(m_songID, [this](bool success, std::string const& name, std::string const& artist, int durationMs) {
         if (!success) {
             hideLoading();
             showError("Could not load song info. Make sure the ID is valid.");
@@ -237,7 +237,7 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
         int secs = (m_songDurationMs % 60000) / 1000;
         m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
 
-        // Ajustar selección si excede la duración
+        // Ajustar seleccion si excede la duracion
         if (m_endMs > m_songDurationMs) {
             m_endMs = std::min(m_songDurationMs, MAX_FRAGMENT_MS);
             m_startMs = std::max(0, m_endMs - MAX_FRAGMENT_MS);
@@ -249,8 +249,8 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
 }
 
 void ProfileMusicPopup::loadWaveform() {
-    // Primero descargar la canción para preview
-    ProfileMusicManager::get().downloadSongForPreview(m_songID, [this](bool success, const std::string& path) {
+    // Primero descargar la cancion para preview
+    ProfileMusicManager::get().downloadSongForPreview(m_songID, [this](bool success, std::string const& path) {
         if (!success || path.empty()) {
             hideLoading();
             showError("Could not download song");
@@ -261,7 +261,7 @@ void ProfileMusicPopup::loadWaveform() {
         m_previewPath = path;
 
         // Ahora obtener el waveform
-        ProfileMusicManager::get().getWaveformPeaks(m_songID, [this](bool success, const std::vector<float>& peaks, int durationMs) {
+        ProfileMusicManager::get().getWaveformPeaks(m_songID, [this](bool success, std::vector<float> const& peaks, int durationMs) {
             hideLoading();
 
             if (!success) {
@@ -326,7 +326,7 @@ void ProfileMusicPopup::renderWaveform() {
 
     if (progressBar) {
         progressBar->setScaleX(m_waveformWidth);
-        progressBar->setScaleY(4.f); // Línea delgada
+        progressBar->setScaleY(4.f); // Linea delgada
         progressBar->setAnchorPoint({0.5f, 0.5f});
         progressBar->setPosition({m_waveformWidth / 2, m_waveformHeight / 2});
         progressBar->setColor({100, 100, 110}); // Gris
@@ -342,7 +342,7 @@ void ProfileMusicPopup::updateSelectionOverlay() {
     float startX = msToPosition(m_startMs);
     float endX = msToPosition(m_endMs);
 
-    // Actualizar posición y tamaño del overlay
+    // Actualizar posicion y tamano del overlay
     m_selectionOverlay->setPosition({startX, 0});
     m_selectionOverlay->setContentSize({endX - startX, m_waveformHeight});
 
@@ -387,11 +387,11 @@ float ProfileMusicPopup::msToPosition(int ms) {
 }
 
 void ProfileMusicPopup::clampSelection() {
-    // Asegurar que no exceda la duración de la canción
+    // Asegurar que no exceda la duracion de la cancion
     if (m_startMs < 0) m_startMs = 0;
     if (m_endMs > m_songDurationMs) m_endMs = m_songDurationMs;
 
-    // Asegurar mínimo de 5 segundos
+    // Asegurar minimo de 5 segundos
     if (m_endMs - m_startMs < MIN_FRAGMENT_MS) {
         if (m_endMs + MIN_FRAGMENT_MS - (m_endMs - m_startMs) <= m_songDurationMs) {
             m_endMs = m_startMs + MIN_FRAGMENT_MS;
@@ -400,12 +400,12 @@ void ProfileMusicPopup::clampSelection() {
         }
     }
 
-    // Asegurar máximo de 20 segundos
+    // Asegurar maximo de 20 segundos
     if (m_endMs - m_startMs > MAX_FRAGMENT_MS) {
         m_endMs = m_startMs + MAX_FRAGMENT_MS;
     }
 
-    // Re-clampar después de ajustes
+    // Re-clampar despues de ajustes
     if (m_startMs < 0) m_startMs = 0;
     if (m_endMs > m_songDurationMs) m_endMs = m_songDurationMs;
 }
@@ -482,7 +482,7 @@ void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     auto touchPos = touch->getLocation();
     auto localPos = m_waveformContainer->convertToNodeSpace(touchPos);
 
-    // Clampar dentro del área
+    // Clampar dentro del area
     localPos.x = std::max(0.f, std::min(m_waveformWidth, localPos.x));
 
     if (m_isDraggingStart) {
@@ -567,7 +567,7 @@ void ProfileMusicPopup::onDownloadSong(CCObject*) {
 
     showLoading();
 
-    ProfileMusicManager::get().downloadSongForPreview(m_songID, [this](bool success, const std::string& path) {
+    ProfileMusicManager::get().downloadSongForPreview(m_songID, [this](bool success, std::string const& path) {
         hideLoading();
 
         if (success) {
@@ -608,7 +608,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
 
     std::string username = GJAccountManager::get()->m_username;
 
-    ProfileMusicManager::get().uploadProfileMusic(m_accountID, username, config, [this](bool success, const std::string& msg) {
+    ProfileMusicManager::get().uploadProfileMusic(m_accountID, username, config, [this](bool success, std::string const& msg) {
         hideLoading();
 
         if (success) {
@@ -633,7 +633,7 @@ void ProfileMusicPopup::onDelete(CCObject*) {
 
                 std::string username = GJAccountManager::get()->m_username;
 
-                ProfileMusicManager::get().deleteProfileMusic(m_accountID, username, [this](bool success, const std::string& msg) {
+                ProfileMusicManager::get().deleteProfileMusic(m_accountID, username, [this](bool success, std::string const& msg) {
                     hideLoading();
 
                     if (success) {
@@ -688,7 +688,7 @@ void ProfileMusicPopup::hideLoading() {
     }
 }
 
-void ProfileMusicPopup::showError(const std::string& message) {
+void ProfileMusicPopup::showError(std::string const& message) {
     FLAlertLayer::create(nullptr, "Error", message, "OK", nullptr)->show();
 }
 

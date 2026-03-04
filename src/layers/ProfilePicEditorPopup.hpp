@@ -35,7 +35,7 @@ protected:
     // Deco tab
     cocos2d::CCLayer* m_decoListContent = nullptr;
     int m_decoPage = 0;
-    int m_selectedDecoIdx = -1;  // decoración seleccionada para mover/editar
+    int m_selectedDecoIdx = -1;  // decoracion seleccionada para mover/editar
 
     bool init();
 
@@ -77,7 +77,7 @@ protected:
     void onReset(cocos2d::CCObject* sender);
 
     // Helper
-    CCMenuItemSpriteExtra* makeBtn(const char* text, cocos2d::SEL_MenuHandler sel, cocos2d::CCNode* parent, float scale = 0.5f);
+    CCMenuItemSpriteExtra* makeBtn(char const* text, cocos2d::SEL_MenuHandler sel, cocos2d::CCNode* parent, float scale = 0.5f);
 
 public:
     static ProfilePicEditorPopup* create();

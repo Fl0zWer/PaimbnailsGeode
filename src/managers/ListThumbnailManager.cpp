@@ -9,7 +9,7 @@ ListThumbnailManager& ListThumbnailManager::get() {
     return instance;
 }
 
-void ListThumbnailManager::processList(const std::vector<int>& levelIDs, ListCallback callback, std::shared_ptr<bool> callerAlive) {
+void ListThumbnailManager::processList(std::vector<int> const& levelIDs, ListCallback callback, std::shared_ptr<bool> callerAlive) {
     for (int id : levelIDs) {
         if (callerAlive && !*callerAlive) return;
         
@@ -23,6 +23,3 @@ void ListThumbnailManager::processList(const std::vector<int>& levelIDs, ListCal
     }
 }
 
-void ListThumbnailManager::workerLoop() {}
-void ListThumbnailManager::processBatch(const BatchTask& task) {}
-void ListThumbnailManager::cacheTexture(int levelID, cocos2d::CCTexture2D* texture) {}

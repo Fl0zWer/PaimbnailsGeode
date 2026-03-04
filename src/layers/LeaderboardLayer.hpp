@@ -25,9 +25,9 @@ protected:
     void onViewLevel(cocos2d::CCObject* sender);
     
     // LevelManagerDelegate
-    void loadLevelsFinished(cocos2d::CCArray* levels, const char* key) override;
-    void loadLevelsFailed(const char* key) override;
-    void setupPageInfo(std::string, const char*) override;
+    void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
+    void loadLevelsFailed(char const* key) override;
+    void setupPageInfo(std::string, char const*) override;
     
     // actualizar info sin recrear la lista
     void updateLevelInfo();

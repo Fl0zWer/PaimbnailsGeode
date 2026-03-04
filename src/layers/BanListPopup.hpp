@@ -16,7 +16,7 @@ protected:
     std::map<std::string, BanDetail> m_banDetails;
 
     bool init();
-    void rebuildList(const std::vector<std::string>& users);
+    void rebuildList(std::vector<std::string> const& users);
     void onUnban(cocos2d::CCObject* sender);
     void onInfo(cocos2d::CCObject* sender);
 

@@ -49,8 +49,8 @@ std::string ProfileThumbs::makePath(int accountID) const {
 }
 
 bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int height) {
-    // no guardo a disco si solo es sesión
-    // aquí actualizo la cache en memoria
+    // no guardo a disco si solo es sesion
+    // aqui actualizo la cache en memoria
     
     if (!rgb || width <= 0 || height <= 0) return false;
 
@@ -80,8 +80,8 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
             std::ofstream out(path, std::ios::binary);
             if (out) {
                 Header h{width, height, 24};
-                out.write(reinterpret_cast<const char*>(&h), sizeof(h));
-                out.write(reinterpret_cast<const char*>(data.data()), data.size());
+                out.write(reinterpret_cast<char const*>(&h), sizeof(h));
+                out.write(reinterpret_cast<char const*>(data.data()), data.size());
                 // uso queueInMainThread solo para loguear sin romper nada
                 geode::Loader::get()->queueInMainThread([accountID]() {
                      log::debug("[ProfileThumbs] Saved profile to disk asynchronously for account {}", accountID);
@@ -90,7 +90,7 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
         }).detach();
 
         // actualizo cache
-        // intento preservar colores/ancho que ya tenía el usuario
+        // intento preservar colores/ancho que ya tenia el usuario
         // primero leo la config existente para no pisarla
         ccColor3B cA = {255,255,255};
         ccColor3B cB = {255,255,255};
@@ -114,14 +114,16 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
 }
 
 bool ProfileThumbs::has(int accountID) const {
-    return std::filesystem::exists(makePath(accountID));
+    std::error_code ec;
+    return std::filesystem::exists(makePath(accountID), ec);
 }
 
 void ProfileThumbs::deleteProfile(int accountID) {
     clearCache(accountID);
     auto path = makePath(accountID);
-    if (std::filesystem::exists(path)) {
-        std::filesystem::remove(path);
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) {
+        std::filesystem::remove(path, ec);
         log::debug("[ProfileThumbs] Deleted profile thumbnail for account {}", accountID);
     }
 }
@@ -130,7 +132,8 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
     auto path = makePath(accountID);
     log::debug("[ProfileThumbs] Loading profile thumbnail for account {}: {}", accountID, path);
     
-    if (!std::filesystem::exists(path)) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) {
         log::debug("[ProfileThumbs] Thumbnail not found for account {}", accountID);
         return nullptr;
     }
@@ -182,7 +185,8 @@ CCTexture2D* ProfileThumbs::loadTexture(int accountID) {
 
 bool ProfileThumbs::loadRGB(int accountID, std::vector<uint8_t>& out, int& w, int& h) {
     auto path = makePath(accountID);
-    if (!std::filesystem::exists(path)) return false;
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec) || ec) return false;
     std::ifstream in(path, std::ios::binary);
     if (!in) return false;
     Header head{}; in.read(reinterpret_cast<char*>(&head), sizeof(head));
@@ -201,7 +205,7 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
     log::debug("[ProfileThumbs] Caching profile for account {} with colors RGB({},{},{}) -> RGB({},{},{}), width: {}", 
                accountID, colorA.r, colorA.g, colorA.b, colorB.r, colorB.g, colorB.b, widthFactor);
     
-    // preservo config existente y gifKey si ya había algo
+    // preservo config existente y gifKey si ya habia algo
     ProfileConfig existingConfig;
     std::string existingGifKey;
     auto it = m_profileCache.find(accountID);
@@ -213,14 +217,14 @@ void ProfileThumbs::cacheProfile(int accountID, CCTexture2D* texture,
     m_profileCache[accountID] = ProfileCacheEntry(texture, colorA, colorB, widthFactor);
     m_profileCache[accountID].config = existingConfig;
 
-    // si ya tenía gifKey la vuelvo a poner (GIF ya estaba cacheado)
+    // si ya tenia gifKey la vuelvo a poner (GIF ya estaba cacheado)
     if (!existingGifKey.empty()) {
         m_profileCache[accountID].gifKey = existingGifKey;
         log::debug("[ProfileThumbs] Preserved existing gifKey: {} for account {}", existingGifKey, accountID);
     }
 }
 
-void ProfileThumbs::cacheProfileGIF(int accountID, const std::string& gifKey, 
+void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey, 
                                     cocos2d::ccColor3B colorA, cocos2d::ccColor3B colorB, float widthFactor) {
     clearOldCache();
     
@@ -235,19 +239,19 @@ void ProfileThumbs::cacheProfileGIF(int accountID, const std::string& gifKey,
         existingConfig = it->second.config;
     }
 
-    // aquí no hay textura directa, solo la key del GIF
+    // aqui no hay textura directa, solo la key del GIF
     // queueload espera textura, pero la parte visual ya maneja la gifKey
     
     m_profileCache[accountID] = ProfileCacheEntry(gifKey, colorA, colorB, widthFactor);
     m_profileCache[accountID].config = existingConfig;
 }
 
-void ProfileThumbs::cacheProfileConfig(int accountID, const ProfileConfig& config) {
+void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& config) {
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         it->second.config = config;
     } else {
-        // si no había entrada, creo una solo con config
+        // si no habia entrada, creo una solo con config
         ProfileCacheEntry entry;
         entry.config = config;
         m_profileCache[accountID] = std::move(entry);
@@ -312,7 +316,7 @@ void ProfileThumbs::clearOldCache() {
 
 void ProfileThumbs::clearAllCache() {
     log::info("[ProfileThumbs] Clearing all profile cache ({} entries)", m_profileCache.size());
-    for (const auto& [id, entry] : m_profileCache) {
+    for (auto const& [id, entry] : m_profileCache) {
         if (!entry.gifKey.empty()) {
             AnimatedGIFSprite::unpinGIF(entry.gifKey);
         }
@@ -337,7 +341,7 @@ void ProfileThumbs::clearNoProfileCache() {
     m_noProfileCache.clear();
 }
 
-CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConfig& config, CCSize cs, bool onlyBackground) {
+CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig const& config, CCSize cs, bool onlyBackground) {
     // si tenemos gifKey intento crear un AnimatedGIFSprite
     AnimatedGIFSprite* gifSprite = nullptr;
     if (!config.gifKey.empty()) {
@@ -353,7 +357,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
     auto container = CCNode::create();
     container->setContentSize(cs);
 
-    // --- lógica del fondo ---
+    // --- logica del fondo ---
     CCNode* bg = nullptr;
 
     // tipo de fondo final que se va a usar
@@ -382,14 +386,14 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
                 bgSprite->setScale(scale);
                 bgSprite->setPosition(targetSize * 0.5f);
                 
-                // shader de blur rápido por encima
+                // shader de blur rapido por encima
                 auto shader = getOrCreateShader("fast-blur", vertexShaderCell, fragmentShaderFastBlur);
                 if (shader) {
                     bgSprite->setShaderProgram(shader);
                     // AnimatedGIFSprite::draw se encarga de los uniforms
                 }
                 
-                // clipper para que no se salga del rectángulo
+                // clipper para que no se salga del rectangulo
                 auto stencil = CCDrawNode::create();
                 CCPoint rect[4];
                 rect[0] = ccp(0, 0);
@@ -426,7 +430,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
             if (!bgSprite) bgSprite = CCSprite::createWithTexture(texture);
 
             if (bgSprite) {
-                // clipper para el fondo estático
+                // clipper para el fondo estatico
                 auto stencil = CCDrawNode::create();
                 CCPoint rect[4];
                 rect[0] = ccp(0, 0);
@@ -440,7 +444,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
                 clipper->setAlphaThreshold(0.05f);
                 clipper->setContentSize(cs);
                 clipper->setPosition({0,0});
-                clipper->setZOrder(-10); // bien detrás de todo
+                clipper->setZOrder(-10); // bien detras de todo
                 
                 float targetW = cs.width;
                 float targetH = cs.height;
@@ -465,7 +469,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
             }
         }
     } else if (bgType != "none") {
-        // degradado o color sólido
+        // degradado o color solido
         if (config.useGradient) {
             auto grad = CCLayerGradient::create(
                 ccc4(config.colorA.r, config.colorA.g, config.colorA.b, 255),
@@ -503,7 +507,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
         mainSprite = gifSprite;
         contentW = gifSprite->getContentSize().width;
         contentH = gifSprite->getContentSize().height;
-        // me aseguro de que el GIF esté actualizando
+        // me aseguro de que el GIF este actualizando
         gifSprite->scheduleUpdate();
     } else if (texture) {
         auto s = CCSprite::createWithTexture(texture);
@@ -517,7 +521,7 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
         if (config.hasConfig) {
             factor = config.widthFactor;
         } else {
-            try { factor = Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f); } catch (...) {}
+            factor = Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
         }
         factor = std::max(0.30f, std::min(0.95f, factor));
         float desiredWidth = cs.width * factor;
@@ -546,21 +550,21 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
         clip->setPosition({cs.width, 0});
         clip->setZOrder(10); // lo dejo por encima del fondo
         
-        // ajusto posición del sprite dentro del clip
+        // ajusto posicion del sprite dentro del clip
         mainSprite->setAnchorPoint({1,0});
         mainSprite->setPosition({scaledSize.width, 0});
         
         clip->addChild(mainSprite);
         container->addChild(clip);
         
-        // línea separadora
+        // linea separadora
         auto separator = CCLayerColor::create({
             config.separatorColor.r, 
             config.separatorColor.g, 
             config.separatorColor.b, 
             (GLubyte)std::clamp(config.separatorOpacity, 0, 255)
         });
-        separator->setContentSize({2.0f, cs.height * 1.2f}); // un poco más alto para cubrir la inclinación
+        separator->setContentSize({2.0f, cs.height * 1.2f}); // un poco mas alto para cubrir la inclinacion
         separator->setAnchorPoint({0.5f, 0});
         separator->setSkewX(angle);
         separator->setPosition({cs.width - desiredWidth, 0});
@@ -571,8 +575,8 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, const ProfileConf
     return container;
 }
 
-void ProfileThumbs::queueLoad(int accountID, const std::string& username, std::function<void(bool, cocos2d::CCTexture2D*)> callback) {
-    // 0. miro cache negativa (si ya falló antes, ni lo intento en esta sesión)
+void ProfileThumbs::queueLoad(int accountID, std::string const& username, geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)> callback) {
+    // 0. miro cache negativa (si ya fallo antes, ni lo intento en esta sesion)
     if (isNoProfile(accountID)) {
         if (callback) callback(false, nullptr);
         return;
@@ -585,18 +589,18 @@ void ProfileThumbs::queueLoad(int accountID, const std::string& username, std::f
         return;
     }
 
-    // 2. si ya está en cola, solo apilo el callback
+    // 2. si ya esta en cola, solo apilo el callback
     if (m_pendingCallbacks.find(accountID) != m_pendingCallbacks.end()) {
         m_pendingCallbacks[accountID].push_back(callback);
         return;
     }
 
     // 3. lo meto en la cola (FIFO, al final)
-    // así la lista carga de arriba a abajo, y la visibilidad afina el orden
+    // asi la lista carga de arriba a abajo, y la visibilidad afina el orden
     m_downloadQueue.push_back(accountID);
     m_pendingCallbacks[accountID].push_back(callback);
     
-    // guardo username asociado a esta petición
+    // guardo username asociado a esta peticion
     m_usernameMap[accountID] = username;
 
     // 4. arranco el procesado de la cola
@@ -612,8 +616,8 @@ void ProfileThumbs::processQueue() {
         m_activeDownloads++;
 
         // busco el mejor candidato
-        // estrategia: primer item (más viejo) que siga siendo visible
-        // así mantengo FIFO para lo que se ve en pantalla
+        // estrategia: primer item (mas viejo) que siga siendo visible
+        // asi mantengo FIFO para lo que se ve en pantalla
         auto now = std::chrono::steady_clock::now();
         auto bestIt = m_downloadQueue.end();
         
@@ -621,17 +625,17 @@ void ProfileThumbs::processQueue() {
             int id = *it;
             if (m_visibilityMap.count(id)) {
                 auto lastSeen = m_visibilityMap[id];
-                if (now - lastSeen < std::chrono::milliseconds(200)) { // visible en los últimos 200ms
+                if (now - lastSeen < std::chrono::milliseconds(200)) { // visible en los ultimos 200ms
                     bestIt = it;
-                    break; // ya encontré uno visible, no sigo buscando
+                    break; // ya encontre uno visible, no sigo buscando
                 }
             }
         }
 
-        // si no hay nada visible, hago fallback a LIFO (la más nueva)
-        // ayuda cuando el usuario se mueve muy rápido y aún no ha “notificado” visibilidad
+        // si no hay nada visible, hago fallback a LIFO (la mas nueva)
+        // ayuda cuando el usuario se mueve muy rapido y aun no ha “notificado” visibilidad
         if (bestIt == m_downloadQueue.end()) {
-            // uso el último elemento (el más nuevo)
+            // uso el ultimo elemento (el mas nuevo)
             bestIt = m_downloadQueue.end() - 1;
         }
 
@@ -652,10 +656,10 @@ void ProfileThumbs::processQueue() {
             Ref<CCTexture2D> texRef = texture;
 
             // engancho la descarga de la config para tener imagen + settings
-            ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, success, texRef](bool configSuccess, const ProfileConfig& config) {
+            ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, success, texRef](bool configSuccess, ProfileConfig const& config) {
                 
                 if (success && texRef) {
-                    // cacheo el perfil con la config (o defaults si la config falló)
+                    // cacheo el perfil con la config (o defaults si la config fallo)
                     this->cacheProfile(accountID, texRef, config.colorA, config.colorB, config.widthFactor);
                 }
 
@@ -670,7 +674,7 @@ void ProfileThumbs::processQueue() {
                 // llamo a todos los callbacks pendientes
                 auto it = m_pendingCallbacks.find(accountID);
                 if (it != m_pendingCallbacks.end()) {
-                    for (const auto& cb : it->second) {
+                    for (auto const& cb : it->second) {
                         if (cb) cb(success, texRef);
                     }
                     m_pendingCallbacks.erase(it);

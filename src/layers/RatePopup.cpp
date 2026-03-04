@@ -98,7 +98,7 @@ void RatePopup::onSubmit(CCObject* sender) {
     // weakref por si async
     WeakRef<RatePopup> self = this;
     Ref<geode::LoadingSpinner> spinnerRef = spinner;
-    ThumbnailAPI::get().submitVote(m_levelID, m_rating, username, m_thumbnailId, [self, spinnerRef, btn](bool success, const std::string& msg) {
+    ThumbnailAPI::get().submitVote(m_levelID, m_rating, username, m_thumbnailId, [self, spinnerRef, btn](bool success, std::string const& msg) {
         if (auto popup = self.lock()) {
             if (spinnerRef) spinnerRef->removeFromParent();
             

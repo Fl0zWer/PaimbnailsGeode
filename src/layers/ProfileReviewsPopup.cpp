@@ -54,7 +54,7 @@ void ProfileReviewsPopup::loadReviews() {
     std::string endpoint = fmt::format("/api/profile-ratings/{}?username={}", m_accountID, username);
 
     WeakRef<ProfileReviewsPopup> self = this;
-    HttpClient::get().get(endpoint, [self](bool ok, const std::string& resp) {
+    HttpClient::get().get(endpoint, [self](bool ok, std::string const& resp) {
         auto popup = self.lock();
         if (!popup) return;
 
@@ -69,22 +69,18 @@ void ProfileReviewsPopup::loadReviews() {
             return;
         }
 
-        try {
-            auto parsed = matjson::parse(resp);
+        auto parsed = matjson::parse(resp);
             if (!parsed.isOk()) return;
             auto root = parsed.unwrap();
 
             float avg = 0.f;
             int count = 0;
-            if (root["average"].isNumber()) avg = static_cast<float>(root["average"].asDouble().unwrap());
-            if (root["count"].isNumber()) count = static_cast<int>(root["count"].asInt().unwrap());
+            if (root["average"].isNumber()) avg = static_cast<float>(root["average"].asDouble().unwrapOr(0.0));
+            if (root["count"].isNumber()) count = static_cast<int>(root["count"].asInt().unwrapOr(0));
 
             auto reviews = root["reviews"];
 
             popup->buildReviewList(avg, count, reviews);
-        } catch (...) {
-            if (popup->m_countLabel) popup->m_countLabel->setString("Error loading reviews");
-        }
     });
 }
 
@@ -166,7 +162,7 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
     m_scrollView = scroll;
 }
 
-CCNode* ProfileReviewsPopup::createReviewCell(const std::string& username, int stars, const std::string& message, float width) {
+CCNode* ProfileReviewsPopup::createReviewCell(std::string const& username, int stars, std::string const& message, float width) {
     float cellH = message.empty() ? 30.f : 46.f;
 
     auto cell = CCNode::create();

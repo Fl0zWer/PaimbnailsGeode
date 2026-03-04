@@ -10,8 +10,8 @@ using namespace cocos2d;
 using namespace geode::prelude;
 using namespace cocos2d::extension;
 
-ButtonEditOverlay* ButtonEditOverlay::create(const std::string& sceneKey, CCMenu* menu,
-                                             const std::vector<CCMenu*>& extraMenus) {
+ButtonEditOverlay* ButtonEditOverlay::create(std::string const& sceneKey, CCMenu* menu,
+                                             std::vector<CCMenu*> const& extraMenus) {
     auto ret = new ButtonEditOverlay();
     if (ret && ret->init(sceneKey, menu, extraMenus)) {
         ret->autorelease();
@@ -21,8 +21,8 @@ ButtonEditOverlay* ButtonEditOverlay::create(const std::string& sceneKey, CCMenu
     return nullptr;
 }
 
-bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu,
-                             const std::vector<CCMenu*>& extraMenus) {
+bool ButtonEditOverlay::init(std::string const& sceneKey, CCMenu* menu,
+                             std::vector<CCMenu*> const& extraMenus) {
     if (!CCLayer::init()) return false;
 
     m_sceneKey = sceneKey;
@@ -85,7 +85,7 @@ bool ButtonEditOverlay::init(const std::string& sceneKey, CCMenu* menu,
 }
 
 ButtonEditOverlay::~ButtonEditOverlay() {
-    // Re-habilitar menus desactivados (Ref mantiene los punteros válidos)
+    // Re-habilitar menus desactivados (Ref mantiene los punteros validos)
     for (auto& menuRef : m_disabledMenus) {
         if (menuRef && menuRef->getParent()) menuRef->setEnabled(true);
     }

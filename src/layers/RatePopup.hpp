@@ -1,5 +1,6 @@
 #pragma once
 #include <Geode/Geode.hpp>
+#include <Geode/utils/function.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../managers/ThumbnailAPI.hpp"
 
@@ -15,6 +16,6 @@ protected:
     void onSubmit(cocos2d::CCObject* sender);
 
 public:
-    std::function<void()> m_onRateCallback;
+    geode::CopyableFunction<void()> m_onRateCallback;
     static RatePopup* create(int levelID, std::string thumbnailId);
 };

@@ -2,6 +2,7 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
+#include "../managers/TransitionManager.hpp"
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
@@ -20,7 +21,7 @@ using namespace geode::prelude;
 using namespace cocos2d;
 
 // forward del popup de thumbnails (definido en LevelInfoLayer.cpp)
-extern CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, const std::vector<Suggestion>& suggestions);
+extern CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vector<Suggestion> const& suggestions);
 
 // ── factory ──────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ bool VerificationCenterLayer::init() {
     m_tabsMenu = CCMenu::create();
     m_tabsMenu->setPosition({winSize.width / 2, winSize.height - 50.f});
 
-    auto mkTab = [&](const char* label, SEL_MenuHandler sel, PendingCategory cat) {
+    auto mkTab = [&](char const* label, SEL_MenuHandler sel, PendingCategory cat) {
         auto spr = ButtonSprite::create(label, 80, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.55f);
         spr->setScale(0.75f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this, sel);
@@ -106,8 +107,8 @@ bool VerificationCenterLayer::init() {
         menu_selector(VerificationCenterLayer::onTabReport), PendingCategory::Report));
     m_tabsMenu->addChild(mkTab("Banners",
         menu_selector(VerificationCenterLayer::onTabBanner), PendingCategory::Banner));
-    m_tabsMenu->addChild(mkTab("Profiles",
-        menu_selector(VerificationCenterLayer::onTabProfileImg), PendingCategory::ProfileImg));
+    m_tabsMenu->addChild(mkTab("BG",
+        menu_selector(VerificationCenterLayer::onTabProfile), PendingCategory::Profile));
 
     // btn baneados
     {
@@ -198,6 +199,7 @@ bool VerificationCenterLayer::init() {
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this,
         menu_selector(VerificationCenterLayer::onBack));
+    backBtn->setID("back-btn"_spr);
     backBtn->setPosition({-winSize.width / 2 + 25.f, winSize.height / 2 - 25.f});
     backMenu->addChild(backBtn);
     backMenu->setPosition({winSize.width / 2, winSize.height / 2});
@@ -225,7 +227,7 @@ void VerificationCenterLayer::onTabVerify(CCObject*)    { switchTo(PendingCatego
 void VerificationCenterLayer::onTabUpdate(CCObject*)    { switchTo(PendingCategory::Update); }
 void VerificationCenterLayer::onTabReport(CCObject*)    { switchTo(PendingCategory::Report); }
 void VerificationCenterLayer::onTabBanner(CCObject*)    { switchTo(PendingCategory::Banner); }
-void VerificationCenterLayer::onTabProfileImg(CCObject*){ switchTo(PendingCategory::ProfileImg); }
+void VerificationCenterLayer::onTabProfile(CCObject*)   { switchTo(PendingCategory::Profile); }
 
 void VerificationCenterLayer::switchTo(PendingCategory cat) {
     m_current = cat;
@@ -253,7 +255,7 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
 
     // sync server
     WeakRef<VerificationCenterLayer> self = this;
-    ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat](bool success, const std::vector<PendingItem>& items) {
+    ThumbnailAPI::get().syncVerificationQueue(cat, [self, cat](bool success, std::vector<PendingItem> const& items) {
         auto layer = self.lock();
         if (!layer) return;
 
@@ -272,9 +274,10 @@ void VerificationCenterLayer::switchTo(PendingCategory cat) {
 // ── lista ────────────────────────────────────────────────
 
 void VerificationCenterLayer::rebuildList() {
-    try {
-        auto content = m_scrollLayer->m_contentLayer;
-        content->removeAllChildren();
+    if (!m_scrollLayer) return;
+    auto content = m_scrollLayer->m_contentLayer;
+    if (!content) return;
+    content->removeAllChildren();
 
         auto scrollSize = m_scrollLayer->getContentSize();
         float rowH = 46.f;
@@ -307,12 +310,6 @@ void VerificationCenterLayer::rebuildList() {
         }
 
         m_scrollLayer->scrollToTop();
-
-    } catch (const std::exception& e) {
-        log::error("[VerificationCenter] rebuildList exception: {}", e.what());
-    } catch (...) {
-        log::error("[VerificationCenter] rebuildList unknown exception");
-    }
 }
 
 CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float width, int index) {
@@ -337,7 +334,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     bool claimedByMe = isClaimed && (item.claimedBy == currentUsername);
 
     // etiqueta ID
-    std::string idText = (m_current == PendingCategory::Banner || m_current == PendingCategory::ProfileImg)
+    std::string idText = (m_current == PendingCategory::Banner || m_current == PendingCategory::Profile)
         ? fmt::format("Account: {}", item.levelID)
         : fmt::format("ID: {}", item.levelID);
     auto idLbl = CCLabelBMFont::create(idText.c_str(), "goldFont.fnt");
@@ -431,7 +428,7 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
 
     // reclamar
     {
-        const char* claimImg = claimedByMe ? "GJ_button_02.png" : "GJ_button_04.png";
+        char const* claimImg = claimedByMe ? "GJ_button_02.png" : "GJ_button_04.png";
         auto spr = ButtonSprite::create("C", 22, true, "bigFont.fnt", claimImg, 22.f, 0.5f);
         spr->setScale(0.55f);
         auto btn = CCMenuItemSpriteExtra::create(spr, this,
@@ -604,8 +601,10 @@ void VerificationCenterLayer::showPreviewForItem(int index) {
     case PendingCategory::Banner:
         ThumbnailAPI::get().downloadSuggestion(itemID, onLoaded);
         break;
-    case PendingCategory::ProfileImg:
-        ThumbnailAPI::get().downloadProfileImg(itemID, onLoaded, true);
+    case PendingCategory::Profile:
+        ThumbnailAPI::get().downloadPendingProfile(itemID, onLoaded);
+        break;
+    default:
         break;
     }
 }
@@ -633,8 +632,8 @@ void VerificationCenterLayer::onOpenLevel(CCObject* sender) {
     }
 
     if (level && !level->m_levelName.empty()) {
-        CCDirector::sharedDirector()->replaceScene(
-            CCTransitionFade::create(0.5f, LevelInfoLayer::scene(level, false)));
+        TransitionManager::get().replaceScene(
+            LevelInfoLayer::scene(level, false));
     } else {
         PaimonNotify::create("Downloading level...", NotificationIcon::Loading)->show();
         m_downloadCheckCount = 0;
@@ -671,8 +670,8 @@ void VerificationCenterLayer::checkLevelDownloaded(float dt) {
     int lvl = m_pendingLevelID;
     m_pendingLevelID = 0;
 
-    CCDirector::sharedDirector()->replaceScene(
-        CCTransitionFade::create(0.5f, LevelInfoLayer::scene(level, false)));
+    TransitionManager::get().replaceScene(
+        LevelInfoLayer::scene(level, false));
 }
 
 void VerificationCenterLayer::onAccept(CCObject* sender) {
@@ -708,7 +707,7 @@ void VerificationCenterLayer::onAccept(CCObject* sender) {
             return;
         }
 
-        ThumbnailAPI::get().acceptQueueItem(lvl, cat, username, [self, lvl, loading, cat](bool success, const std::string& message) {
+        ThumbnailAPI::get().acceptQueueItem(lvl, cat, username, [self, lvl, loading, cat](bool success, std::string const& message) {
             auto layer = self.lock();
             if (loading) loading->removeFromParent();
             if (!layer) return;
@@ -748,7 +747,7 @@ void VerificationCenterLayer::onReject(CCObject* sender) {
             return;
         }
 
-        ThumbnailAPI::get().rejectQueueItem(lvl, cat, username, "Rechazado por moderador", [self, loading, cat](bool success, const std::string& message) {
+        ThumbnailAPI::get().rejectQueueItem(lvl, cat, username, "Rechazado por moderador", [self, loading, cat](bool success, std::string const& message) {
             auto layer = self.lock();
             if (loading) loading->removeFromParent();
             if (!layer) return;
@@ -774,7 +773,7 @@ void VerificationCenterLayer::onClaimLevel(CCObject* sender) {
     WeakRef<VerificationCenterLayer> self = this;
     auto cat = m_current;
 
-    ThumbnailAPI::get().claimQueueItem(lvl, cat, username, [self, lvl, username, cat](bool success, const std::string& message) {
+    ThumbnailAPI::get().claimQueueItem(lvl, cat, username, [self, lvl, username, cat](bool success, std::string const& message) {
         auto layer = self.lock();
         if (!layer) return;
 
@@ -820,7 +819,7 @@ void VerificationCenterLayer::onViewThumb(CCObject* sender) {
     Mod::get()->setSavedValue("verification-category", static_cast<int>(m_current));
 
     std::vector<Suggestion> suggestions;
-    for (const auto& item : m_items) {
+    for (auto const& item : m_items) {
         if (item.levelID == lvl) {
             suggestions = item.suggestions;
             break;
@@ -861,21 +860,22 @@ void VerificationCenterLayer::onViewBanner(CCObject* sender) {
     });
 }
 
-void VerificationCenterLayer::onViewProfileImg(CCObject* sender) {
+void VerificationCenterLayer::onViewPendingProfile(CCObject* sender) {
     int accountID = static_cast<CCNode*>(sender)->getTag();
 
-    auto loading = PaimonNotify::create("Loading profile image...", NotificationIcon::Loading);
+    auto loading = PaimonNotify::create("Loading profile background...", NotificationIcon::Loading);
     loading->show();
 
     WeakRef<VerificationCenterLayer> self = this;
-    ThumbnailAPI::get().downloadProfileImg(accountID, [self, loading](bool success, CCTexture2D* texture) {
+    ThumbnailAPI::get().downloadPendingProfile(accountID, [self, loading](bool success, CCTexture2D* texture) {
         loading->hide();
         auto layer = self.lock();
         if (!layer) return;
         if (success && texture) {
             layer->setPreviewTexture(texture);
         } else {
-            PaimonNotify::create("Failed to load profile image", NotificationIcon::Error)->show();
+            PaimonNotify::create("Failed to load profile background", NotificationIcon::Error)->show();
         }
-    }, true);
+    });
 }
+

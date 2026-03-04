@@ -3,6 +3,7 @@
 #include "../utils/Localization.hpp"
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/ThumbnailLoader.hpp"
+#include "../managers/TransitionManager.hpp"
 #include <Geode/binding/CreatorLayer.hpp>
 #include <Geode/binding/LevelInfoLayer.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -70,8 +71,8 @@ bool LeaderboardHistoryLayer::init() {
     this->addChild(tabMenu);
     m_tabsMenu = tabMenu;
 
-    auto createTab = [&](const char* text, const char* id, CCPoint pos) -> CCMenuItemToggler* {
-        auto createBtn = [&](const char* frameName) -> CCNode* {
+    auto createTab = [&](char const* text, char const* id, CCPoint pos) -> CCMenuItemToggler* {
+        auto createBtn = [&](char const* frameName) -> CCNode* {
             auto sprite = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(frameName);
             sprite->setContentSize({100.f, 28.f});
             auto label = CCLabelBMFont::create(text, "goldFont.fnt");
@@ -281,7 +282,7 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
 
     WeakRef<LeaderboardHistoryLayer> self = this;
     std::string url = fmt::format("/api/featured/history?type={}&offset={}&limit={}", type, offset, limit);
-    HttpClient::get().get(url, [self, type](bool success, const std::string& json) {
+    HttpClient::get().get(url, [self, type](bool success, std::string const& json) {
         auto layer = self.lock();
         if (!layer) return;
 
@@ -548,10 +549,10 @@ void LeaderboardHistoryLayer::onCellClick(CCObject* sender) {
     auto layer = LevelInfoLayer::create(levelToUse, false);
     auto infoScene = CCScene::create();
     infoScene->addChild(layer);
-    CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.5f, infoScene));
+    TransitionManager::get().pushScene(infoScene);
 }
 
-void LeaderboardHistoryLayer::loadLevelsFinished(CCArray* levels, const char* key) {
+void LeaderboardHistoryLayer::loadLevelsFinished(CCArray* levels, char const* key) {
     if (!levels) return;
 
     for (auto* level : CCArrayExt<GJGameLevel*>(levels)) {
@@ -567,10 +568,10 @@ void LeaderboardHistoryLayer::loadLevelsFinished(CCArray* levels, const char* ke
     createList();
 }
 
-void LeaderboardHistoryLayer::loadLevelsFailed(const char* key) {
+void LeaderboardHistoryLayer::loadLevelsFailed(char const* key) {
 }
 
-void LeaderboardHistoryLayer::setupPageInfo(std::string, const char*) {
+void LeaderboardHistoryLayer::setupPageInfo(std::string, char const*) {
 }
 
 LeaderboardHistoryLayer::~LeaderboardHistoryLayer() {

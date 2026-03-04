@@ -112,15 +112,11 @@ void LevelColors::extractFromImage(int32_t levelID, cocos2d::CCImage* image) {
         rgbPtr = imgData;
     }
     
-    try {
-        auto pair = DominantColors::extract(rgbPtr, w, h);
-        cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
-        cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
-        
-        this->set(levelID, colorA, colorB);
-    } catch (const std::exception& e) {
-        log::warn("[LevelColors] error extrayendo colores para nivel {}: {}", levelID, e.what());
-    }
+    auto pair = DominantColors::extract(rgbPtr, w, h);
+    cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
+    cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
+
+    this->set(levelID, colorA, colorB);
 }
 
 void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, int w, int h, bool hasAlpha) {
@@ -142,19 +138,15 @@ void LevelColors::extractFromRawData(int32_t levelID, const uint8_t* imgData, in
         rgbPtr = imgData;
     }
     
-    try {
-        auto pair = DominantColors::extract(rgbPtr, w, h);
-        cocos2d::ccColor3B colorA{pair.first.r, pair.first.g, pair.first.b};
-        cocos2d::ccColor3B colorB{pair.second.r, pair.second.g, pair.second.b};
-        
-        this->set(levelID, colorA, colorB);
-    } catch (const std::exception& e) {
-        log::warn("[LevelColors] error extrayendo colores para nivel {}: {}", levelID, e.what());
-    }
+    auto pair2 = DominantColors::extract(rgbPtr, w, h);
+    cocos2d::ccColor3B colorA2{pair2.first.r, pair2.first.g, pair2.first.b};
+    cocos2d::ccColor3B colorB2{pair2.second.r, pair2.second.g, pair2.second.b};
+
+    this->set(levelID, colorA2, colorB2);
 }
 
 // procesar imagen cacheada.
-void processCachedImage(const std::filesystem::path& filepath, int32_t levelID) {
+void processCachedImage(std::filesystem::path const& filepath, int32_t levelID) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
         log::warn("[LevelColors] fallo al abrir: {}", geode::utils::string::pathToString(filepath));
@@ -174,7 +166,7 @@ void processCachedImage(const std::filesystem::path& filepath, int32_t levelID) 
     }
     
     LevelColors::get().extractFromImage(levelID, image);
-    
+
     image->release();
 }
 
@@ -193,7 +185,7 @@ void LevelColors::extractColorsFromCache() {
     int skipped = 0;
     
     // escanear miniaturas cacheadas (.png/.webp).
-    for (const auto& entry : std::filesystem::directory_iterator(cacheDir, ecCache)) {
+    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ecCache)) {
         if (!entry.is_regular_file()) continue;
         
         auto filepath = entry.path();

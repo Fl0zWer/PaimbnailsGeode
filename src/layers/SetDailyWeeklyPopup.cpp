@@ -8,7 +8,7 @@ using namespace geode::prelude;
 bool SetDailyWeeklyPopup::init(int levelID) {
     m_levelID = levelID;
     
-    // inicia popup con tamaño
+    // inicia popup con tamano
     if (!Popup::init(300.f, 220.f)) return false;
 
     this->setTitle("Set Daily/Weekly");
@@ -36,6 +36,7 @@ bool SetDailyWeeklyPopup::init(int levelID) {
         this,
         menu_selector(SetDailyWeeklyPopup::onSetDaily)
     );
+    dailyBtn->setID("set-daily-btn"_spr);
     actionMenu->addChild(dailyBtn);
 
     // btn weekly
@@ -44,6 +45,7 @@ bool SetDailyWeeklyPopup::init(int levelID) {
         this,
         menu_selector(SetDailyWeeklyPopup::onSetWeekly)
     );
+    weeklyBtn->setID("set-weekly-btn"_spr);
     actionMenu->addChild(weeklyBtn);
     
     // btn unset
@@ -52,6 +54,7 @@ bool SetDailyWeeklyPopup::init(int levelID) {
         this,
         menu_selector(SetDailyWeeklyPopup::onUnset)
     );
+    unsetBtn->setID("unset-btn"_spr);
     unsetBtn->setScale(0.8f);
     actionMenu->addChild(unsetBtn);
 
@@ -93,7 +96,7 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                 // weakref para no crash si cierra antes
                 WeakRef<SetDailyWeeklyPopup> self = this;
                 
-                HttpClient::get().post("/api/daily/set", json.dump(), [self](bool success, const std::string& msg) {
+                HttpClient::get().post("/api/daily/set", json.dump(), [self](bool success, std::string const& msg) {
                     if (auto popup = self.lock()) {
                         if (success) {
                             PaimonNotify::create("Daily set successfully", NotificationIcon::Success)->show();
@@ -130,7 +133,7 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                 // usar weakref por seguridad
                 WeakRef<SetDailyWeeklyPopup> self = this;
 
-                HttpClient::get().post("/api/weekly/set", json.dump(), [self](bool success, const std::string& msg) {
+                HttpClient::get().post("/api/weekly/set", json.dump(), [self](bool success, std::string const& msg) {
                     if (auto popup = self.lock()) {
                         if (success) {
                             PaimonNotify::create("Weekly set successfully", NotificationIcon::Success)->show();
@@ -165,7 +168,7 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
                 
                 WeakRef<SetDailyWeeklyPopup> self = this;
 
-                HttpClient::get().post("/api/admin/set-daily", json.dump(), [self](bool success, const std::string& msg) {
+                HttpClient::get().post("/api/admin/set-daily", json.dump(), [self](bool success, std::string const& msg) {
                     if (auto popup = self.lock()) {
                         if (success) {
                             PaimonNotify::create("Unset successfully", NotificationIcon::Success)->show();

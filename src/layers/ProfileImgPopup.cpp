@@ -15,7 +15,7 @@ ProfileImgPopup* ProfileImgPopup::create(int accountID, CCTexture2D* texture) {
 }
 
 bool ProfileImgPopup::init(int accountID, CCTexture2D* texture) {
-    // mismo tamaño que el ProfilePage popup de GD (440 x 290 aprox)
+    // mismo tamano que el ProfilePage popup de GD (440 x 290 aprox)
     if (!Popup::init(440.f, 290.f)) return false;
 
     m_accountID = accountID;
@@ -135,7 +135,7 @@ bool ProfileImgPopup::init(int accountID, CCTexture2D* texture) {
 
     m_imgClip = clip;
 
-    // añadir al mainLayer con zOrder bajo (debajo del contenido del popup)
+    // anadir al mainLayer con zOrder bajo (debajo del contenido del popup)
     m_mainLayer->addChild(clip, -1);
 
     return true;

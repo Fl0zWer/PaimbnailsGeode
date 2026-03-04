@@ -5,7 +5,7 @@
 #include <vector>
 #include <unordered_map>
 
-// Configuración de un frame/marco para la foto de perfil
+// Configuracion de un frame/marco para la foto de perfil
 struct PicFrameConfig {
     std::string spriteFrame = "";       // ya no se usa, el borde sigue la forma del stencil
     cocos2d::ccColor3B color = {255, 255, 255}; // blanco por defecto
@@ -15,10 +15,10 @@ struct PicFrameConfig {
     float offsetY = 0.f;
 };
 
-// Configuración de una decoración (asset del juego colocado alrededor de la foto)
+// Configuracion de una decoracion (asset del juego colocado alrededor de la foto)
 struct PicDecoration {
     std::string spriteName = "";        // nombre del sprite (ej: "star_small01_001.png")
-    float posX = 0.f;                   // posición relativa al centro de la foto (-1 a 1)
+    float posX = 0.f;                   // posicion relativa al centro de la foto (-1 a 1)
     float posY = 0.f;
     float scale = 1.f;
     float rotation = 0.f;
@@ -29,43 +29,43 @@ struct PicDecoration {
     int zOrder = 0;
 };
 
-// Configuración completa de personalización de la foto circular
+// Configuracion completa de personalizacion de la foto circular
 struct ProfilePicConfig {
-    // Tamaño y forma
+    // Tamano y forma
     float scaleX = 1.f;                // escala horizontal (1 = normal)
     float scaleY = 1.f;                // escala vertical (1 = normal)
-    float size = 120.f;                 // tamaño base en px
+    float size = 120.f;                 // tamano base en px
 
     // Marco
     bool frameEnabled = false;
     PicFrameConfig frame;
 
     // Forma del stencil
-    std::string stencilSprite = "circle"; // forma geométrica por defecto
+    std::string stencilSprite = "circle"; // forma geometrica por defecto
     
     // Decoraciones
     std::vector<PicDecoration> decorations;
 
-    // Offset de posición
+    // Offset de posicion
     float offsetX = 0.f;
     float offsetY = 0.f;
 };
 
-// Manager singleton que guarda/carga la configuración de la foto de perfil del usuario
+// Manager singleton que guarda/carga la configuracion de la foto de perfil del usuario
 class ProfilePicCustomizer {
 public:
     static ProfilePicCustomizer& get();
 
-    // Obtener/establecer configuración
+    // Obtener/establecer configuracion
     ProfilePicConfig getConfig() const;
-    void setConfig(const ProfilePicConfig& config);
+    void setConfig(ProfilePicConfig const& config);
 
     // Guardar a disco
     void save();
     // Cargar de disco
     void load();
     
-    // Flag para indicar que la config cambió y el ProfilePage debe re-renderizar
+    // Flag para indicar que la config cambio y el ProfilePage debe re-renderizar
     bool isDirty() const { return m_dirty; }
     void setDirty(bool dirty) { m_dirty = dirty; }
 

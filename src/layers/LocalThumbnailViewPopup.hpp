@@ -1,0 +1,124 @@
+#pragma once
+
+#include <Geode/ui/Popup.hpp>
+#include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
+#include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/GJAccountManager.hpp>
+#include <vector>
+#include <cmath>
+#include <filesystem>
+#include <unordered_set>
+
+#include "../managers/ThumbnailAPI.hpp"
+#include "../managers/PendingQueue.hpp"
+
+using namespace geode::prelude;
+using namespace cocos2d;
+
+/**
+ * Popup de visualizacion de thumbnails con zoom/pan tactil y galeria.
+ * Extraido de LevelInfoLayer.cpp para mantener los hooks ligeros
+ * (patron BetterInfo-Geode).
+ */
+class LocalThumbnailViewPopup : public geode::Popup {
+protected:
+    int32_t m_levelID = 0;
+    bool m_canAcceptUpload = false;
+    CCTexture2D* m_thumbnailTexture = nullptr;
+    cocos2d::CCNode* m_clippingNode = nullptr;
+    CCNode* m_thumbnailSprite = nullptr;
+    float m_initialScale = 1.0f;
+    float m_maxScale = 4.0f;
+    float m_minScale = 0.5f;
+    std::unordered_set<cocos2d::CCTouch*> m_touches;
+    float m_initialDistance = 0.0f;
+    float m_savedScale = 1.0f;
+    CCPoint m_touchMidPoint = {0, 0};
+    bool m_wasZooming = false;
+    bool m_isExiting = false;
+    int m_verificationCategory = -1;
+
+    float m_viewWidth = 0.0f;
+    float m_viewHeight = 0.0f;
+
+    // votacion
+    cocos2d::CCMenu* m_ratingMenu = nullptr;
+    cocos2d::CCMenu* m_buttonMenu = nullptr;
+    cocos2d::CCMenu* m_settingsMenu = nullptr;
+    cocos2d::CCLabelBMFont* m_ratingLabel = nullptr;
+    int m_userVote = 0;
+    int m_initialUserVote = 0;
+    bool m_isVoting = false;
+
+    // galeria
+    std::vector<ThumbnailAPI::ThumbnailInfo> m_thumbnails;
+    bool m_isDownloading = false;
+
+    std::vector<Suggestion> m_suggestions;
+    int m_currentIndex = 0;
+    CCMenuItemSpriteExtra* m_leftArrow = nullptr;
+    CCMenuItemSpriteExtra* m_rightArrow = nullptr;
+    CCLabelBMFont* m_counterLabel = nullptr;
+
+    // --- metodos protegidos ---
+    void onPrev(CCObject*);
+    void onNext(CCObject*);
+    void onInfo(CCObject*);
+    void loadThumbnailAt(int index);
+
+    ~LocalThumbnailViewPopup();
+
+    void loadCurrentSuggestion();
+    void onNextSuggestion(CCObject*);
+    void onPrevSuggestion(CCObject*);
+
+    void onExit() override;
+    void setupRating();
+    void onRate(CCObject*);
+
+    bool init(float width, float height);
+    void setup(std::pair<int32_t, bool> const& data);
+
+    void loadFromVerificationQueue(PendingCategory category, float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
+    void tryLoadFromMultipleSources(float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
+    bool tryLoadFromCache(float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
+    void loadFromThumbnailLoader(float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
+    void tryDirectServerDownload(float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
+    void displayThumbnail(CCTexture2D* tex, float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
+    void showNoThumbnail(CCSize content);
+
+    void onDownloadBtn(CCObject*);
+    void onDeleteReportedThumb(CCObject*);
+    void onAcceptThumbBtn(CCObject*);
+    void onReportBtn(CCObject*);
+    void onDeleteThumbnail(CCObject*);
+
+    // declarada aqui, implementada en LevelInfoLayer.cpp (necesita PaimonLevelInfoLayer)
+    void onSettings(CCObject*);
+
+    void onRecenter(CCObject*);
+
+    static float clamp(float value, float min, float max);
+    void clampSpritePosition();
+    void clampSpritePositionAnimated();
+
+    // touch zoom/pan
+    bool ccTouchBegan(CCTouch* touch, CCEvent* event) override;
+    void ccTouchMoved(CCTouch* touch, CCEvent* event) override;
+    void ccTouchEnded(CCTouch* touch, CCEvent* event) override;
+    void scrollWheel(float x, float y) override;
+    void ccTouchCancelled(CCTouch* touch, CCEvent* event) override;
+
+public:
+    void setSuggestions(std::vector<Suggestion> const& suggestions);
+
+    static LocalThumbnailViewPopup* create(int32_t levelID, bool canAcceptUpload);
+};
+
+// funcion exportada, usada desde VerificationCenterLayer y otros
+CCNode* createThumbnailViewPopup(int32_t levelID, bool canAcceptUpload, std::vector<Suggestion> const& suggestions);
+

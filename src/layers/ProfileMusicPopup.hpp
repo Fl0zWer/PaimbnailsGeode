@@ -7,8 +7,6 @@
 #include "../managers/ProfileMusicManager.hpp"
 #include <vector>
 
-using namespace geode::prelude;
-
 /**
  * ProfileMusicPopup, UI para configurarel perfil
  */
@@ -25,20 +23,20 @@ protected:
     std::string m_previewPath;
 
     // UI Components
-    CCMenu* m_mainMenu = nullptr;
+    cocos2d::CCMenu* m_mainMenu = nullptr;
     geode::TextInput* m_songIdInput = nullptr;
-    CCLabelBMFont* m_songInfoLabel = nullptr;
-    CCLabelBMFont* m_durationLabel = nullptr;
-    CCLabelBMFont* m_selectionLabel = nullptr;
-    CCNode* m_waveformContainer = nullptr;
-    CCLayerColor* m_selectionOverlay = nullptr;
-    CCSprite* m_startHandle = nullptr;
-    CCSprite* m_endHandle = nullptr;
+    cocos2d::CCLabelBMFont* m_songInfoLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_durationLabel = nullptr;
+    cocos2d::CCLabelBMFont* m_selectionLabel = nullptr;
+    cocos2d::CCNode* m_waveformContainer = nullptr;
+    cocos2d::CCLayerColor* m_selectionOverlay = nullptr;
+    cocos2d::CCSprite* m_startHandle = nullptr;
+    cocos2d::CCSprite* m_endHandle = nullptr;
     geode::LoadingSpinner* m_loadingSpinner = nullptr;
 
     // Waveform data
     std::vector<float> m_peaks;
-    std::vector<CCSprite*> m_waveformBars;
+    std::vector<cocos2d::CCSprite*> m_waveformBars;
 
     // Waveform dimensions
     float m_waveformX = 0;
@@ -59,7 +57,7 @@ protected:
 
     bool init(int accountID);
 
-    void onClose(CCObject*) override;
+    void onClose(cocos2d::CCObject*) override;
 
     // UI Creation
     void createSongIdInput();
@@ -67,12 +65,12 @@ protected:
     void createControlButtons();
 
     // Actions
-    void onLoadSong(CCObject*);
-    void onPlayPreview(CCObject*);
-    void onStopPreview(CCObject*);
-    void onSave(CCObject*);
-    void onDelete(CCObject*);
-    void onDownloadSong(CCObject*);
+    void onLoadSong(cocos2d::CCObject*);
+    void onPlayPreview(cocos2d::CCObject*);
+    void onStopPreview(cocos2d::CCObject*);
+    void onSave(cocos2d::CCObject*);
+    void onDelete(cocos2d::CCObject*);
+    void onDownloadSong(cocos2d::CCObject*);
 
     // Waveform
     void loadWaveform();
@@ -86,13 +84,13 @@ protected:
     void clampSelection();
 
     // Touch handling for waveform
-    bool ccTouchBegan(CCTouch* touch, CCEvent* event) override;
-    void ccTouchMoved(CCTouch* touch, CCEvent* event) override;
-    void ccTouchEnded(CCTouch* touch, CCEvent* event) override;
+    bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
+    void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
+    void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
 
     void showLoading();
     void hideLoading();
-    void showError(const std::string& message);
+    void showError(std::string const& message);
 
 public:
     static ProfileMusicPopup* create(int accountID);

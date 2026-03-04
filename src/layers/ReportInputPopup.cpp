@@ -2,7 +2,10 @@
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/Localization.hpp"
 
-bool ReportInputPopup::init(int levelID, std::function<void(std::string)> callback) {
+using namespace geode::prelude;
+using namespace cocos2d;
+
+bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::string)> callback) {
     if (!Popup::init(420.f, 200.f)) return false;
 
     m_levelID = levelID;
@@ -27,6 +30,7 @@ bool ReportInputPopup::init(int levelID, std::function<void(std::string)> callba
     auto sendBtn = CCMenuItemSpriteExtra::create(
         sendSpr, this, menu_selector(ReportInputPopup::onSend)
     );
+    sendBtn->setID("send-report-btn"_spr);
     sendBtn->setPosition({contentSize.width / 2, 30.f});
     m_buttonMenu->addChild(sendBtn);
 
@@ -46,7 +50,7 @@ void ReportInputPopup::onSend(CCObject*) {
     this->onClose(nullptr);
 }
 
-ReportInputPopup* ReportInputPopup::create(int levelID, std::function<void(std::string)> callback) {
+ReportInputPopup* ReportInputPopup::create(int levelID, geode::CopyableFunction<void(std::string)> callback) {
     auto ret = new ReportInputPopup();
     if (ret && ret->init(levelID, callback)) {
         ret->autorelease();

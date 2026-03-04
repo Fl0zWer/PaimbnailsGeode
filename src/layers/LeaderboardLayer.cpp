@@ -1,6 +1,7 @@
 #include "LeaderboardLayer.hpp"
 #include "LeaderboardHistoryLayer.hpp"
 #include "../utils/PaimonNotification.hpp"
+#include "../managers/TransitionManager.hpp"
 #include <Geode/binding/CreatorLayer.hpp>
 #include <Geode/binding/LevelSearchLayer.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
@@ -183,8 +184,8 @@ bool LeaderboardLayer::init() {
     this->addChild(tabMenu);
     m_tabsMenu = tabMenu;
 
-    auto createTab = [&](const char* text, const char* id, CCPoint pos) -> CCMenuItemToggler* {
-        auto createBtn = [&](const char* frameName) -> CCNode* {
+    auto createTab = [&](char const* text, char const* id, CCPoint pos) -> CCMenuItemToggler* {
+        auto createBtn = [&](char const* frameName) -> CCNode* {
             auto sprite = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(frameName);
             sprite->setContentSize({110.f, 32.f});
             
@@ -312,7 +313,7 @@ void LeaderboardLayer::onBack(CCObject*) {
     } else {
         backScene = CreatorLayer::scene();
     }
-    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, backScene));
+    TransitionManager::get().replaceScene(backScene);
 }
 
 void LeaderboardLayer::keyBackClicked() {
@@ -368,7 +369,7 @@ void LeaderboardLayer::loadLeaderboard(std::string type) {
     m_featuredExpiresAt = 0;
 
     WeakRef<LeaderboardLayer> self = this;
-    HttpClient::get().get("/api/" + type + "/current", [self, type](bool success, const std::string& json) {
+    HttpClient::get().get("/api/" + type + "/current", [self, type](bool success, std::string const& json) {
         auto layer = self.lock();
         if (!layer) return;
 
@@ -552,7 +553,7 @@ void LeaderboardLayer::createList(std::string type) {
     clipper->addChild(thumbGrad, 10);
 
     // cargar thumbnail
-    LeaderboardLayer* self = this;
+    Ref<LeaderboardLayer> self = this;
     auto createThumbSprite = [clipper](CCTexture2D* tex) {
         if (!tex || !clipper) return;
 
@@ -581,18 +582,15 @@ void LeaderboardLayer::createList(std::string type) {
         checkLoadingComplete();
     } else if (levelID > 0) {
         std::string fileName = fmt::format("{}.png", levelID);
-        clipper->retain();
-        this->retain();
+        Ref<CCClippingNode> safeClipper = clipper;
 
-        ThumbnailLoader::get().requestLoad(levelID, fileName, [self, clipper, createThumbSprite](CCTexture2D* tex, bool success) {
-            geode::Loader::get()->queueInMainThread([self, clipper, tex, createThumbSprite] {
-                if (clipper->getParent()) {
+        ThumbnailLoader::get().requestLoad(levelID, fileName, [self, safeClipper, createThumbSprite](CCTexture2D* tex, bool success) {
+            geode::Loader::get()->queueInMainThread([self, safeClipper, tex, createThumbSprite] {
+                if (safeClipper->getParent()) {
                     if (tex) createThumbSprite(tex);
                 }
                 self->m_thumbLoaded = true;
                 self->checkLoadingComplete();
-                clipper->release();
-                self->release();
             });
         });
     } else {
@@ -723,7 +721,7 @@ void LeaderboardLayer::onViewLevel(CCObject* sender) {
         auto layer = LevelInfoLayer::create(levelToUse, false);
         auto infoScene = CCScene::create();
         infoScene->addChild(layer);
-        CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.5f, infoScene));
+        TransitionManager::get().pushScene(infoScene);
     }
 }
 
@@ -963,7 +961,7 @@ void LeaderboardLayer::updateBackground(int levelID) {
     }
 }
 
-void LeaderboardLayer::loadLevelsFinished(CCArray* levels, const char* key) {
+void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
     if (!levels) return;
 
     for (auto* downloadedLevel : CCArrayExt<GJGameLevel*>(levels)) {
@@ -990,11 +988,11 @@ void LeaderboardLayer::loadLevelsFinished(CCArray* levels, const char* key) {
     updateLevelInfo();
 }
 
-void LeaderboardLayer::loadLevelsFailed(const char* key) {
+void LeaderboardLayer::loadLevelsFailed(char const* key) {
     // ignorar fallos
 }
 
-void LeaderboardLayer::setupPageInfo(std::string, const char*) {
+void LeaderboardLayer::setupPageInfo(std::string, char const*) {
     // no necesario
 }
 
@@ -1010,8 +1008,8 @@ void LeaderboardLayer::updateLevelInfo() {
         if (!parent) return nullptr;
         auto children = parent->getChildren();
         if (!children) return nullptr;
-        for (unsigned int i = 0; i < children->count(); i++) {
-            auto child = static_cast<CCNode*>(children->objectAtIndex(i));
+        for (auto* child : CCArrayExt<CCNode*>(children)) {
+            if (!child) continue;
             if (child->getTag() == tag) return child;
             auto found = findByTag(child, tag);
             if (found) return found;
@@ -1100,7 +1098,7 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
     };
 
     // estrella/destello usando sprites GD
-    const char* spriteNames[] = {
+    char const* spriteNames[] = {
         "GJ_starsIcon_001.png",
         "GJ_bigStar_001.png",
         "particle_01.png",
@@ -1157,7 +1155,7 @@ void LeaderboardLayer::onHistory(CCObject*) {
     // la musica cueva NO se pausa al ir al historial — sigue sonando
     m_goingToHistory = true;
     auto scene = LeaderboardHistoryLayer::scene();
-    CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.5f, scene));
+    TransitionManager::get().pushScene(scene);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1301,16 +1299,15 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
     float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
     int next = step + 1;
 
-    // retener this para evitar crash si se destruye durante el fade
-    this->retain();
-    std::thread([this, next, totalSteps, from, to, fadeOut, stepMs]() {
+    // Ref<> en vez de retain/release manual pa seguridad de memoria
+    Ref<LeaderboardLayer> safeRef = this;
+    std::thread([safeRef, next, totalSteps, from, to, fadeOut, stepMs]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-        geode::Loader::get()->queueInMainThread([this, next, totalSteps, from, to, fadeOut]() {
+        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, fadeOut]() {
             // verificar que el fade no fue cancelado
-            if (fadeOut && !m_isFadingCaveOut) { this->release(); return; }
-            if (!fadeOut && !m_isFadingCaveIn) { this->release(); return; }
-            executeCaveFade(next, totalSteps, from, to, fadeOut);
-            this->release();
+            if (fadeOut && !safeRef->m_isFadingCaveOut) return;
+            if (!fadeOut && !safeRef->m_isFadingCaveIn) return;
+            safeRef->executeCaveFade(next, totalSteps, from, to, fadeOut);
         });
     }).detach();
 }
@@ -1407,12 +1404,11 @@ void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, flo
     float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
     int next = step + 1;
 
-    this->retain();
-    std::thread([this, next, totalSteps, from, to, stepMs]() {
+    Ref<LeaderboardLayer> safeRef = this;
+    std::thread([safeRef, next, totalSteps, from, to, stepMs]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-        geode::Loader::get()->queueInMainThread([this, next, totalSteps, from, to]() {
-            executeMenuFade(next, totalSteps, from, to);
-            this->release();
+        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to]() {
+            safeRef->executeMenuFade(next, totalSteps, from, to);
         });
     }).detach();
 }

@@ -6,10 +6,7 @@ using namespace geode::prelude;
 
 $execute {
     // aplicar optimizer lo antes posible (desactiva todos los logs de Geode)
-    bool optimizerEnabled = true;
-    try {
-        optimizerEnabled = Mod::get()->getSettingValue<bool>("optimizer");
-    } catch (...) {}
+    bool optimizerEnabled = Mod::get()->getSettingValue<bool>("optimizer");
 
     if (optimizerEnabled) {
         Mod::get()->setLoggingEnabled(false);

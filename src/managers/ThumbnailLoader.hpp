@@ -2,13 +2,13 @@
 
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/function.hpp>
 #include <cocos2d.h>
 #include <string>
 #include <deque>
 #include <unordered_set>
 #include <unordered_map>
 #include <vector>
-#include <functional>
 #include <memory>
 #include <mutex>
 #include <atomic>
@@ -23,7 +23,7 @@
  */
 class ThumbnailLoader {
 public:
-    using LoadCallback = std::function<void(cocos2d::CCTexture2D* texture, bool success)>;
+    using LoadCallback = geode::CopyableFunction<void(cocos2d::CCTexture2D* texture, bool success)>;
 
     static ThumbnailLoader& get();
 
@@ -39,15 +39,17 @@ public:
     bool isFailed(int levelID, bool isGif = false) const;
     void clearCache();
     void invalidateLevel(int levelID, bool isGif = false);
-    
-    // version de invalidación: se incrementa cada vez que se invalida un level
-    // los consumidores (LevelCell, etc) guardan la versión cuando cargan
+
+    // version de invalidacion: se incrementa cada vez que se invalida un level
+    // los consumidores (LevelCell, etc) guardan la version cuando cargan
     // y la comparan pa saber si deben recargar
     int getInvalidationVersion(int levelID) const;
 
     // config
     void setMaxConcurrentTasks(int max);
     void setBatchMode(bool enabled) { m_batchMode = enabled; }
+
+    int getActiveTaskCount() const { return m_activeTaskCount; }
 
     // helpers
     static bool isTextureSane(cocos2d::CCTexture2D* tex);
@@ -58,8 +60,6 @@ public:
     bool hasGIFData(int levelID) const;
     void cleanup();
     void clearDiskCache();
-    void pauseQueue() {} // deprecado
-    void resumeQueue() {} // deprecado
     void clearPendingQueue();
 
 private:
@@ -81,7 +81,7 @@ private:
     int m_activeTaskCount = 0;
     int m_maxConcurrentTasks = 4;
     std::mutex m_queueMutex;
-    
+
     // cache ram (sesion)
     std::map<int, geode::Ref<cocos2d::CCTexture2D>> m_textureCache;
     std::list<int> m_lruOrder;
@@ -101,6 +101,9 @@ private:
     std::unordered_map<int, int> m_invalidationVersions;
 
     bool m_batchMode = false; // por defecto "smart" (desactivado por velocidad)
+
+    // flag de shutdown: cuando es true, los threads de background deben parar lo antes posible
+    std::atomic<bool> m_shuttingDown{false};
 
     // metodos
     void processQueue();

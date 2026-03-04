@@ -8,7 +8,7 @@
 using namespace geode::prelude;
 
 namespace {
-    const char* kindToStr(ThumbKind k) { return k == ThumbKind::Level ? "level" : "profile"; }
+    char const* kindToStr(ThumbKind k) { return k == ThumbKind::Level ? "level" : "profile"; }
     ThumbKind strToKind(std::string const& s) { return s == "profile" ? ThumbKind::Profile : ThumbKind::Level; }
 }
 
@@ -23,7 +23,8 @@ void ThumbsRegistry::load() const {
     m_loaded = true;
     m_items.clear();
     auto p = path();
-    if (!std::filesystem::exists(p)) return;
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec) || ec) return;
     auto data = file::readString(p).unwrapOr("");
     std::stringstream ss(data);
     std::string line;

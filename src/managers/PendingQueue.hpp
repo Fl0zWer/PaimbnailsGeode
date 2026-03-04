@@ -7,7 +7,7 @@
 #include <optional>
 #include <cstdint>
 
-enum class PendingCategory { Verify, Update, Report, Banner, ProfileImg };
+enum class PendingCategory { Verify, Update, Report, Banner, ProfileImg, Profile };
 enum class PendingStatus { Open, Accepted, Rejected };
 
 struct Suggestion {
@@ -60,18 +60,18 @@ public:
     void syncNow();
     
     // hacer catToStr publico para acceso ThumbnailAPI
-    static const char* catToStr(PendingCategory c);
-    
+    static char const* catToStr(PendingCategory c);
+
     // auxiliar para verificar si usuario es creador nivel
-    static bool isLevelCreator(GJGameLevel* level, const std::string& username);
+    static bool isLevelCreator(GJGameLevel* level, std::string const& username);
 
 private:
     PendingQueue() = default;
     std::filesystem::path jsonPath() const;
     static PendingCategory strToCat(std::string const& s);
-    static const char* statusToStr(PendingStatus s);
+    static char const* statusToStr(PendingStatus s);
     static PendingStatus strToStatus(std::string const& s);
-    static std::string escape(const std::string& s);
+    static std::string escape(std::string const& s);
 
     bool m_loaded = false;
     mutable std::vector<PendingItem> m_items; // incluye no-abiertos para historial
