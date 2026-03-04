@@ -31,7 +31,7 @@ GIFDecoder::GIFData GIFDecoder::decode(const uint8_t* data, size_t size) {
     const uint8_t* ptr = data;
     const uint8_t* end = data + size;
     
-    // parseo cabecera básica
+    // parseo cabecera basica
     if (!parseHeader(ptr, end, result.width, result.height)) {
         log::error("[GIFDecoder] Failed to parse header");
         return result;
@@ -71,12 +71,12 @@ GIFDecoder::GIFData GIFDecoder::decode(const uint8_t* data, size_t size) {
     RawFrame prevRawFrame = {std::vector<uint8_t>(), 0, 0, 0, 0};
 
     while (ptr < end && frameCount < 500) {
-        if (*ptr == 0x21) { // bloque de extensión
+        if (*ptr == 0x21) { // bloque de extension
             ptr++;
             if (ptr >= end) break;
             uint8_t label = *ptr++;
             
-            // extensión de control gráfico (delays y transparencia)
+            // extension de control grafico (delays y transparencia)
             if (label == 0xF9) {
                 if (ptr + 1 >= end) break;
                 uint8_t blockSize = *ptr++;
@@ -86,7 +86,7 @@ GIFDecoder::GIFData GIFDecoder::decode(const uint8_t* data, size_t size) {
                     uint8_t transIdx = ptr[2];
                     ptr += 3;
                     
-                    currentDelay = (delay == 0) ? 100 : delay * 10; // GIF usa centésimas de segundo
+                    currentDelay = (delay == 0) ? 100 : delay * 10; // GIF usa centesimas de segundo
                     hasTransparency = (packed & 1) != 0;
                     transparentIndex = transIdx;
                     disposalMethod = (packed >> 2) & 0x07;
@@ -96,7 +96,7 @@ GIFDecoder::GIFData GIFDecoder::decode(const uint8_t* data, size_t size) {
                 // salto terminador de bloque
                 if (ptr < end && *ptr == 0) ptr++;
             } else {
-                // salto cualquier otra extensión que no me interesa
+                // salto cualquier otra extension que no me interesa
                 while (ptr < end) {
                     uint8_t blockSize = *ptr++;
                     if (blockSize == 0) break;
@@ -205,8 +205,8 @@ bool GIFDecoder::parseColorTable(const uint8_t*& ptr, const uint8_t* end, std::v
     return true;
 }
 
-// descompresión LZW
-static bool lzwDecode(const std::vector<uint8_t>& compressed, std::vector<uint8_t>& output, int minCodeSize, int pixelCount) {
+// descompresion LZW
+static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_t>& output, int minCodeSize, int pixelCount) {
     int clearCode = 1 << minCodeSize;
     int eoiCode = clearCode + 1;
     int nextCode = eoiCode + 1;
@@ -219,7 +219,7 @@ static bool lzwDecode(const std::vector<uint8_t>& compressed, std::vector<uint8_
         uint8_t suffix = 0;
         int length = 0;
     };
-    // pre‑reservo el diccionario (máx 4096 códigos)
+    // pre‑reservo el diccionario (max 4096 codigos)
     std::vector<DictEntry> dictionary(4096);
     
     // inicializo el diccionario base
@@ -237,7 +237,7 @@ static bool lzwDecode(const std::vector<uint8_t>& compressed, std::vector<uint8_
     output.reserve(pixelCount);
     
     while (output.size() < pixelCount) {
-        // leo un código
+        // leo un codigo
         int code = 0;
         for (int i = 0; i < currentCodeSize; ++i) {
             if (bytePos >= compressed.size()) break;
@@ -284,7 +284,7 @@ static bool lzwDecode(const std::vector<uint8_t>& compressed, std::vector<uint8_
                 std::reverse(sequence.begin(), sequence.end());
                 sequence.push_back(sequence[0]);
             } else {
-                // código inválido, corto aquí
+                // codigo invalido, corto aqui
                 return false;
             }
         } else {
@@ -298,7 +298,7 @@ static bool lzwDecode(const std::vector<uint8_t>& compressed, std::vector<uint8_
         
         output.insert(output.end(), sequence.begin(), sequence.end());
         
-        // añado entrada nueva al diccionario
+        // anado entrada nueva al diccionario
         if (dictSize < 4096) {
             int temp = oldCode;
             
@@ -317,7 +317,7 @@ static bool lzwDecode(const std::vector<uint8_t>& compressed, std::vector<uint8_
     return true;
 }
 
-bool GIFDecoder::parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& frame, const std::vector<uint8_t>& globalPalette, int transparentIndex, bool hasTransparency) {
+bool GIFDecoder::parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& frame, std::vector<uint8_t> const& globalPalette, int transparentIndex, bool hasTransparency) {
     if (ptr + 10 > end) return false;
     
     ptr++; // salto separador de imagen
@@ -342,9 +342,9 @@ bool GIFDecoder::parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& f
         }
     }
     
-    const std::vector<uint8_t>& palette = hasLocalColorTable ? localPalette : globalPalette;
+    std::vector<uint8_t> const& palette = hasLocalColorTable ? localPalette : globalPalette;
     
-    // leo el tamaño mínimo del código LZW
+    // leo el tamano minimo del codigo LZW
     if (ptr >= end) return false;
     uint8_t lzwMinCodeSize = *ptr++;
     
@@ -368,7 +368,7 @@ bool GIFDecoder::parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& f
     // construyo el frame en RGBA
     frame.pixels.resize(frame.width * frame.height * 4);
     
-    // si está entrelazado, reordeno índices
+    // si esta entrelazado, reordeno indices
     std::vector<uint8_t> deinterlacedIndices(frame.width * frame.height);
     if (interlaced) {
         int passOffsets[] = {0, 4, 2, 1};
@@ -399,7 +399,7 @@ bool GIFDecoder::parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& f
         deinterlacedIndices = indices;
     }
     
-    // paso de índices a RGBA
+    // paso de indices a RGBA
     for (int i = 0; i < frame.width * frame.height; i++) {
         if (i >= deinterlacedIndices.size()) break;
         
@@ -417,7 +417,7 @@ bool GIFDecoder::parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& f
                 frame.pixels[i * 4 + 2] = palette[colorIndex * 3 + 2];
                 frame.pixels[i * 4 + 3] = 255;
             } else {
-                // índice fuera de rango, dejo negro opaco
+                // indice fuera de rango, dejo negro opaco
                 frame.pixels[i * 4 + 0] = 0;
                 frame.pixels[i * 4 + 1] = 0;
                 frame.pixels[i * 4 + 2] = 0;

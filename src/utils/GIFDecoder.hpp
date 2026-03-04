@@ -52,6 +52,6 @@ private:
         int width, height, left, top;
     };
     
-    static bool parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& frame, const std::vector<uint8_t>& globalPalette, int transparentIndex, bool hasTransparency);
+    static bool parseFrame(const uint8_t*& ptr, const uint8_t* end, RawFrame& frame, std::vector<uint8_t> const& globalPalette, int transparentIndex, bool hasTransparency);
 };
 

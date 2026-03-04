@@ -2,22 +2,24 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
+#include <Geode/utils/function.hpp>
 #include "ThumbnailTypes.hpp"
 #include <string>
-#include <functional>
 #include <vector>
 #include <memory>
 
 class HttpClient {
 public:
-    using UploadCallback = std::function<void(bool success, const std::string& message)>;
-    using DownloadCallback = std::function<void(bool success, const std::vector<uint8_t>& data, int width, int height)>;
-    using CheckCallback = std::function<void(bool exists)>;
-    using ModeratorCallback = std::function<void(bool isModerator, bool isAdmin)>;
-    using GenericCallback = std::function<void(bool success, const std::string& response)>;
-    using BanListCallback = std::function<void(bool success, const std::string& jsonData)>;
-    using BanUserCallback = std::function<void(bool success, const std::string& message)>;
-    using ModeratorsListCallback = std::function<void(bool success, const std::vector<std::string>& moderators)>;
+    // Geode v5: CopyableFunction reemplaza std::function — misma semantica copiable,
+    // pero usa std23::function internamente para mejor compatibilidad ABI.
+    using UploadCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
+    using DownloadCallback = geode::CopyableFunction<void(bool success, std::vector<uint8_t> const& data, int width, int height)>;
+    using CheckCallback = geode::CopyableFunction<void(bool exists)>;
+    using ModeratorCallback = geode::CopyableFunction<void(bool isModerator, bool isAdmin)>;
+    using GenericCallback = geode::CopyableFunction<void(bool success, std::string const& response)>;
+    using BanListCallback = geode::CopyableFunction<void(bool success, std::string const& jsonData)>;
+    using BanUserCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
+    using ModeratorsListCallback = geode::CopyableFunction<void(bool success, std::vector<std::string> const& moderators)>;
 
     static HttpClient& get() {
         static HttpClient instance;
@@ -25,21 +27,21 @@ public:
     }
 
     std::string getServerURL() const { return m_serverURL; }
-    void setServerURL(const std::string& url);
-    
+    void setServerURL(std::string const& url);
+
     // mod code
     std::string getModCode() const { return m_modCode; }
-    void setModCode(const std::string& code);
-    
+    void setModCode(std::string const& code);
+
     // limpia tasks
     void cleanTasks();
 
 
     // sube thumb png
-    void uploadThumbnail(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
 
     // sube gif (mod/admin)
-    void uploadGIF(int levelId, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    void uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
 
     // lista thumbs
     void getThumbnails(int levelId, GenericCallback callback);
@@ -48,9 +50,9 @@ public:
     void getThumbnailInfo(int levelId, GenericCallback callback);
 
     // sube suggestion
-    void uploadSuggestion(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // sube update
-    void uploadUpdate(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // descarga suggestion
     void downloadSuggestion(int levelId, DownloadCallback callback);
     // descarga update
@@ -59,23 +61,25 @@ public:
     void downloadReported(int levelId, DownloadCallback callback);
 
     // sube profile img
-    void uploadProfile(int accountID, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // sube profile gif (mod/admin/donator)
-    void uploadProfileGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    void uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
     // descarga profile
-    void downloadProfile(int accountID, const std::string& username, DownloadCallback callback);
-    // descarga desde url
-    void downloadFromUrl(const std::string& url, DownloadCallback callback);
+    void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
+    // descarga desde url (valida magic bytes de imagen)
+    void downloadFromUrl(std::string const& url, DownloadCallback callback);
+    // descarga desde url sin validar magic bytes (para audio, etc.)
+    void downloadFromUrlRaw(std::string const& url, DownloadCallback callback);
 
     // sube imagen de perfil (profileimg)
-    void uploadProfileImg(int accountID, const std::vector<uint8_t>& imgData, const std::string& username, const std::string& contentType, UploadCallback callback);
+    void uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback);
     // sube gif de perfil (profileimg)
-    void uploadProfileImgGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    void uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
     // descarga imagen de perfil (profileimg)
     void downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf = false);
 
     // sube config profile
-    void uploadProfileConfig(int accountID, const std::string& jsonConfig, GenericCallback callback);
+    void uploadProfileConfig(int accountID, std::string const& jsonConfig, GenericCallback callback);
     // descarga config profile
     void downloadProfileConfig(int accountID, GenericCallback callback);
 
@@ -87,40 +91,48 @@ public:
     void checkThumbnailExists(int levelId, CheckCallback callback);
     
     // es mod?
-    void checkModerator(const std::string& username, ModeratorCallback callback);
+    void checkModerator(std::string const& username, ModeratorCallback callback);
     // es mod por accountid (mas seguro)
-    void checkModeratorAccount(const std::string& username, int accountID, ModeratorCallback callback);
+    void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
 
     // reportes
-    void submitReport(int levelId, const std::string& username, const std::string& note, GenericCallback callback);
+    void submitReport(int levelId, std::string const& username, std::string const& note, GenericCallback callback);
 
     // lista baneados
     void getBanList(BanListCallback callback);
 
     // banear user
-    void banUser(const std::string& username, const std::string& reason, BanUserCallback callback);
+    void banUser(std::string const& username, std::string const& reason, BanUserCallback callback);
     // unban
-    void unbanUser(const std::string& username, BanUserCallback callback);
+    void unbanUser(std::string const& username, BanUserCallback callback);
 
     // lista mods
     void getModerators(ModeratorsListCallback callback);
     
     // votos
-    void getRating(int levelId, const std::string& username, const std::string& thumbnailId, GenericCallback callback);
-    void submitVote(int levelId, int stars, const std::string& username, const std::string& thumbnailId, GenericCallback callback);
-    
+    void getRating(int levelId, std::string const& username, std::string const& thumbnailId, GenericCallback callback);
+    void submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, GenericCallback callback);
+
     // get/post generico
-    void get(const std::string& endpoint, GenericCallback callback);
-    void post(const std::string& endpoint, const std::string& data, GenericCallback callback);
+    void get(std::string const& endpoint, GenericCallback callback);
+    void post(std::string const& endpoint, std::string const& data, GenericCallback callback);
     // post autenticado (incluye X-Mod-Code para operaciones privilegiadas)
-    void postWithAuth(const std::string& endpoint, const std::string& data, GenericCallback callback);
+    void postWithAuth(std::string const& endpoint, std::string const& data, GenericCallback callback);
+
+    // pet shop
+    void getPetShopList(GenericCallback callback);
+    void downloadPetShopItem(std::string const& itemId, std::string const& format,
+        geode::CopyableFunction<void(bool, std::vector<uint8_t> const&)> callback);
+    void uploadPetShopItem(std::string const& name, std::string const& creator,
+        std::vector<uint8_t> const& imageData, std::string const& format,
+        UploadCallback callback);
 
 private:
     HttpClient();
     ~HttpClient() = default;
     
-    HttpClient(const HttpClient&) = delete;
-    HttpClient& operator=(const HttpClient&) = delete;
+    HttpClient(HttpClient const&) = delete;
+    HttpClient& operator=(HttpClient const&) = delete;
 
     std::string m_serverURL;
     std::string m_apiKey;
@@ -133,33 +145,33 @@ private:
     };
     std::map<int, ExistsCacheEntry> m_existsCache;
     static constexpr int EXISTS_CACHE_DURATION = 300; // 5 min
-    
+
     // request async
     void performRequest(
-        const std::string& url,
-        const std::string& method,
-        const std::string& postData,
-        const std::vector<std::string>& headers,
-        std::function<void(bool, const std::string&)> callback
+        std::string const& url,
+        std::string const& method,
+        std::string const& postData,
+        std::vector<std::string> const& headers,
+        geode::CopyableFunction<void(bool, std::string const&)> callback
     );
     
     // descarga binary (sin a string)
     void performBinaryRequest(
-        const std::string& url,
-        const std::vector<std::string>& headers,
-        std::function<void(bool, const std::vector<uint8_t>&)> callback
+        std::string const& url,
+        std::vector<std::string> const& headers,
+        geode::CopyableFunction<void(bool, std::vector<uint8_t> const&)> callback
     );
 
     // sube archivo
     void performUpload(
-        const std::string& url,
-        const std::string& fieldName,
-        const std::string& filename,
-        const std::vector<uint8_t>& data,
-        const std::vector<std::pair<std::string, std::string>>& formFields,
-        const std::vector<std::string>& headers,
-        std::function<void(bool, const std::string&)> callback,
-        const std::string& contentType = "image/png"
+        std::string const& url,
+        std::string const& fieldName,
+        std::string const& filename,
+        std::vector<uint8_t> const& data,
+        std::vector<std::pair<std::string, std::string>> const& formFields,
+        std::vector<std::string> const& headers,
+        geode::CopyableFunction<void(bool, std::string const&)> callback,
+        std::string const& contentType = "image/png"
     );
 };
 

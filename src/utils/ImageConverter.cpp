@@ -6,7 +6,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-std::vector<uint8_t> ImageConverter::rgbToRgba(const std::vector<uint8_t>& rgbData, uint32_t width, uint32_t height) {
+std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height) {
     size_t pixelCount = static_cast<size_t>(width) * height;
     std::vector<uint8_t> rgba(pixelCount * 4);
     
@@ -20,7 +20,7 @@ std::vector<uint8_t> ImageConverter::rgbToRgba(const std::vector<uint8_t>& rgbDa
     return rgba;
 }
 
-bool ImageConverter::rgbToPng(const std::vector<uint8_t>& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
+bool ImageConverter::rgbToPng(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
     // rgb (3) o rgba (4)
     // asume rgba si 4bpp
     bool isRgba = (rgbData.size() == static_cast<size_t>(width) * height * 4);
@@ -75,7 +75,7 @@ bool ImageConverter::rgbToPng(const std::vector<uint8_t>& rgbData, uint32_t widt
     return true;
 }
 
-bool ImageConverter::loadRgbFileToPng(const std::string& rgbFilePath, std::vector<uint8_t>& outPngData) {
+bool ImageConverter::loadRgbFileToPng(std::string const& rgbFilePath, std::vector<uint8_t>& outPngData) {
     std::vector<uint8_t> rgbData;
     uint32_t width, height;
     
@@ -86,7 +86,7 @@ bool ImageConverter::loadRgbFileToPng(const std::string& rgbFilePath, std::vecto
     return rgbToPng(rgbData, width, height, outPngData);
 }
 
-bool ImageConverter::loadRgbFile(const std::string& rgbFilePath, std::vector<uint8_t>& outRgbData, uint32_t& outWidth, uint32_t& outHeight) {
+bool ImageConverter::loadRgbFile(std::string const& rgbFilePath, std::vector<uint8_t>& outRgbData, uint32_t& outWidth, uint32_t& outHeight) {
     std::ifstream in(rgbFilePath, std::ios::binary);
     if (!in) {
         log::error("[ImageConverter] Failed to open RGB file: {}", rgbFilePath);

@@ -6,6 +6,10 @@
 using namespace geode::prelude;
 
 class $modify(PaimonLevelListCell, LevelListCell) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("LevelListCell::loadFromList", geode::Priority::Late);
+    }
+
     struct Fields {
         Ref<ListThumbnailCarousel> m_carousel = nullptr;
         Ref<CCNode> m_listThumbnail = nullptr;
@@ -24,7 +28,7 @@ class $modify(PaimonLevelListCell, LevelListCell) {
         }
 
         m_fields->m_currentListID = list->m_listID;
-        log::info("PaimonLevelListCell: loadFromList called for list ID: {}", list->m_listID);
+        log::debug("PaimonLevelListCell: loadFromList called for list ID: {}", list->m_listID);
 
         // remove existing carousel if any (for cell reuse)
         if (m_fields->m_carousel) {
@@ -42,7 +46,7 @@ class $modify(PaimonLevelListCell, LevelListCell) {
         std::vector<int> levelIDs;
         
         // check if m_levels is accessible
-        log::info("PaimonLevelListCell: m_levels size: {}", list->m_levels.size());
+        log::debug("PaimonLevelListCell: m_levels size: {}", list->m_levels.size());
 
         for (int id : list->m_levels) {
             if (id != 0) {
@@ -83,10 +87,8 @@ class $modify(PaimonLevelListCell, LevelListCell) {
                 // buscar fondo por tipo en vez de indice fragil
                 if (auto bg = this->getChildByType<CCLayerColor>(0)) {
                     bg->setZOrder(-2);
-                } else if (this->getChildrenCount() > 0) {
-                    if (auto bg = typeinfo_cast<CCNode*>(this->getChildren()->objectAtIndex(0))) {
-                        bg->setZOrder(-2);
-                    }
+                } else if (auto firstChild = this->getChildByType<CCNode>(0)) {
+                    firstChild->setZOrder(-2);
                 }
                 
                 carousel->setOpacity(255); 
@@ -95,7 +97,7 @@ class $modify(PaimonLevelListCell, LevelListCell) {
                 m_fields->m_carousel = carousel;
                 
                 carousel->startCarousel();
-                log::info("PaimonLevelListCell: Carousel created and added at {}, {}", size.width/2, size.height/2);
+                log::debug("PaimonLevelListCell: Carousel created and added at {}, {}", size.width/2, size.height/2);
             } else {
                 log::error("PaimonLevelListCell: Failed to create carousel");
             }

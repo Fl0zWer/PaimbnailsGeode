@@ -55,7 +55,39 @@ namespace pt {
     #endif
     }
 
-    std::optional<std::filesystem::path> saveImageFileDialog(const std::wstring& defaultName) {
+    std::optional<std::filesystem::path> openAudioFileDialog() {
+    #ifdef _WIN32
+        if (s_dialogOpen) return std::nullopt;
+        s_dialogOpen = true;
+
+        OPENFILENAMEW ofn{};
+        wchar_t fileBuffer[MAX_PATH] = {0};
+        wchar_t filter[] = L"Audio Files (*.mp3;*.ogg;*.wav;*.flac;*.m4a)\0*.mp3;*.ogg;*.wav;*.flac;*.m4a\0All Files (*.*)\0*.*\0\0";
+
+        HWND gdWindow = GetForegroundWindow();
+
+        ofn.lStructSize = sizeof(ofn);
+        ofn.hwndOwner = gdWindow;
+        ofn.lpstrFilter = filter;
+        ofn.nFilterIndex = 1;
+        ofn.lpstrFile = fileBuffer;
+        ofn.nMaxFile = MAX_PATH;
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER | OFN_NOCHANGEDIR;
+        ofn.lpstrDefExt = L"mp3";
+
+        std::optional<std::filesystem::path> result = std::nullopt;
+        if (GetOpenFileNameW(&ofn)) {
+            result = std::filesystem::path(fileBuffer);
+        }
+        Loader::get()->queueInMainThread([] { s_dialogOpen = false; });
+        return result;
+    #else
+        log::warn("[FileDialog] Audio file dialog not supported on this platform");
+        return std::nullopt;
+    #endif
+    }
+
+    std::optional<std::filesystem::path> saveImageFileDialog(std::wstring const& defaultName) {
     #ifdef _WIN32
         if (s_dialogOpen) return std::nullopt;
         s_dialogOpen = true;
@@ -92,7 +124,7 @@ namespace pt {
         return std::nullopt;
     #endif
     }
-    
+
     std::optional<std::filesystem::path> openFolderDialog() {
     #ifdef _WIN32
         if (s_dialogOpen) return std::nullopt;
@@ -101,17 +133,17 @@ namespace pt {
         // IFileDialog (Windows Vista+) pa selector de carpeta
         HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
         bool needsUninit = SUCCEEDED(hr);
-        
+
         IFileDialog* pfd = nullptr;
         hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pfd));
-        
+
         if (SUCCEEDED(hr)) {
             DWORD dwOptions;
             hr = pfd->GetOptions(&dwOptions);
             if (SUCCEEDED(hr)) {
                 hr = pfd->SetOptions(dwOptions | FOS_PICKFOLDERS);
             }
-            
+
             if (SUCCEEDED(hr)) {
                 hr = pfd->Show(nullptr);
                 if (SUCCEEDED(hr)) {
@@ -135,7 +167,7 @@ namespace pt {
             }
             pfd->Release();
         }
-        
+
         if (needsUninit) CoUninitialize();
         Loader::get()->queueInMainThread([] { s_dialogOpen = false; });
         return std::nullopt;

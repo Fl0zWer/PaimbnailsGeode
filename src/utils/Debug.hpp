@@ -16,7 +16,7 @@ namespace PaimonDebug {
     template<typename... Args>
     void log(fmt::format_string<Args...> format, Args&&... args) {
         if (g_debugEnabled) {
-            geode::log::info(format, std::forward<Args>(args)...);
+            geode::log::debug(format, std::forward<Args>(args)...);
         }
     }
 
@@ -29,7 +29,7 @@ namespace PaimonDebug {
     
     inline void log(std::string_view str) {
         if (g_debugEnabled) {
-            geode::log::info("{}", str);
+            geode::log::debug("{}", str);
         }
     }
 

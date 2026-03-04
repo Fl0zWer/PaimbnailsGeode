@@ -61,7 +61,7 @@ static CCSprite* tryCreateIcon() {
         }
         frameSpr->setRotation(-90.0f);  // rota 90 grados
     }
-    log::info("[PauseLayer] Select-file button added");
+    log::debug("[PauseLayer] Select-file button added");
     return frameSpr;
 }
 
@@ -71,10 +71,10 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     void customSetup() {
         PauseLayer::customSetup();
         
-        log::info("PauseLayer customSetup called");
+        log::debug("PauseLayer customSetup called");
 
         if (!Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
-            log::info("Thumbnail taking disabled in settings");
+            log::debug("Thumbnail taking disabled in settings");
             return;
         }
 
@@ -90,7 +90,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         }
         
         if (playLayer->m_level->m_levelID <= 0) {
-            log::info("Level ID is {} (not saving thumbnails for this level)", playLayer->m_level->m_levelID.value());
+            log::debug("Level ID is {} (not saving thumbnails for this level)", playLayer->m_level->m_levelID.value());
             return;
         }
 
@@ -100,8 +100,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             return;
         }
 
-        try {
-            auto spr = tryCreateIcon();
+        auto spr = tryCreateIcon();
             if (!spr) {
                 log::error("Failed to create button sprite");
                 return;
@@ -120,7 +119,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             // guarda posicion para apilar botones
             CCPoint capturePos = btn->getPosition();
             
-            // añade boton de subir (solo moderador)
+            // anade boton de subir (solo moderador)
             if (isUserModerator()) {
                 int levelID = playLayer->m_level->m_levelID;
                 
@@ -167,7 +166,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 }
             }
             
-            // añade boton para elegir archivo
+            // anade boton para elegir archivo
             {
                 CCSprite* selectSpr = nullptr;
                 
@@ -205,7 +204,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         rightMenu->addChild(selectBtn);
                         rightMenu->updateLayout();
                         
-                        log::info("[PauseLayer] Select-file button added");
+                        log::debug("[PauseLayer] Select-file button added");
                     }
                 }
             }
@@ -249,11 +248,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
             // no llama updateLayout para mantener posiciones
             log::info("Thumbnail capture + extra buttons added successfully");
-        } catch (std::exception& e) {
-            log::error("Exception while adding thumbnail button: {}", e.what());
-        } catch (...) {
-            log::error("Unknown exception while adding thumbnail button");
-        }
     }
 
     void onScreenshot(CCObject*) {
@@ -321,8 +315,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     }
     
     void performCaptureAndRestore(float dt) {
-        try {
-            log::info("[PauseLayer] Performing capture");
+        log::info("[PauseLayer] Performing capture");
 
             auto* pl = PlayLayer::get();
             if (!pl || !pl->m_level) {
@@ -348,13 +341,13 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 this, 0.0f, 0, 0.0f, false
             );
 
-            // retiene objeto durante proceso asincrono
-            this->retain();
+            // Ref<> en vez de retain/release para seguridad de memoria
+            Ref<PauseLayer> safeRef = this;
 
             // usa framebufferCapture para pantalla
-            FramebufferCapture::requestCapture(levelID, [this, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
-                Loader::get()->queueInMainThread([this, success, texture, rgbData, width, height, levelID]() {
-                    removeLoadingOverlay();
+            FramebufferCapture::requestCapture(levelID, [safeRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
+                Loader::get()->queueInMainThread([safeRef, success, texture, rgbData, width, height, levelID]() {
+                    static_cast<PaimonPauseLayer*>(safeRef.data())->removeLoadingOverlay();
 
                     if (success && texture && rgbData) {
                         log::info("[PauseLayer] Capture successful: {}x{}", width, height);
@@ -446,7 +439,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                         log::info("[PauseLayer] User is moderator, uploading directly");
                                         PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
-                                        ThumbnailAPI::get().uploadThumbnail(lvlID, pngData, username, [lvlID](bool success, const std::string& msg) {
+                                        ThumbnailAPI::get().uploadThumbnail(lvlID, pngData, username, [lvlID](bool success, std::string const& msg) {
                                             if (success) {
                                                 PendingQueue::get().removeForLevel(lvlID);
                                                 PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
@@ -461,7 +454,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                                         log::info("[PauseLayer] User is not moderator, uploading as suggestion");
                                         PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
 
-                                        ThumbnailAPI::get().uploadSuggestion(lvlID, pngData, username, [lvlID, username](bool success, const std::string& msg) {
+                                        ThumbnailAPI::get().uploadSuggestion(lvlID, pngData, username, [lvlID, username](bool success, std::string const& msg) {
                                             if (success) {
                                                 ThumbnailAPI::get().checkExists(lvlID, [lvlID, username](bool exists) {
                                                     auto cat = exists ? PendingCategory::Update : PendingCategory::Verify;
@@ -491,18 +484,11 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     }
 
                     // restaura menu de pausa
-                    this->setVisible(true);
-                    this->release();
+                    safeRef->setVisible(true);
                     log::info("[PauseLayer] Pause menu restored after capture");
                 });
             });
 
-        } catch (std::exception const& e) {
-            log::error("[PauseLayer] Failed to perform capture: {}", e.what());
-            PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Error)->show();
-            removeLoadingOverlay();
-            this->setVisible(true);
-        }
     }
     
     void restorePauseMenu(float dt) {
@@ -513,8 +499,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     void onUploadThumbnail(CCObject*) {
         log::info("[PauseLayer] Upload button pressed");
         
-        try {
-            auto pl = PlayLayer::get();
+        auto pl = PlayLayer::get();
             if (!pl || !pl->m_level) {
                 log::error("[PauseLayer] PlayLayer or level not available");
                 return;
@@ -531,16 +516,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             
             // verifica moderador con servidor
             std::string username;
-            try {
-                auto* gm = GameManager::get();
-                if (gm) {
-                    username = gm->m_playerName;
-                    log::info("[PauseLayer] Username: '{}'", username);
-                } else {
-                    log::warn("[PauseLayer] GameManager::get() is null");
-                }
-            } catch(...) {
-                log::error("[PauseLayer] Exception accessing GameManager");
+            auto* gm = GameManager::get();
+            if (gm) {
+                username = gm->m_playerName;
+                log::info("[PauseLayer] Username: '{}'", username);
+            } else {
+                log::warn("[PauseLayer] GameManager::get() is null");
             }
             
             if (username.empty()) {
@@ -577,7 +558,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
                         
                         ThumbnailAPI::get().uploadThumbnail(levelID, pngData, username,
-                            [levelID](bool success, const std::string& message) {
+                            [levelID](bool success, std::string const& message) {
                                 if (success) {
                                     PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
                                     PendingQueue::get().removeForLevel(levelID);
@@ -592,7 +573,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                         log::info("[PauseLayer] User is not moderator; uploading suggestion and enqueueing");
                         PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
                         
-                        ThumbnailAPI::get().uploadSuggestion(levelID, pngData, username, [levelID, username](bool success, const std::string& msg) {
+                        ThumbnailAPI::get().uploadSuggestion(levelID, pngData, username, [levelID, username](bool success, std::string const& msg) {
                             if (success) {
                                 log::info("[PauseLayer] Suggestion uploaded successfully");
                                 ThumbnailAPI::get().checkExists(levelID, [levelID, username](bool exists) {
@@ -611,10 +592,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 }
             });
             
-        } catch (std::exception const& e) {
-            log::error("[PauseLayer] Exception in onUploadThumbnail: {}", e.what());
-            PaimonNotify::create((Localization::get().getString("level.error_prefix") + e.what()).c_str(), NotificationIcon::Error)->show();
-        }
     }
     
 
@@ -626,13 +603,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         std::string ext = geode::utils::string::pathToString(selectedPath.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         if (ext == ".gif") {
-#if !defined(GEODE_IS_WINDOWS) && !defined(_WIN32)
-            PaimonNotify::create(Localization::get().getString("pause.gif_not_supported").c_str(), NotificationIcon::Warning)->show();
-            return;
-#else
             // previsualiza gif y permite subir
-            try {
-                std::ifstream gifFile(selectedPath, std::ios::binary | std::ios::ate);
+            std::ifstream gifFile(selectedPath, std::ios::binary | std::ios::ate);
                 if (!gifFile) {
                     log::error("[PauseLayer] Could not open GIF file");
                     PaimonNotify::create(Localization::get().getString("pause.gif_open_error").c_str(), NotificationIcon::Error)->show();
@@ -732,9 +704,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
                         // obtiene usuario y verifica mod
                         std::string username;
-                        try {
-                            if (auto* gm = GameManager::get()) username = gm->m_playerName;
-                        } catch(...) {}
+                        if (auto* gm = GameManager::get()) username = gm->m_playerName;
                         if (username.empty()) {
                             PaimonNotify::create(Localization::get().getString("profile.username_error").c_str(), NotificationIcon::Error)->show();
                             return;
@@ -746,7 +716,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                             bool allowModeratorFlow = approved;
                             if (allowModeratorFlow) {
                                 PaimonNotify::create(Localization::get().getString("pause.gif_uploading").c_str(), NotificationIcon::Loading)->show();
-                                ThumbnailAPI::get().uploadGIF(lvlID, gifData, username, [lvlID](bool ok, const std::string& msg){
+                                ThumbnailAPI::get().uploadGIF(lvlID, gifData, username, [lvlID](bool ok, std::string const& msg){
                                     if (ok) {
                                         PendingQueue::get().removeForLevel(lvlID);
                                         PaimonNotify::create(Localization::get().getString("pause.gif_uploaded").c_str(), NotificationIcon::Success)->show();
@@ -774,11 +744,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     texture->release();
                 }
 
-            } catch (std::exception const& e) {
-                log::error("[PauseLayer] Error processing GIF: {}", e.what());
-                PaimonNotify::create(Localization::get().getString("pause.gif_process_error").c_str(), NotificationIcon::Error)->show();
-            }
-#endif  // GEODE_IS_WINDOWS
             return; // detiene flujo png
         }
         
@@ -825,7 +790,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         log::info("[PauseLayer] Image loaded {}x{} (BPP: {}, Alpha: {})", 
                   width, height, bpp, hasAlpha);
         
-        // calcula tamaño esperado
+        // calcula tamano esperado
         int bytesPerPixel = hasAlpha ? 4 : 3;
         size_t expectedDataSize = static_cast<size_t>(width) * height * bytesPerPixel;
         
@@ -877,7 +842,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         texture->setAntiAliasTexParameters();
         
         // new CCTexture2D() ya da refcount=1. NO retener de nuevo.
-        // El popup hará retain al recibirla, y release al cerrar.
+        // El popup hara retain al recibirla, y release al cerrar.
         // Si el popup no se crea, hacemos release abajo.
         
         log::info("[PauseLayer] Texture created successfully using FramebufferCapture method");
@@ -981,8 +946,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     void onSelectPNGFile(CCObject*) {
         log::info("[PauseLayer] Select file button pressed");
         
-        try {
-            auto pl = PlayLayer::get();
+        auto pl = PlayLayer::get();
             if (!pl || !pl->m_level) {
                 log::error("[PauseLayer] PlayLayer or level not available");
                 return;
@@ -1002,10 +966,5 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                     log::warn("[PauseLayer] User cancelled file picker");
                 }
             }
-
-        } catch (std::exception const& e) {
-            log::error("[PauseLayer] Exception in onSelectPNGFile: {}", e.what());
-            PaimonNotify::create(Localization::get().getString("level.error_prefix") + std::string(e.what()), NotificationIcon::Error)->show();
-        }
     }
 };

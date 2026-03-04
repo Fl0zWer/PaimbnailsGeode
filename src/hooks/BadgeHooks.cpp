@@ -1,14 +1,33 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/ProfilePage.hpp>
 #include <Geode/modify/CommentCell.hpp>
 #include "../managers/ThumbnailAPI.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
+#include <list>
+#include "BadgeCache.hpp"
 
 using namespace geode::prelude;
 
-// cacheo el rol: user -> {mod, admin}
-static std::map<std::string, std::pair<bool, bool>> g_moderatorCache;
+// definiciones de las variables y funciones declaradas en BadgeCache.hpp
+std::map<std::string, std::pair<bool, bool>> g_moderatorCache;
+std::list<std::string> g_moderatorCacheOrder;
 
+void moderatorCacheInsert(std::string const& username, bool isMod, bool isAdmin) {
+    // si ya existe, actualizo sin cambiar posicion
+    if (g_moderatorCache.contains(username)) {
+        g_moderatorCache[username] = {isMod, isAdmin};
+        return;
+    }
+    // purgo la mitad mas antigua si superamos el limite
+    while (g_moderatorCache.size() >= MAX_MODERATOR_CACHE && !g_moderatorCacheOrder.empty()) {
+        auto const& oldest = g_moderatorCacheOrder.front();
+        g_moderatorCache.erase(oldest);
+        g_moderatorCacheOrder.pop_front();
+    }
+    g_moderatorCache[username] = {isMod, isAdmin};
+    g_moderatorCacheOrder.push_back(username);
+}
+
+// funcion compartida para mostrar info del badge, accesible desde ProfilePage.cpp
 void showBadgeInfoPopup(CCNode* sender) {
     std::string title = "Unknown Rank";
     std::string desc = "No description available.";
@@ -25,6 +44,10 @@ void showBadgeInfoPopup(CCNode* sender) {
 }
 
 class $modify(BadgeCommentCell, CommentCell) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("CommentCell::loadFromComment", geode::Priority::Late);
+    }
+
     void onPaimonBadge(CCObject* sender) {
         if (auto node = typeinfo_cast<CCNode*>(sender)) {
             showBadgeInfoPopup(node);
@@ -37,7 +60,7 @@ class $modify(BadgeCommentCell, CommentCell) {
         if (!comment) return;
         std::string username = comment->m_userName;
         
-        // primero mirar la cache
+        // primero busco en cache
         if (g_moderatorCache.contains(username)) {
             auto [isMod, isAdmin] = g_moderatorCache[username];
             if (isMod || isAdmin) {
@@ -46,29 +69,30 @@ class $modify(BadgeCommentCell, CommentCell) {
             return;
         }
 
-        // si no hay cache, lo pido al server
-        this->retain();
-        ThumbnailAPI::get().checkUserStatus(username, [this, username](bool isMod, bool isAdmin) {
-            g_moderatorCache[username] = {isMod, isAdmin};
-            
-            Loader::get()->queueInMainThread([this, username, isMod, isAdmin]() {
-                // me aseguro de que sigue siendo el mismo user
-                if (this->getParent() && this->m_comment && this->m_comment->m_userName == username) {
+        // si no hay cache lo pido al server
+        // uso Ref<> en vez de retain/release manual para evitar leak si el callback no llega
+        Ref<CommentCell> safeRef = this;
+        ThumbnailAPI::get().checkUserStatus(username, [safeRef, username](bool isMod, bool isAdmin) {
+            moderatorCacheInsert(username, isMod, isAdmin);
+
+            Loader::get()->queueInMainThread([safeRef, username, isMod, isAdmin]() {
+                auto* self = static_cast<BadgeCommentCell*>(safeRef.data());
+                // me aseguro de que sigue siendo el mismo usuario
+                if (self->getParent() && self->m_comment && self->m_comment->m_userName == username) {
                      if (isMod || isAdmin) {
-                        this->addBadgeToComment(isMod, isAdmin);
+                        self->addBadgeToComment(isMod, isAdmin);
                     }
                 }
-                this->release();
             });
         });
     }
 
     void addBadgeToComment(bool isMod, bool isAdmin) {
-        // pillo el menu del username
+        // busco el menu del username
         auto menu = this->getChildByIDRecursive("username-menu");
         if (!menu) return;
         
-        // si ya esta, no duplico
+        // si ya existe no lo duplico
         if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
         if (menu->getChildByID("paimon-admin-badge"_spr)) return;
 
@@ -85,7 +109,7 @@ class $modify(BadgeCommentCell, CommentCell) {
 
         if (!badgeSprite) return;
 
-        // lo escalo pa que no moleste
+        // lo escalo para que no sea muy grande
         float targetHeight = 15.5f;
         float scale = targetHeight / badgeSprite->getContentSize().height;
         badgeSprite->setScale(scale);
@@ -111,94 +135,6 @@ class $modify(BadgeCommentCell, CommentCell) {
     }
 };
 
-class $modify(BadgeProfilePage, ProfilePage) {
-    void onPaimonBadge(CCObject* sender) {
-        if (auto node = typeinfo_cast<CCNode*>(sender)) {
-            showBadgeInfoPopup(node);
-        }
-    }
+// BadgeProfilePage se fusiono en PaimonProfilePage (ProfilePage.cpp)
+// para evitar undefined behavior con doble $modify sobre la misma clase.
 
-    void addModeratorBadge(bool isMod, bool isAdmin) {
-        // busco el menu del username
-        auto menu = this->getChildByIDRecursive("username-menu");
-        if (!menu) return;
-        
-        // si ya esta, no duplico
-        if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
-        if (menu->getChildByID("paimon-admin-badge"_spr)) return;
-
-        CCSprite* badgeSprite = nullptr;
-        std::string badgeID;
-
-        if (isAdmin) {
-            badgeSprite = CCSprite::create("paim_Admin.png"_spr);
-            badgeID = "paimon-admin-badge"_spr;
-        } else if (isMod) {
-            badgeSprite = CCSprite::create("paim_Moderador.png"_spr);
-            badgeID = "paimon-moderator-badge"_spr;
-        }
-
-        if (!badgeSprite) return;
-
-        // log solo pa confirmar
-        log::info("Adding badge (Clickable) - Admin: {}, Mod: {}", isAdmin, isMod);
-
-        // lo escalo pa que encaje
-        float targetHeight = 20.0f;
-        float scale = targetHeight / badgeSprite->getContentSize().height;
-        badgeSprite->setScale(scale);
-
-        auto btn = CCMenuItemSpriteExtra::create(
-            badgeSprite,
-            this,
-            menu_selector(BadgeProfilePage::onPaimonBadge)
-        );
-        btn->setID(badgeID);
-        
-        if (auto menuNode = typeinfo_cast<CCMenu*>(menu)) {
-            menuNode->addChild(btn);
-            menuNode->updateLayout();
-        }
-    }
-
-    void loadPageFromUserInfo(GJUserScore* score) {
-        ProfilePage::loadPageFromUserInfo(score);
-        
-        // ya no trackeo el profilepage global por seguridad
-        // s_activeProfilePage = this;
-
-        std::string username = score->m_userName;
-        
-        // miro cache primero (pa feedback rapido)
-        if (g_moderatorCache.contains(username)) {
-            auto [isMod, isAdmin] = g_moderatorCache[username];
-            if (isMod || isAdmin) {
-                this->addModeratorBadge(isMod, isAdmin);
-            }
-        }
-
-        // igual lo pido al server pa tenerlo actualizado
-        // retain pa no morirme en el async
-        this->retain();
-        ThumbnailAPI::get().checkUserStatus(username, [this, username](bool isMod, bool isAdmin) {
-            // actualizo cache
-            g_moderatorCache[username] = {isMod, isAdmin};
-            
-            Loader::get()->queueInMainThread([this, username, isMod, isAdmin]() {
-                // compruebo que sigo vivo
-                if (this->getParent()) {
-                    if (isMod || isAdmin) {
-                       this->addModeratorBadge(isMod, isAdmin);
-                    }
-                }
-                
-                // suelto el retain
-                this->release();
-            });
-        });
-    }
-
-    void onExit() {
-        ProfilePage::onExit();
-    }
-};

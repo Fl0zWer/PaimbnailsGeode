@@ -18,8 +18,12 @@ using namespace cocos2d;
 extern CCTexture2D* getProfileImgCachedTexture(int accountID);
 
 class $modify(PaimonInfoLayer, InfoLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("InfoLayer::init", geode::Priority::Late);
+    }
+
     struct Fields {
-        CCClippingNode* m_bgClip = nullptr;
+        Ref<CCClippingNode> m_bgClip = nullptr;
         bool m_hasCaveEffect = false;
     };
 
@@ -36,18 +40,17 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         CCTexture2D* tex = getProfileImgCachedTexture(accountID);
         if (!tex) {
             // Si no hay cache, intentar descargar en background
-            this->retain();
-            ThumbnailAPI::get().downloadProfileImg(accountID, [this, accountID](bool success, CCTexture2D* texture) {
-                if (!this->getParent()) { this->release(); return; }
+            Ref<InfoLayer> safeRef = this;
+            ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef](bool success, CCTexture2D* texture) {
+                auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
+                if (!self->getParent()) return;
                 if (success && texture) {
-                    Loader::get()->queueInMainThread([this, texture]() {
-                        if (this->getParent()) {
-                            this->applyBlurredBackground(texture);
+                    Loader::get()->queueInMainThread([safeRef, texture]() {
+                        auto* self2 = static_cast<PaimonInfoLayer*>(safeRef.data());
+                        if (self2->getParent()) {
+                            self2->applyBlurredBackground(texture);
                         }
-                        this->release();
                     });
-                } else {
-                    this->release();
                 }
             }, false);
             return true;
@@ -55,7 +58,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         applyBlurredBackground(tex);
 
-        // Aplicar efecto cueva a la música del perfil si está sonando
+        // Aplicar efecto cueva a la musica del perfil si esta sonando
         if (ProfileMusicManager::get().isPlaying()) {
             ProfileMusicManager::get().applyCaveEffect();
             m_fields->m_hasCaveEffect = true;
@@ -123,15 +126,15 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         dark->setID("paimon-infolayer-dark-overlay"_spr);
         clip->addChild(dark);
 
-        // Insertar detrás del contenido (zOrder -1)
+        // Insertar detras del contenido (zOrder -1)
         layer->addChild(clip, -1);
         m_fields->m_bgClip = clip;
 
         // Ocultar elementos decorativos (igual que en ProfilePage)
         styleInfoLayerBgs(layer);
 
-        // Tick periódico para mantener estilos
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.15f);
+        // Tick periodico para mantener estilos
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.01f);
     }
 
     void styleInfoLayerBgs(CCNode* root) {

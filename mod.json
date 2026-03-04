@@ -1,12 +1,12 @@
 {
-  "geode": "5.0.1",
+  "geode": "5.3.0",
   "gd": {
     "win": "2.2081",
     "android": "2.2074",
     "mac": "2.2074",
     "ios": "2.2074"
   },
-  "version": "2.1.3",
+  "version": "2.2.0",
   "id": "flozwer.paimbnails",
   "name": "Paimbnails",
   "developer": "FlozWer",
@@ -196,7 +196,7 @@
     "levelinfo-background-style": {
       "type": "string",
       "name": "Background Style",
-      "description": "Visual style of the background.",
+      "description": "Primary visual style of the background.",
       "default": "blur",
       "one-of": [
         "normal",
@@ -210,8 +210,19 @@
         "chromatic",
         "radial-blur",
         "glitch",
-        "posterize"
+        "posterize",
+        "rain",
+        "matrix",
+        "neon-pulse",
+        "wave-distortion",
+        "crt"
       ]
+    },
+    "levelinfo-extra-styles": {
+      "type": "string",
+      "name": "Extra Effects",
+      "description": "Additional effects (comma-separated, max 4). Applied on top of the primary style via multi-pass.",
+      "default": ""
     },
     "levelinfo-effect-intensity": {
       "type": "int",
@@ -220,6 +231,14 @@
       "default": 5,
       "min": 1,
       "max": 10
+    },
+    "levelinfo-bg-darkness": {
+      "type": "int",
+      "name": "Background Darkness",
+      "description": "Darkness overlay on the thumbnail background. 0 = clear, 50 = full black.",
+      "default": 27,
+      "min": 0,
+      "max": 50
     },
     "profile-music-title": {
       "name": "Profile Music",
@@ -321,12 +340,6 @@
       "name": "Optimizer Mode",
       "description": "Disables all logs for maximum performance. Keep OFF for debugging.",
       "default": false
-    },
-    "android-safe-mode": {
-      "type": "bool",
-      "name": "Android Safe Mode",
-      "description": "Disables heavy startup work. Turn off if stable.",
-      "default": true
     },
     "gif-ram-cache": {
       "type": "bool",

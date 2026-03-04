@@ -1,0 +1,207 @@
+// ════════════════════════════════════════════════════════════
+// TransitionHook: intercepta las transiciones del juego
+//
+// Hookea CCDirector::replaceScene, pushScene y popSceneWithTransition
+// para reemplazar las transiciones nativas con la que configure el usuario.
+//
+// ARQUITECTURA:
+//   - Solo intercepta escenas que YA vienen envueltas en CCTransitionScene
+//     (no afecta replaceScene directos sin transicion).
+//   - Detecta PlayLayer para aplicar levelEntryConfig si esta configurada.
+//   - Guard de reentrada robusto con RAII para evitar doble intercepcion
+//     (especialmente desde CustomTransitionScene::onTransitionFinished).
+// ════════════════════════════════════════════════════════════
+
+#include <Geode/Geode.hpp>
+#include <Geode/modify/CCDirector.hpp>
+#include "../managers/TransitionManager.hpp"
+#include "../layers/CustomTransitionScene.hpp"
+
+using namespace geode::prelude;
+using namespace cocos2d;
+
+// flag para evitar recursion infinita (protegido con RAII)
+static bool s_applying = false;
+
+// el juego no esta listo hasta que MenuLayer aparezca al menos una vez
+static bool s_gameReady = false;
+
+// RAII guard para s_applying
+// garantiza que se restaure aunque haya un return temprano o una excepcion
+struct ApplyingGuard {
+    ApplyingGuard()  { s_applying = true; }
+    ~ApplyingGuard() { s_applying = false; }
+    ApplyingGuard(ApplyingGuard const&) = delete;
+    ApplyingGuard& operator=(ApplyingGuard const&) = delete;
+};
+
+// extrae la escena destino real de una CCTransitionScene
+static CCScene* unwrapTransition(CCTransitionScene* trans) {
+    if (trans && trans->m_pInScene) return trans->m_pInScene;
+    return nullptr;
+}
+
+static bool shouldIntercept() {
+    if (s_applying) return false;
+    if (!s_gameReady) return false;
+    if (!TransitionManager::get().isEnabled()) return false;
+    return true;
+}
+
+// ── Detecta si la escena destino contiene un PlayLayer ──────
+// Esto permite aplicar levelEntryConfig cuando el usuario navega hacia un nivel.
+static bool destContainsPlayLayer(CCScene* scene) {
+    if (!scene) return false;
+    if (scene->getChildByType<PlayLayer>(0)) return true;
+    // Revisar en los hijos directos por si PlayLayer esta anidado
+    auto* children = scene->getChildren();
+    if (!children) return false;
+    for (auto* child : CCArrayExt<CCNode*>(children)) {
+        if (typeinfo_cast<PlayLayer*>(child)) return true;
+    }
+    return false;
+}
+
+// ── Selecciona la configuracion de transicion apropiada ─────
+// Si la escena destino contiene PlayLayer y hay una config de nivel configurada,
+// usa esa; de lo contrario usa la global.
+static TransitionConfig selectConfig(CCScene* destScene) {
+    auto& tm = TransitionManager::get();
+    if (tm.hasLevelEntryConfig() && destContainsPlayLayer(destScene)) {
+        return tm.getLevelEntryConfig();
+    }
+    return tm.getGlobalConfig();
+}
+
+class $modify(PaimonDirector, CCDirector) {
+
+    // ── replaceScene ──
+    bool replaceScene(CCScene* scene) {
+        if (!scene) return CCDirector::replaceScene(scene);
+
+        // Detectar cuando MenuLayer aparece → juego listo
+        if (!s_gameReady) {
+            bool foundMenu = false;
+            if (scene->getChildByType<MenuLayer>(0)) foundMenu = true;
+            if (!foundMenu) {
+                if (auto* trans = typeinfo_cast<CCTransitionScene*>(scene)) {
+                    if (trans->m_pInScene && trans->m_pInScene->getChildByType<MenuLayer>(0))
+                        foundMenu = true;
+                }
+            }
+            if (foundMenu) {
+                s_gameReady = true;
+            }
+            // Dejar pasar la primera transicion a MenuLayer sin interceptar
+            return CCDirector::replaceScene(scene);
+        }
+
+        if (!shouldIntercept()) return CCDirector::replaceScene(scene);
+
+        // No re-interceptar nuestras propias CustomTransitionScene
+        if (typeinfo_cast<CustomTransitionScene*>(scene)) return CCDirector::replaceScene(scene);
+
+        // Solo interceptar si viene envuelta en CCTransitionScene
+        auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
+        if (!nativeTrans) return CCDirector::replaceScene(scene);
+
+        CCScene* realDest = unwrapTransition(nativeTrans);
+        if (!realDest) return CCDirector::replaceScene(scene);
+
+        realDest->retain();
+        auto cfg = selectConfig(realDest);
+        ApplyingGuard guard;
+        auto* ourTrans = TransitionManager::get().createTransition(cfg, realDest);
+        bool result = CCDirector::replaceScene(ourTrans ? ourTrans : realDest);
+        realDest->release();
+        return result;
+    }
+
+    // ── pushScene ──
+    bool pushScene(CCScene* scene) {
+        if (!scene || !shouldIntercept()) return CCDirector::pushScene(scene);
+
+        // No re-interceptar nuestras propias CustomTransitionScene
+        if (typeinfo_cast<CustomTransitionScene*>(scene)) return CCDirector::pushScene(scene);
+
+        auto* nativeTrans = typeinfo_cast<CCTransitionScene*>(scene);
+        if (!nativeTrans) return CCDirector::pushScene(scene);
+
+        CCScene* realDest = unwrapTransition(nativeTrans);
+        if (!realDest) return CCDirector::pushScene(scene);
+
+        realDest->retain();
+        auto cfg = selectConfig(realDest);
+        ApplyingGuard guard;
+        auto* ourTrans = TransitionManager::get().createTransition(cfg, realDest);
+        bool result = CCDirector::pushScene(ourTrans ? ourTrans : realDest);
+        realDest->release();
+        return result;
+    }
+
+    // ── popSceneWithTransition (cubre la mayoria de "back" en GD) ──
+    bool popSceneWithTransition(float duration, PopTransition type) {
+        if (!shouldIntercept()) {
+            return CCDirector::popSceneWithTransition(duration, type);
+        }
+
+        // El popSceneWithTransition internamente hace pop y crea una transicion.
+        // Necesitamos interceptar: hacer el pop, pero aplicar NUESTRA transicion.
+        auto& stack = m_pobScenesStack;
+        if (!stack || stack->count() < 2) {
+            return CCDirector::popSceneWithTransition(duration, type);
+        }
+
+        // La escena destino es la penultima del stack
+        auto* destScene = static_cast<CCScene*>(stack->objectAtIndex(stack->count() - 2));
+        if (!destScene) {
+            return CCDirector::popSceneWithTransition(duration, type);
+        }
+
+        // Ref<> en vez de retain/release manual pa seguridad de memoria
+        Ref<CCScene> safeDest = destScene;
+
+        auto cfg = selectConfig(destScene);
+
+        ApplyingGuard guard;
+        // Hacer pop normal (sin transicion visual nuestra)
+        // con s_applying activo, replaceScene dejara pasar sin interceptar
+        CCDirector::popScene();
+
+        // Ahora reemplazar con nuestra transicion
+        auto* ourTrans = TransitionManager::get().createTransition(cfg, destScene);
+        CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
+
+        return true;
+    }
+
+    // ── popScene (sin transicion nativa) ──
+    void popScene() {
+        if (!shouldIntercept()) {
+            CCDirector::popScene();
+            return;
+        }
+
+        auto& stack = m_pobScenesStack;
+        if (!stack || stack->count() < 2) {
+            CCDirector::popScene();
+            return;
+        }
+
+        auto* destScene = static_cast<CCScene*>(stack->objectAtIndex(stack->count() - 2));
+        if (!destScene) {
+            CCDirector::popScene();
+            return;
+        }
+
+        // Ref<> en vez de retain/release manual pa seguridad de memoria
+        Ref<CCScene> safeDest = destScene;
+
+        auto cfg = selectConfig(destScene);
+
+        ApplyingGuard guard;
+        CCDirector::popScene();
+        auto* ourTrans = TransitionManager::get().createTransition(cfg, destScene);
+        CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
+    }
+};

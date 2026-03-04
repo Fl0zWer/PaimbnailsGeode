@@ -19,6 +19,7 @@
 #include "../utils/FileDialog.hpp"
 #include "../layers/ModeratorsLayer.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../managers/LayerBackgroundManager.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -27,7 +28,7 @@ class ProfilePreviewPopup : public geode::Popup {
 protected:
     std::vector<uint8_t> m_data;
     std::string m_username;
-    std::function<void()> m_callback;
+    geode::CopyableFunction<void()> m_callback;
 
     bool init() {
         if (!Popup::init(360.f, 180.f)) return false;
@@ -41,7 +42,11 @@ protected:
             return false;
         }
         auto texture = new CCTexture2D();
-        texture->initWithImage(image);
+        if (!texture->initWithImage(image)) {
+            image->release();
+            texture->release();
+            return false;
+        }
         image->release();
         texture->autorelease();
 
@@ -65,7 +70,7 @@ protected:
             m_mainLayer->addChild(previewNode);
         }
 
-        // añadir boton subir
+        // anadir boton subir
         auto uploadBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("Upload"),
             this,
@@ -85,7 +90,7 @@ protected:
     }
 
 public:
-    static ProfilePreviewPopup* create(const std::vector<uint8_t>& data, const std::string& username, std::function<void()> callback) {
+    static ProfilePreviewPopup* create(std::vector<uint8_t> const& data, std::string const& username, std::function<void()> callback) {
         auto ret = new ProfilePreviewPopup();
         ret->m_data = data;
         ret->m_username = username;
@@ -106,9 +111,16 @@ public:
 
 
 class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("LeaderboardsLayer::init", geode::Priority::Late);
+    }
+
     bool init(LeaderboardType type, LeaderboardStat stat) {
         if (!LeaderboardsLayer::init(type, stat)) return false;
         
+        // ── Aplicar fondo custom unificado ──
+        LayerBackgroundManager::get().applyBackground(this, "leaderboards");
+
         createPaimonButtons();
         updateTabColors(type);
         
@@ -121,7 +133,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         std::vector<std::string> tabIDs = {"top-100-menu", "global-menu", "creators-menu", "friends-menu"};
 
         // reset todos los tabs
-        for (const auto& tabID : tabIDs) {
+        for (auto const& tabID : tabIDs) {
             if (auto menu = this->getChildByID(tabID)) {
                 if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
                     btn->setColor({255, 255, 255});
@@ -256,7 +268,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
         PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
-        ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [this](bool success, const std::string& msg) {
+        ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [this](bool success, std::string const& msg) {
             if (success) {
                 PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
             } else {
@@ -295,7 +307,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         
         ProfilePreviewPopup::create(rawData, username, [rawData, accountID, username]() {
             PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
-            ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, const std::string& msg) {
+            ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, std::string const& msg) {
                 if (success) {
                     PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
                 } else {

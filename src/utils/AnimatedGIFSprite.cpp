@@ -27,21 +27,17 @@ size_t AnimatedGIFSprite::s_currentCacheSize = 0;
 size_t AnimatedGIFSprite::getMaxCacheMem() {
     bool ramCache = Mod::get()->getSettingValue<bool>("gif-ram-cache");
     if (ramCache) {
-        // 300mb en móvil es jugársela, en android bajo más
-        // en safe mode todavía reduzco más la memoria
-#ifdef GEODE_IS_ANDROID
-        bool safeMode = true;
-        try { safeMode = Mod::get()->getSettingValue<bool>("android-safe-mode"); } catch (...) {}
-        return safeMode ? (20 * 1024 * 1024) : (80 * 1024 * 1024);
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+        return 80 * 1024 * 1024; // 80 MB en movil
 #else
-        return 300 * 1024 * 1024; // 300 MB
+        return 300 * 1024 * 1024; // 300 MB en desktop
 #endif
     } else {
-        return 10 * 1024 * 1024; // 10 MB (cache mínimo pa la escena actual)
+        return 10 * 1024 * 1024; // 10 MB (cache minimo pa la escena actual)
     }
 }
 
-// cosas estáticas de la cola de workers
+// cosas estaticas de la cola de workers
 std::deque<AnimatedGIFSprite::GIFTask> AnimatedGIFSprite::s_taskQueue;
 std::mutex AnimatedGIFSprite::s_queueMutex;
 std::condition_variable AnimatedGIFSprite::s_queueCV;
@@ -62,7 +58,7 @@ static std::vector<uint16_t> convertToRGBA4444(const uint32_t* pixels, int width
     std::vector<uint16_t> out(width * height);
     for (int i = 0; i < width * height; ++i) {
         uint32_t p = pixels[i];
-        // rgba8888: r=0-7, g=8-15, b=16-23, a=24-31 (en memoria suele ser abgr pero aquí asumo packing normal)
+        // rgba8888: r=0-7, g=8-15, b=16-23, a=24-31 (en memoria suele ser abgr pero aqui asumo packing normal)
         // cocos2d realmente espera:
         // rgba8888: r, g, b, a en ese orden.
         // rgba4444: r, g, b, a en nibbles (0xrgba).
@@ -83,20 +79,20 @@ static std::vector<uint16_t> convertToRGBA4444(const uint32_t* pixels, int width
     return out;
 }
 
-void AnimatedGIFSprite::pinGIF(const std::string& key) {
+void AnimatedGIFSprite::pinGIF(std::string const& key) {
     s_pinnedGIFs.insert(key);
-    // lo saco de la lista LRU si estaba, así no se lo carga la limpieza
+    // lo saco de la lista LRU si estaba, asi no se lo carga la limpieza
     s_lruList.remove(key);
 }
 
-void AnimatedGIFSprite::unpinGIF(const std::string& key) {
+void AnimatedGIFSprite::unpinGIF(std::string const& key) {
     if (s_pinnedGIFs.erase(key)) {
         // si lo despincho, lo meto de vuelta en la LRU
         // solo si sigue en el cache
         if (s_gifCache.find(key) != s_gifCache.end()) {
             s_lruList.push_back(key);
             
-            // disparo limpieza si ya me pasé del límite
+            // disparo limpieza si ya me pase del limite
             size_t maxMem = getMaxCacheMem();
             while (s_currentCacheSize > maxMem && !s_lruList.empty()) {
                 std::string toRemove = s_lruList.front();
@@ -118,11 +114,11 @@ void AnimatedGIFSprite::unpinGIF(const std::string& key) {
     }
 }
 
-bool AnimatedGIFSprite::isPinned(const std::string& key) {
+bool AnimatedGIFSprite::isPinned(std::string const& key) {
     return s_pinnedGIFs.find(key) != s_pinnedGIFs.end();
 }
 
-AnimatedGIFSprite* AnimatedGIFSprite::create(const std::string& filename) {
+AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
     auto ret = new AnimatedGIFSprite();
     if (ret && ret->init()) {
         ret->autorelease();
@@ -151,7 +147,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const std::string& filename) {
         sharedData.width = gifData.width;
         sharedData.height = gifData.height;
         
-        for (const auto& frame : gifData.frames) {
+        for (auto const& frame : gifData.frames) {
             auto pixels4444 = convertToRGBA4444(reinterpret_cast<const uint32_t*>(frame.pixels.data()), frame.width, frame.height);
             auto texture = new CCTexture2D();
             texture->initWithData(
@@ -171,7 +167,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const std::string& filename) {
         // guardo la entrada en cache
         s_gifCache[filename] = sharedData;
         
-        // calculo tamaño aproximado en RAM
+        // calculo tamano aproximado en RAM
         size_t entrySize = 0;
         for (auto* tex : sharedData.textures) {
             entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 2;
@@ -227,7 +223,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(const void* data, size_t size) {
 
         float sf = getContentScaleFactorSafe();
         
-        for (const auto& frame : gifData.frames) {
+        for (auto const& frame : gifData.frames) {
             auto pixels4444 = convertToRGBA4444(reinterpret_cast<const uint32_t*>(frame.pixels.data()), frame.width, frame.height);
             auto texture = new CCTexture2D();
             texture->initWithData(
@@ -320,7 +316,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
         auto* texture = new CCTexture2D();
         
         bool success = false;
-        try {
+        {
             auto pixels4444 = convertToRGBA4444(reinterpret_cast<const uint32_t*>(frameData.pixels.data()), frameData.width, frameData.height);
             
             success = texture->initWithData(
@@ -330,7 +326,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
                 frameData.height,
                 CCSize(frameData.width / sf, frameData.height / sf)
             );
-        } catch (...) { success = false; }
+        }
 
         if (success) {
             texture->setAntiAliasTexParameters();
@@ -366,7 +362,7 @@ bool AnimatedGIFSprite::processNextPendingFrame() {
     auto* texture = new CCTexture2D();
 
     bool success = false;
-    try {
+    {
         auto pixels4444 = convertToRGBA4444(reinterpret_cast<const uint32_t*>(frameData.pixels.data()), frameData.width, frameData.height);
         success = texture->initWithData(
             pixels4444.data(),
@@ -375,7 +371,7 @@ bool AnimatedGIFSprite::processNextPendingFrame() {
             frameData.height,
             CCSize(frameData.width / sf, frameData.height / sf)
         );
-    } catch (...) { success = false; }
+    }
 
     if (success) {
         texture->setAntiAliasTexParameters();
@@ -400,7 +396,7 @@ bool AnimatedGIFSprite::processNextPendingFrame() {
     return success;
 }
 
-std::string AnimatedGIFSprite::getCachePath(const std::string& path) {
+std::string AnimatedGIFSprite::getCachePath(std::string const& path) {
     auto cacheDir = Mod::get()->getSaveDir() / "gif_cache";
     std::error_code ec;
     if (!std::filesystem::exists(cacheDir, ec)) {
@@ -412,76 +408,74 @@ std::string AnimatedGIFSprite::getCachePath(const std::string& path) {
     return geode::utils::string::pathToString(cacheDir / (std::to_string(hash) + ".bin"));
 }
 
-bool AnimatedGIFSprite::loadFromDiskCache(const std::string& path, DiskCacheEntry& outEntry) {
+bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntry& outEntry) {
     auto cachePath = getCachePath(path);
-    if (!std::filesystem::exists(cachePath)) return false;
-    
-        // miro la fecha de modificación
-    try {
-        auto cacheTime = std::filesystem::last_write_time(cachePath);
-        auto sourceTime = std::filesystem::last_write_time(path);
-        
-        // si la fuente es más nueva que la cache, la tiro
-        if (sourceTime > cacheTime) return false;
-        
-        std::ifstream file(cachePath, std::ios::binary);
-        if (!file) return false;
-        
-        // cabecera: versión, ancho, alto, nº de frames
-        uint32_t version;
-        file.read(reinterpret_cast<char*>(&version), sizeof(version));
-        if (version != 1) return false;
-        
-        file.read(reinterpret_cast<char*>(&outEntry.width), sizeof(outEntry.width));
-        file.read(reinterpret_cast<char*>(&outEntry.height), sizeof(outEntry.height));
-        
-        uint32_t frameCount;
-        file.read(reinterpret_cast<char*>(&frameCount), sizeof(frameCount));
-        
-        outEntry.frames.resize(frameCount);
-        for (uint32_t i = 0; i < frameCount; ++i) {
-            auto& frame = outEntry.frames[i];
-            file.read(reinterpret_cast<char*>(&frame.delay), sizeof(frame.delay));
-            file.read(reinterpret_cast<char*>(&frame.width), sizeof(frame.width));
-            file.read(reinterpret_cast<char*>(&frame.height), sizeof(frame.height));
-            
-            uint32_t dataSize;
-            file.read(reinterpret_cast<char*>(&dataSize), sizeof(dataSize));
-            
-            frame.pixels.resize(dataSize / 2); // va en uint16_t
-            file.read(reinterpret_cast<char*>(frame.pixels.data()), dataSize);
-        }
-        
-        return true;
-    } catch(...) {
-        return false;
+    std::error_code existsEc;
+    if (!std::filesystem::exists(cachePath, existsEc) || existsEc) return false;
+
+    // miro la fecha de modificacion
+    std::error_code ec;
+    auto cacheTime = std::filesystem::last_write_time(cachePath, ec);
+    if (ec) return false;
+    auto sourceTime = std::filesystem::last_write_time(path, ec);
+    if (ec) return false;
+
+    // si la fuente es mas nueva que la cache, la tiro
+    if (sourceTime > cacheTime) return false;
+
+    std::ifstream file(cachePath, std::ios::binary);
+    if (!file) return false;
+
+    // cabecera: version, ancho, alto, nº de frames
+    uint32_t version;
+    file.read(reinterpret_cast<char*>(&version), sizeof(version));
+    if (version != 1) return false;
+
+    file.read(reinterpret_cast<char*>(&outEntry.width), sizeof(outEntry.width));
+    file.read(reinterpret_cast<char*>(&outEntry.height), sizeof(outEntry.height));
+
+    uint32_t frameCount;
+    file.read(reinterpret_cast<char*>(&frameCount), sizeof(frameCount));
+
+    outEntry.frames.resize(frameCount);
+    for (uint32_t i = 0; i < frameCount; ++i) {
+        auto& frame = outEntry.frames[i];
+        file.read(reinterpret_cast<char*>(&frame.delay), sizeof(frame.delay));
+        file.read(reinterpret_cast<char*>(&frame.width), sizeof(frame.width));
+        file.read(reinterpret_cast<char*>(&frame.height), sizeof(frame.height));
+
+        uint32_t dataSize;
+        file.read(reinterpret_cast<char*>(&dataSize), sizeof(dataSize));
+
+        frame.pixels.resize(dataSize / 2); // va en uint16_t
+        file.read(reinterpret_cast<char*>(frame.pixels.data()), dataSize);
     }
+
+    return file.good();
 }
 
-void AnimatedGIFSprite::saveToDiskCache(const std::string& path, const DiskCacheEntry& entry) {
+void AnimatedGIFSprite::saveToDiskCache(std::string const& path, DiskCacheEntry const& entry) {
     auto cachePath = getCachePath(path);
-    try {
-        std::ofstream file(cachePath, std::ios::binary);
-        if (!file) return;
-        
-        uint32_t version = 1;
-        file.write(reinterpret_cast<const char*>(&version), sizeof(version));
-        file.write(reinterpret_cast<const char*>(&entry.width), sizeof(entry.width));
-        file.write(reinterpret_cast<const char*>(&entry.height), sizeof(entry.height));
-        
-        uint32_t frameCount = entry.frames.size();
-        file.write(reinterpret_cast<const char*>(&frameCount), sizeof(frameCount));
-        
-        for (const auto& frame : entry.frames) {
-            file.write(reinterpret_cast<const char*>(&frame.delay), sizeof(frame.delay));
-            file.write(reinterpret_cast<const char*>(&frame.width), sizeof(frame.width));
-            file.write(reinterpret_cast<const char*>(&frame.height), sizeof(frame.height));
-            
-            uint32_t dataSize = frame.pixels.size() * 2;
-            file.write(reinterpret_cast<const char*>(&dataSize), sizeof(dataSize));
-            file.write(reinterpret_cast<const char*>(frame.pixels.data()), dataSize);
-        }
-    } catch(...) {}
+    std::ofstream file(cachePath, std::ios::binary);
+    if (!file) return;
+
+    uint32_t version = 1;
+    file.write(reinterpret_cast<char const*>(&version), sizeof(version));
+    file.write(reinterpret_cast<char const*>(&entry.width), sizeof(entry.width));
+    file.write(reinterpret_cast<char const*>(&entry.height), sizeof(entry.height));
+
+    uint32_t frameCount = entry.frames.size();
+    file.write(reinterpret_cast<char const*>(&frameCount), sizeof(frameCount));
+
+    for (auto const& frame : entry.frames) {
+        file.write(reinterpret_cast<char const*>(&frame.delay), sizeof(frame.delay));
+        file.write(reinterpret_cast<char const*>(&frame.width), sizeof(frame.width));
+        file.write(reinterpret_cast<char const*>(&frame.height), sizeof(frame.height));
+
+        uint32_t dataSize = frame.pixels.size() * 2;
+        file.write(reinterpret_cast<char const*>(&dataSize), sizeof(dataSize));
+        file.write(reinterpret_cast<char const*>(frame.pixels.data()), dataSize);
+    }
 }
 
 void AnimatedGIFSprite::workerLoop() {
@@ -529,24 +523,21 @@ void AnimatedGIFSprite::workerLoop() {
                     ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
 
                     // proceso todos los frames ya pa dejar el GIF entero en cache
-                    for (const auto& frameData : gifData.frames) {
+                    for (auto const& frameData : gifData.frames) {
                         auto* gifFrame = new GIFFrame();
                         auto* texture = new CCTexture2D();
 
-                        bool success = false;
-                        try {
-                            auto pixels4444 = convertToRGBA4444(
-                                reinterpret_cast<const uint32_t*>(frameData.pixels.data()),
-                                frameData.width, frameData.height);
+                        auto pixels4444 = convertToRGBA4444(
+                            reinterpret_cast<const uint32_t*>(frameData.pixels.data()),
+                            frameData.width, frameData.height);
 
-                            success = texture->initWithData(
-                                pixels4444.data(),
-                                kCCTexture2DPixelFormat_RGBA4444,
-                                frameData.width,
-                                frameData.height,
-                                CCSize(frameData.width / sf, frameData.height / sf)
-                            );
-                        } catch (...) { success = false; }
+                        bool success = texture->initWithData(
+                            pixels4444.data(),
+                            kCCTexture2DPixelFormat_RGBA4444,
+                            frameData.width,
+                            frameData.height,
+                            CCSize(frameData.width / sf, frameData.height / sf)
+                        );
 
                         if (success) {
                             texture->setAntiAliasTexParameters();
@@ -587,7 +578,7 @@ void AnimatedGIFSprite::workerLoop() {
 
                     log::info("[AnimatedGIFSprite] Cached complete GIF from data with key: {} ({} frames)", key, ret->m_frames.size());
 
-                    // pongo el primer frame y arranco la animación
+                    // pongo el primer frame y arranco la animacion
                     ret->setCurrentFrame(0);
                     ret->scheduleUpdate();
                     ret->autorelease();
@@ -620,7 +611,7 @@ void AnimatedGIFSprite::workerLoop() {
                         ret->setContentSize(CCSize(ret->m_canvasWidth / sf, ret->m_canvasHeight / sf));
                         
                         // cargo todos los frames desde el cache (ya vienen procesados)
-                        for (const auto& frame : cachedEntry.frames) {
+                        for (auto const& frame : cachedEntry.frames) {
                             auto texture = new CCTexture2D();
                             texture->initWithData(
                                 frame.pixels.data(),
@@ -675,7 +666,7 @@ void AnimatedGIFSprite::workerLoop() {
             newCacheEntry.width = gifData.width;
             newCacheEntry.height = gifData.height;
             
-            for (const auto& frame : gifData.frames) {
+            for (auto const& frame : gifData.frames) {
                 DiskCacheEntry::Frame cacheFrame;
                 cacheFrame.delay = frame.delayMs / 1000.0f;
                 cacheFrame.width = frame.width;
@@ -738,7 +729,7 @@ void AnimatedGIFSprite::clearCache() {
     PaimonDebug::log("[AnimatedGIFSprite] Cache cleared");
 }
 
-void AnimatedGIFSprite::remove(const std::string& filename) {
+void AnimatedGIFSprite::remove(std::string const& filename) {
     auto it = s_gifCache.find(filename);
     if (it != s_gifCache.end()) {
         for (auto* tex : it->second.textures) {
@@ -750,7 +741,7 @@ void AnimatedGIFSprite::remove(const std::string& filename) {
     }
 }
 
-bool AnimatedGIFSprite::isCached(const std::string& filename) {
+bool AnimatedGIFSprite::isCached(std::string const& filename) {
     return s_gifCache.find(filename) != s_gifCache.end();
 }
 
@@ -767,7 +758,7 @@ AnimatedGIFSprite::~AnimatedGIFSprite() {
     m_frames.clear();
 }
 
-bool AnimatedGIFSprite::initFromCache(const std::string& cacheKey) {
+bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
     m_filename = cacheKey;
 
     // comprobar cache primero
@@ -776,7 +767,7 @@ bool AnimatedGIFSprite::initFromCache(const std::string& cacheKey) {
         return false;
     }
 
-    const auto& cachedData = it->second;
+    auto const& cachedData = it->second;
     m_canvasWidth = cachedData.width;
     m_canvasHeight = cachedData.height;
     
@@ -818,7 +809,7 @@ bool AnimatedGIFSprite::initFromCache(const std::string& cacheKey) {
     return true;
 }
 
-AnimatedGIFSprite* AnimatedGIFSprite::createFromCache(const std::string& key) {
+AnimatedGIFSprite* AnimatedGIFSprite::createFromCache(std::string const& key) {
     auto ret = new (std::nothrow) AnimatedGIFSprite();
     if (ret && ret->initFromCache(key)) {
         ret->autorelease();
@@ -828,7 +819,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::createFromCache(const std::string& key) {
     return nullptr;
 }
 
-void AnimatedGIFSprite::createAsync(const std::vector<uint8_t>& data, const std::string& key, AsyncCallback callback) {
+void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::string const& key, AsyncCallback callback) {
     if (data.empty()) {
         if (callback) callback(nullptr);
         return;
@@ -857,8 +848,9 @@ void AnimatedGIFSprite::createAsync(const std::vector<uint8_t>& data, const std:
 
 
 
-void AnimatedGIFSprite::createAsync(const std::string& path, AsyncCallback callback) {
-    if (!std::filesystem::exists(path)) {
+void AnimatedGIFSprite::createAsync(std::string const& path, AsyncCallback callback) {
+    std::error_code existsEc;
+    if (!std::filesystem::exists(path, existsEc) || existsEc) {
         if (callback) callback(nullptr);
         return;
     }

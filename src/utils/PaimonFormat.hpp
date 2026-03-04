@@ -13,7 +13,7 @@ namespace PaimonFormat {
     constexpr uint64_t HASH_SALT = 0x9E3779B97F4A7C15;
 
     // Calcular FNV-1a 64-bit hash
-    inline uint64_t calculateHash(const std::vector<uint8_t>& data) {
+    inline uint64_t calculateHash(std::vector<uint8_t> const& data) {
         uint64_t hash = 0xCBF29CE484222325; // FNV offset basis
         
         // Hash salt first
@@ -31,7 +31,7 @@ namespace PaimonFormat {
     }
 
     // Encrypt using XOR (rotating key)
-    inline std::vector<uint8_t> encrypt(const std::vector<uint8_t>& data) {
+    inline std::vector<uint8_t> encrypt(std::vector<uint8_t> const& data) {
         std::vector<uint8_t> encrypted(data.size());
         for (size_t i = 0; i < data.size(); i++) {
             encrypted[i] = data[i] ^ XOR_KEY[i % KEY_LENGTH];
@@ -40,14 +40,13 @@ namespace PaimonFormat {
     }
     
     // Decrypt (XOR is symmetric)
-    inline std::vector<uint8_t> decrypt(const std::vector<uint8_t>& data) {
+    inline std::vector<uint8_t> decrypt(std::vector<uint8_t> const& data) {
         return encrypt(data); // XOR is its own inverse
     }
     
     // Save encrypted data to a .paimon file
-    bool save(const std::filesystem::path& path, const std::vector<uint8_t>& data);
-    
-    // Load and decrypt data from a .paimon file
-    std::vector<uint8_t> load(const std::filesystem::path& path);
-}
+    bool save(std::filesystem::path const& path, std::vector<uint8_t> const& data);
 
+    // Load and decrypt data from a .paimon file
+    std::vector<uint8_t> load(std::filesystem::path const& path);
+}

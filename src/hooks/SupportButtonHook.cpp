@@ -1,6 +1,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include "../layers/PaimonSupportLayer.hpp"
+#include "../managers/TransitionManager.hpp"
 
 using namespace geode::prelude;
 
@@ -18,8 +19,8 @@ public:
     }
 
     void onSupportClicked(CCObject*) {
-        CCDirector::sharedDirector()->pushScene(
-            CCTransitionFade::create(0.5f, PaimonSupportLayer::scene())
+        TransitionManager::get().pushScene(
+            PaimonSupportLayer::scene()
         );
     }
 };
@@ -27,7 +28,7 @@ public:
 $execute {
     // escuchar cuando se abre el popup de nuestro mod para interceptar el boton support
     static auto handle = ModPopupUIEvent().listen(
-        +[](FLAlertLayer* popup, std::string_view modID, std::optional<Mod*>) -> bool {
+        +[](FLAlertLayer* popup, std::string_view modID, std::optional<Mod*>) -> ListenerResult {
             if (modID != Mod::get()->getID()) {
                 return ListenerResult::Propagate;
             }

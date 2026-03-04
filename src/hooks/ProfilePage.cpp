@@ -23,11 +23,10 @@
 #include "../layers/AddModeratorPopup.hpp"
 #include "../layers/BanUserPopup.hpp"
 #include "../utils/Assets.hpp"
-#include "../layers/ButtonEditOverlay.hpp"
-#include "../managers/ButtonLayoutManager.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../managers/ProfileMusicManager.hpp"
+#include "../managers/TransitionManager.hpp"
 #include "../managers/ProfilePicCustomizer.hpp"
 #include "../layers/ProfileMusicPopup.hpp"
 #include "../layers/RateProfilePopup.hpp"
@@ -37,21 +36,35 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../utils/ShapeStencil.hpp"
+#include "BadgeCache.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
 
 // CCScale9Sprite::create crashea si el sprite no existe (no retorna nullptr).
-static CCScale9Sprite* safeCreateScale9(const char* file) {
+static CCScale9Sprite* safeCreateScale9(char const* file) {
     auto* tex = CCTextureCache::sharedTextureCache()->addImage(file, false);
     if (!tex) return nullptr;
     return CCScale9Sprite::create(file);
 }
 
-// cache de texturas de profileimg para carga instantánea entre popups.
-// Usa Ref<> para manejo automático de refcount, con guardia de shutdown
-// para evitar release() cuando el CCPoolManager ya esté destruido.
+// cache de texturas de profileimg para carga instantanea entre popups.
+// Usa Ref<> para manejo automatico de refcount, con guardia de shutdown
+// para evitar release() cuando el CCPoolManager ya este destruido.
 static std::unordered_map<int, geode::Ref<CCTexture2D>> s_profileImgCache;
+static bool s_profileImgShutdown = false;
+
+// Limpiar el cache de profileimg durante el cierre del juego.
+// Los destructores estaticos se ejecutan en orden indefinido y
+// CCPoolManager puede ya estar muerto — usamos take() para sacar
+// los Ref<> sin llamar release().
+$on_game(Exiting) {
+    s_profileImgShutdown = true;
+    for (auto& [id, ref] : s_profileImgCache) {
+        (void)ref.take();
+    }
+    s_profileImgCache.clear();
+}
 
 // Acceso externo al cache de profileimg (usado por InfoLayer hook).
 CCTexture2D* getProfileImgCachedTexture(int accountID) {
@@ -97,47 +110,237 @@ static CCTexture2D* loadProfileImgFromDisk(int accountID) {
     return tex;
 }
 
-static void saveProfileImgToDisk(int accountID, const std::vector<uint8_t>& data) {
-    try {
-        auto cacheDir = getProfileImgCacheDir();
-        std::error_code ec;
-        std::filesystem::create_directories(cacheDir, ec);
-        auto cachePath = getProfileImgCachePath(accountID);
-        std::ofstream cacheFile(cachePath, std::ios::binary);
-        if (cacheFile) {
-            cacheFile.write(reinterpret_cast<const char*>(data.data()), data.size());
-            cacheFile.close();
-        }
-    } catch (...) {}
+static void saveProfileImgToDisk(int accountID, std::vector<uint8_t> const& data) {
+    auto cacheDir = getProfileImgCacheDir();
+    std::error_code ec;
+    std::filesystem::create_directories(cacheDir, ec);
+    auto cachePath = getProfileImgCachePath(accountID);
+    std::ofstream cacheFile(cachePath, std::ios::binary);
+    if (cacheFile) {
+        cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
+        cacheFile.close();
+    }
 }
 
 class $modify(PaimonProfilePage, ProfilePage) {
+    static void onModify(auto& self) {
+        // Late = ejecutar despues de otros mods (NodeIDs, BetterProfiles, etc.)
+        // para que los IDs de nodos ya esten asignados cuando modificamos el perfil
+        (void)self.setHookPriorityPost("ProfilePage::loadPageFromUserInfo", geode::Priority::Late);
+    }
+
     struct Fields {
-        CCMenu* m_extraMenu = nullptr;
-        CCMenuItemSpriteExtra* m_gearBtn = nullptr;
-        CCMenuItemSpriteExtra* m_verifyModBtn = nullptr;
-        CCMenuItemSpriteExtra* m_addProfileBtn = nullptr;
-        CCMenuItemSpriteExtra* m_editModeBtn = nullptr;
-        CCMenuItemSpriteExtra* m_banBtn = nullptr;
-        CCMenuItemSpriteExtra* m_musicBtn = nullptr;       // Botón para configurar música (solo propio perfil)
-        CCMenuItemSpriteExtra* m_musicPauseBtn = nullptr;  // Botón para pausar música (todos los perfiles)
-        CCMenuItemSpriteExtra* m_addProfileImgBtn = nullptr; // Botón para añadir imagen de perfil
-        CCMenu* m_pauseMenu = nullptr;  // Menú del botón de pausa (para incluir en editor)
-        CCClippingNode* m_profileClip = nullptr;
-        CCLayerColor* m_profileSeparator = nullptr;
-        CCNode* m_profileGradient = nullptr;
-        CCNode* m_profileBorder = nullptr;
-        CCClippingNode* m_profileImgClip = nullptr;   // Clip de la imagen de perfil (fondo normal del popup)
-        CCNode* m_profileImgBorder = nullptr;          // Borde de la imagen de perfil
+        Ref<CCMenuItemSpriteExtra> m_gearBtn = nullptr;
+        Ref<CCMenuItemSpriteExtra> m_addModBtn = nullptr;       // Boton para anadir moderadores (solo admins)
+        Ref<CCMenuItemSpriteExtra> m_addProfileBtn = nullptr;
+        Ref<CCMenuItemSpriteExtra> m_banBtn = nullptr;
+        Ref<CCMenuItemSpriteExtra> m_musicBtn = nullptr;       // Boton para configurar musica (solo propio perfil)
+        Ref<CCMenuItemSpriteExtra> m_musicPauseBtn = nullptr;  // Boton para pausar musica (todos los perfiles)
+        Ref<CCMenuItemSpriteExtra> m_addProfileImgBtn = nullptr; // Boton para anadir imagen de perfil
+        Ref<CCClippingNode> m_profileClip = nullptr;
+        Ref<CCLayerColor> m_profileSeparator = nullptr;
+        Ref<CCNode> m_profileGradient = nullptr;
+        Ref<CCNode> m_profileBorder = nullptr;
+        Ref<CCClippingNode> m_profileImgClip = nullptr;   // Clip de la imagen de perfil (fondo normal del popup)
+        Ref<CCNode> m_profileImgBorder = nullptr;          // Borde de la imagen de perfil
         bool m_isApprovedMod = false;
         bool m_isAdmin = false;
-        bool m_musicPlaying = false;  // Estado de reproducción de música
-        bool m_menuMusicPaused = false; // Si pausamos la música del menú al abrir
+        bool m_musicPlaying = false;  // Estado de reproduccion de musica
+        bool m_menuMusicPaused = false; // Si pausamos la musica del menu al abrir
     };
 
     bool canShowModerationControls() {
         // muestro controles si esta verificado como mod o admin
         return m_fields->m_isApprovedMod || m_fields->m_isAdmin;
+    }
+
+    // Helper: obtener left-menu de forma segura (estandar de Geode NodeIDs)
+    CCMenu* getLeftMenu() {
+        if (!this->m_mainLayer) return nullptr;
+        auto node = this->m_mainLayer->getChildByID("left-menu");
+        return node ? typeinfo_cast<CCMenu*>(node) : nullptr;
+    }
+
+    // Helper: obtener socials-menu de forma segura (estandar de Geode NodeIDs)
+    CCMenu* getSocialsMenu() {
+        if (!this->m_mainLayer) return nullptr;
+        auto node = this->m_mainLayer->getChildByID("socials-menu");
+        return node ? typeinfo_cast<CCMenu*>(node) : nullptr;
+    }
+
+    // Helper: escalar un sprite para que encaje en un tamano cuadrado
+    static void scaleToFit(CCNode* spr, float targetSize) {
+        if (!spr) return;
+        float curSize = std::max(spr->getContentWidth(), spr->getContentHeight());
+        if (curSize > 0) spr->setScale(targetSize / curSize);
+    }
+
+    // Helper: crear boton gear si no existe aun (mods + admins)
+    void ensureGearButton(CCMenu* menu) {
+        if (!menu || m_fields->m_gearBtn) return;
+        if (menu->getChildByID("thumbs-gear-button"_spr)) return;
+
+        auto gearSpr = Assets::loadButtonSprite(
+            "profile-gear",
+            "frame:GJ_optionsBtn02_001.png",
+            [](){
+                auto s = CCSprite::createWithSpriteFrameName("GJ_optionsBtn02_001.png");
+                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
+                if (!s) s = CCSprite::create();
+                return s;
+            }
+        );
+        scaleToFit(gearSpr, 26.f);
+        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(PaimonProfilePage::onOpenThumbsCenter));
+        gearBtn->setID("thumbs-gear-button"_spr);
+        menu->addChild(gearBtn);
+        m_fields->m_gearBtn = gearBtn;
+    }
+
+    // Helper: crear boton add-moderator si no existe aun (solo admins)
+    void ensureAddModeratorButton(CCMenu* menu) {
+        if (!menu || m_fields->m_addModBtn) return;
+        if (menu->getChildByID("add-moderator-button"_spr)) return;
+
+        auto addModSpr = Assets::loadButtonSprite(
+            "add-moderator",
+            "frame:GJ_plus2Btn_001.png",
+            [](){
+                auto s = CCSprite::createWithSpriteFrameName("GJ_plus2Btn_001.png");
+                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_plusBtn_001.png");
+                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_button_01.png");
+                return s;
+            }
+        );
+        scaleToFit(addModSpr, 26.f);
+        auto addModBtn = CCMenuItemSpriteExtra::create(addModSpr, this, menu_selector(PaimonProfilePage::onOpenAddModerator));
+        addModBtn->setID("add-moderator-button"_spr);
+        menu->addChild(addModBtn);
+        m_fields->m_addModBtn = addModBtn;
+    }
+
+    // ── Verificador periodico de integridad de botones ──
+    // Se ejecuta cada 0.5s para asegurar que todos los botones existen,
+    // estan visibles y en el estado correcto (soluciona el bug donde
+    // el boton de ban u otros desaparecen intermitentemente).
+    void verifyButtonIntegrity(float dt) {
+        if (!this->m_mainLayer) return;
+        auto* leftMenu = getLeftMenu();
+        if (!leftMenu) return;
+
+        bool needsLayout = false;
+
+        // 1. Boton de ban: debe existir siempre, visibilidad segun rango + no propio perfil
+        if (!m_fields->m_banBtn || !m_fields->m_banBtn->getParent()) {
+            // Recrear el boton de ban si se perdio
+            auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.6f);
+            banSpr->setScale(0.5f);
+            auto banBtn = CCMenuItemSpriteExtra::create(banSpr, this, menu_selector(PaimonProfilePage::onBanUser));
+            banBtn->setID("ban-user-button"_spr);
+            banBtn->setVisible(false);
+            leftMenu->addChild(banBtn);
+            m_fields->m_banBtn = banBtn;
+            needsLayout = true;
+            log::debug("[ProfilePage] Boton de ban recreado por verificador de integridad");
+        }
+
+        // Actualizar visibilidad del ban
+        {
+            bool shouldShow = !this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin);
+            if (m_fields->m_banBtn->isVisible() != shouldShow) {
+                m_fields->m_banBtn->setVisible(shouldShow);
+                m_fields->m_banBtn->setEnabled(shouldShow);
+                needsLayout = true;
+            }
+        }
+
+        // 2. Boton de reviews: debe existir siempre
+        if (!leftMenu->getChildByID("profile-reviews-btn"_spr)) {
+            auto reviewIcon = CCSprite::createWithSpriteFrameName("GJ_chatBtn_001.png");
+            if (!reviewIcon) reviewIcon = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
+            if (reviewIcon) {
+                scaleToFit(reviewIcon, 26.f);
+                auto reviewBtn = CCMenuItemSpriteExtra::create(reviewIcon, this, menu_selector(PaimonProfilePage::onProfileReviews));
+                reviewBtn->setID("profile-reviews-btn"_spr);
+                leftMenu->addChild(reviewBtn);
+                needsLayout = true;
+                log::debug("[ProfilePage] Boton de reviews recreado por verificador de integridad");
+            }
+        }
+
+        // 3. Gear: debe existir si es mod/admin en perfil propio
+        if (this->m_ownProfile && (m_fields->m_isApprovedMod || m_fields->m_isAdmin)) {
+            if (!m_fields->m_gearBtn || !m_fields->m_gearBtn->getParent()) {
+                m_fields->m_gearBtn = nullptr;
+                ensureGearButton(leftMenu);
+                needsLayout = true;
+                log::debug("[ProfilePage] Boton gear recreado por verificador de integridad");
+            }
+        }
+
+        // 4. Add moderator: debe existir si es admin en perfil propio
+        if (this->m_ownProfile && m_fields->m_isAdmin) {
+            if (!m_fields->m_addModBtn || !m_fields->m_addModBtn->getParent()) {
+                m_fields->m_addModBtn = nullptr;
+                ensureAddModeratorButton(leftMenu);
+                needsLayout = true;
+                log::debug("[ProfilePage] Boton add-mod recreado por verificador de integridad");
+            }
+        }
+
+        if (needsLayout) {
+            leftMenu->updateLayout();
+        }
+    }
+
+    // ── Badge de moderador/admin en el perfil ──
+    // (fusionado desde BadgeProfilePage para evitar doble $modify sobre ProfilePage)
+
+    void onPaimonBadge(CCObject* sender) {
+        if (auto node = typeinfo_cast<CCNode*>(sender)) {
+            showBadgeInfoPopup(node);
+        }
+    }
+
+    void addModeratorBadge(bool isMod, bool isAdmin) {
+        // busco el menu del username
+        auto menu = this->getChildByIDRecursive("username-menu");
+        if (!menu) return;
+
+        // si ya esta, no duplico
+        if (menu->getChildByID("paimon-moderator-badge"_spr)) return;
+        if (menu->getChildByID("paimon-admin-badge"_spr)) return;
+
+        CCSprite* badgeSprite = nullptr;
+        std::string badgeID;
+
+        if (isAdmin) {
+            badgeSprite = CCSprite::create("paim_Admin.png"_spr);
+            badgeID = "paimon-admin-badge"_spr;
+        } else if (isMod) {
+            badgeSprite = CCSprite::create("paim_Moderador.png"_spr);
+            badgeID = "paimon-moderator-badge"_spr;
+        }
+
+        if (!badgeSprite) return;
+
+        log::info("Adding badge (Clickable) - Admin: {}, Mod: {}", isAdmin, isMod);
+
+        float targetHeight = 20.0f;
+        float scale = targetHeight / badgeSprite->getContentSize().height;
+        badgeSprite->setScale(scale);
+
+        auto btn = CCMenuItemSpriteExtra::create(
+            badgeSprite,
+            this,
+            menu_selector(PaimonProfilePage::onPaimonBadge)
+        );
+        btn->setID(badgeID);
+
+        if (auto menuNode = typeinfo_cast<CCMenu*>(menu)) {
+            menuNode->addChild(btn);
+            menuNode->updateLayout();
+        }
     }
 
     std::string getViewedUsername() {
@@ -177,33 +380,31 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (show && !targetName.empty()) {
             auto targetLower = geode::utils::string::toLower(targetName);
             Ref<ProfilePage> self = this;
-            HttpClient::get().get("/api/moderators", [self, targetLower](bool ok, const std::string& resp) {
+            HttpClient::get().get("/api/moderators", [self, targetLower](bool ok, std::string const& resp) {
                 if (!ok) return;
                 // compruebo que sigo vivo (por si acaso)
                 if (!self || !self->getParent()) return;
 
-                try {
-                    auto parsed = matjson::parse(resp);
-                    if (!parsed.isOk()) return;
-                    auto root = parsed.unwrap();
-                    auto mods = root["moderators"]; // [{ username, currentBanner }]
-                    if (!mods.isArray()) return;
-                    for (auto const& v : mods.asArray().unwrap()) {
-                        if (!v.isObject()) continue;
-                        auto u = v["username"]; 
-                        if (!u.isString()) continue;
-                        auto nameLower = geode::utils::string::toLower(u.asString().unwrap());
-                        if (nameLower == targetLower) {
-                            // ya estamos en el main thread
-                            // uso getchildbyidrecursive porque m_fields puede fallar si el nodo muere
-                            if (auto banBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(self->getChildByIDRecursive("ban-user-button"))) {
-                                banBtn->setEnabled(false);
-                                banBtn->setOpacity(120);
-                            }
-                            return;
+                auto parsed = matjson::parse(resp);
+                if (!parsed.isOk()) return;
+                auto root = parsed.unwrap();
+                auto mods = root["moderators"]; // [{ username, currentBanner }]
+                if (!mods.isArray()) return;
+                auto modsArr = mods.asArray();
+                if (!modsArr.isOk()) return;
+                for (auto const& v : modsArr.unwrap()) {
+                    if (!v.isObject()) continue;
+                    auto u = v["username"];
+                    if (!u.isString()) continue;
+                    auto nameLower = geode::utils::string::toLower(u.asString().unwrapOr(""));
+                    if (nameLower == targetLower) {
+                        // ya estamos en el main thread
+                        if (auto banBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(self->getChildByIDRecursive("ban-user-button"))) {
+                            banBtn->setEnabled(false);
+                            banBtn->setOpacity(120);
                         }
+                        return;
                     }
-                } catch (...) {
                 }
             });
         }
@@ -253,32 +454,26 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!tex) {
             if (this->m_ownProfile) {
                 log::info("[ProfilePage] No local profile for current user, downloading...");
-                // retain pa que sobreviva
-                this->retain();
+                // Ref<> mantiene vivo el ProfilePage hasta que termine la cadena de callbacks
+                Ref<ProfilePage> self = this;
                 std::string username = GJAccountManager::get()->m_username;
-                ThumbnailAPI::get().downloadProfile(accountID, username, [this, accountID](bool success, CCTexture2D* texture) {
+                ThumbnailAPI::get().downloadProfile(accountID, username, [self, accountID](bool success, CCTexture2D* texture) {
                     if (success && texture) {
                         // retengo la textura
                         texture->retain();
-                        ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, texture](bool s, const ProfileConfig& c) {
-                            Loader::get()->queueInMainThread([this, accountID, texture, s, c]() {
-                                try {
-                                    ProfileThumbs::get().cacheProfile(accountID, texture, {255,255,255}, {255,255,255}, 0.5f);
-                                    if (s) ProfileThumbs::get().cacheProfileConfig(accountID, c);
-                                    
-                                    // solo actualizo si sigue en la escena
-                                    if (this->getParent()) {
-                                        this->addOrUpdateProfileThumbOnPage(accountID);
-                                    }
-                                } catch(...) {}
-                                
-                                // suelto la textura y esto
+                        ThumbnailAPI::get().downloadProfileConfig(accountID, [self, accountID, texture](bool s, ProfileConfig const& c) {
+                            Loader::get()->queueInMainThread([self, accountID, texture, s, c]() {
+                                ProfileThumbs::get().cacheProfile(accountID, texture, {255,255,255}, {255,255,255}, 0.5f);
+                                if (s) ProfileThumbs::get().cacheProfileConfig(accountID, c);
+
+                                // solo actualizo si sigue en la escena
+                                if (self->getParent()) {
+                                    static_cast<PaimonProfilePage*>(self.data())->addOrUpdateProfileThumbOnPage(accountID);
+                                }
+
                                 texture->release();
-                                this->release();
                             });
                         });
-                    } else {
-                        this->release();
                     }
                 });
             } else {
@@ -298,12 +493,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto sprite = CCSprite::createWithTexture(tex);
         if (!sprite) return;
 
-        // tamaño layer ref
+        // tamano layer ref
         auto layer = this->m_mainLayer ? this->m_mainLayer : static_cast<CCNode*>(this);
         auto cs = layer->getContentSize();
         if (cs.width <= 1.f || cs.height <= 1.f) cs = this->getContentSize();
 
-        // leer config de personalización de la foto circular
+        // leer config de personalizacion de la foto circular
         auto picCfg = ProfilePicCustomizer::get().getConfig();
         float thumbSize = picCfg.size;
 
@@ -312,7 +507,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         float imgScale = std::max(imgScaleX, imgScaleY);
         sprite->setScale(imgScale);
 
-        // mask con forma personalizable (geométrica o sprite)
+        // mask con forma personalizable (geometrica o sprite)
         auto shapeMask = createShapeStencil(picCfg.stencilSprite, thumbSize);
         if (!shapeMask) shapeMask = createShapeStencil("circle", thumbSize);
         if (!shapeMask) return;
@@ -331,11 +526,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         // aplicar escala X/Y independiente (aplanar/alargar)
         clip->setScaleX(picCfg.scaleX);
         clip->setScaleY(picCfg.scaleY);
-        try {
-            clip->setID("paimon-profilepage-clip"_spr);
-        } catch (...) {
-            log::warn("[ProfilePage] Failed to set clip ID");
-        }
+        clip->setID("paimon-profilepage-clip"_spr);
 
         sprite->setPosition(clip->getContentSize() * 0.5f);
         clip->addChild(sprite);
@@ -367,17 +558,13 @@ class $modify(PaimonProfilePage, ProfilePage) {
             borderNode->setScaleX(picCfg.scaleX);
             borderNode->setScaleY(picCfg.scaleY);
             borderNode->setZOrder(9);
-            try {
-                borderNode->setID("paimon-profilepage-border"_spr);
-            } catch (...) {
-                log::warn("[ProfilePage] Failed to set border ID");
-            }
+            borderNode->setID("paimon-profilepage-border"_spr);
             layer->addChild(borderNode);
             f->m_profileBorder = borderNode;
         }
 
         // decoraciones (assets del juego colocados alrededor de la foto)
-        for (const auto& deco : picCfg.decorations) {
+        for (auto const& deco : picCfg.decorations) {
             CCSprite* decoSpr = CCSprite::create(deco.spriteName.c_str());
             if (!decoSpr) decoSpr = CCSprite::createWithSpriteFrameName(deco.spriteName.c_str());
             if (!decoSpr) continue;
@@ -390,7 +577,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             decoSpr->setFlipY(deco.flipY);
             decoSpr->setZOrder(11 + deco.zOrder);
 
-            // posición relativa al centro de la foto
+            // posicion relativa al centro de la foto
             float centerFotoX = rightX - (thumbSize * picCfg.scaleX) / 2;
             float centerFotoY = topY - (thumbSize * picCfg.scaleY) / 2;
             float dx = centerFotoX + deco.posX * (thumbSize * picCfg.scaleX / 2);
@@ -433,47 +620,46 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (f->m_profileImgClip) { f->m_profileImgClip->removeFromParent(); f->m_profileImgClip = nullptr; }
         if (f->m_profileImgBorder) { f->m_profileImgBorder->removeFromParent(); f->m_profileImgBorder = nullptr; }
 
-        // 1) si hay caché en memoria, mostrar de inmediato
+        // 1) si hay cache en memoria, mostrar de inmediato
         auto it = s_profileImgCache.find(accountID);
         if (it != s_profileImgCache.end() && it->second) {
             this->displayProfileImg(accountID, it->second);
         } else {
-            // 2) si hay caché en disco, cargar y mostrar
+            // 2) si hay cache en disco, cargar y mostrar
             if (auto* diskTex = loadProfileImgFromDisk(accountID)) {
-                // Ref<> hace retain en la asignación y release del anterior automáticamente
+                // Ref<> hace retain en la asignacion y release del anterior automaticamente
                 s_profileImgCache[accountID] = diskTex;
                 this->displayProfileImg(accountID, diskTex);
             }
         }
 
-        // descargar del servidor en segundo plano (actualizar caché)
-        this->retain();
-        ThumbnailAPI::get().downloadProfileImg(accountID, [this, accountID](bool success, CCTexture2D* texture) {
-            if (!this->getParent()) { this->release(); return; }
+        // descargar del servidor en segundo plano (actualizar cache)
+        // Ref<> mantiene vivo el ProfilePage hasta que termine el callback
+        Ref<ProfilePage> self = this;
+        ThumbnailAPI::get().downloadProfileImg(accountID, [self, accountID](bool success, CCTexture2D* texture) {
+            if (!self->getParent()) return;
 
             if (success && texture) {
-                // Ref<> hace retain en la asignación y release del anterior automáticamente
+                // Ref<> hace retain en la asignacion y release del anterior automaticamente
                 s_profileImgCache[accountID] = texture;
-                this->displayProfileImg(accountID, texture);
+                static_cast<PaimonProfilePage*>(self.data())->displayProfileImg(accountID, texture);
             }
-
-            this->release();
         }, isSelf);
     }
 
-    static bool isBrownColor(const ccColor3B& c) {
+    static bool isBrownColor(ccColor3B const& c) {
         return (c.r >= 0x70 && c.g >= 0x20 && c.g <= 0xA0 && c.b <= 0x70 && c.r > c.g && c.g >= c.b);
     }
 
-    static bool isDarkBgColor(const ccColor3B& c) {
+    static bool isDarkBgColor(ccColor3B const& c) {
         return (c.r <= 0x60 && c.g <= 0x50 && c.b <= 0x40 && (c.r + c.g + c.b) > 0);
     }
 
     // Tinta un CCScale9Sprite completo (centro + bordes) a un color.
     // CCScale9Sprite tiene un CCSpriteBatchNode interno (_scale9Image) con 9 sprites hijos.
     // setColor() en el CCScale9Sprite NO siempre propaga a esos sprites internos,
-    // así que los tintamos directamente.
-    static void tintScale9(CCScale9Sprite* s9, const ccColor3B& color, GLubyte opacity) {
+    // asi que los tintamos directamente.
+    static void tintScale9(CCScale9Sprite* s9, ccColor3B const& color, GLubyte opacity) {
         if (!s9) return;
 
         // Activar cascade para que hijos hereden
@@ -483,7 +669,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         s9->setOpacity(opacity);
 
         // Tintar hijos directos del batch node interno
-        // El _scale9Image es el primer (y generalmente único) hijo del CCScale9Sprite
+        // El _scale9Image es el primer (y generalmente unico) hijo del CCScale9Sprite
         auto s9Children = s9->getChildren();
         if (!s9Children) return;
         for (auto* batchNode : CCArrayExt<CCSpriteBatchNode*>(s9Children)) {
@@ -549,7 +735,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         walk(static_cast<CCNode*>(this));
     }
 
-    // Recorre la jerarquía de un GJCommentListLayer hasta encontrar CommentCells
+    // Recorre la jerarquia de un GJCommentListLayer hasta encontrar CommentCells
     // y oculta sus fondos internos (CCLayerColor y CCScale9Sprite de fondo).
     void hideCommentCellBgs(CCNode* listNode) {
         if (!listNode) return;
@@ -625,101 +811,273 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
+    // ── Helper: limpiar todos los botones paimon de un menu antes de re-crearlos ──
+    // Evita duplicados si loadPageFromUserInfo se llama multiples veces
+    void cleanPaimonButtons(CCMenu* menu) {
+        if (!menu) return;
+        static const std::string paimonBtnIDs[] = {
+            "profile-reviews-btn"_spr,
+            "ban-user-button"_spr,
+            "thumbs-gear-button"_spr,
+            "add-moderator-button"_spr,
+        };
+        for (auto const& id : paimonBtnIDs) {
+            while (auto* btn = menu->getChildByID(id)) {
+                btn->removeFromParent();
+            }
+        }
+        m_fields->m_gearBtn = nullptr;
+        m_fields->m_banBtn = nullptr;
+    }
+
+    void cleanPaimonSocialsButtons(CCMenu* menu) {
+        if (!menu) return;
+        static const std::string paimonSocialIDs[] = {
+            "profile-music-button"_spr,
+            "add-profileimg-button"_spr,
+            "profile-music-pause-button"_spr,
+        };
+        for (auto const& id : paimonSocialIDs) {
+            while (auto* btn = menu->getChildByID(id)) {
+                btn->removeFromParent();
+            }
+        }
+        m_fields->m_musicBtn = nullptr;
+        m_fields->m_musicPauseBtn = nullptr;
+        m_fields->m_addProfileImgBtn = nullptr;
+    }
+
+    // ── Helper: obtener posicion/tamano del popup de perfil ──
+    // Usamos el nodo "background" (asignado por node-ids) para centrar los menus
+    CCPoint getPopupCenter() {
+        if (!this->m_mainLayer) return CCDirector::sharedDirector()->getWinSize() / 2;
+        if (auto bg = this->m_mainLayer->getChildByID("background")) {
+            return bg->getPosition();
+        }
+        for (auto* child : CCArrayExt<CCNode*>(this->m_mainLayer->getChildren())) {
+            if (typeinfo_cast<CCScale9Sprite*>(child)) {
+                return child->getPosition();
+            }
+        }
+        return this->m_mainLayer->getContentSize() / 2;
+    }
+
+    CCSize getPopupSize() {
+        if (!this->m_mainLayer) return {440.f, 290.f};
+        if (auto bg = this->m_mainLayer->getChildByID("background")) {
+            return bg->getScaledContentSize();
+        }
+        for (auto* child : CCArrayExt<CCNode*>(this->m_mainLayer->getChildren())) {
+            if (typeinfo_cast<CCScale9Sprite*>(child)) {
+                return child->getScaledContentSize();
+            }
+        }
+        return {440.f, 290.f};
+    }
+
     // Hook: se llama cuando GD construye los paneles de iconos del perfil.
-    // Geode node-ids asigna IDs aquí; es el momento más fiable para ocultar icon-background.
+    // Geode node-ids asigna IDs aqui; es el momento mas fiable para ocultar icon-background.
     void loadPageFromUserInfo(GJUserScore* score) {
         ProfilePage::loadPageFromUserInfo(score);
         if (auto* layer = this->m_mainLayer) {
             styleProfileInternalBgs(layer);
         }
 
-        // --- boton de reviews en left-menu (siempre visible) ---
-        if (this->m_mainLayer) {
-            try {
-                auto leftMenu = this->m_mainLayer->getChildByID("left-menu");
-                if (!leftMenu) {
-                    // crear left-menu si no existe (caso raro)
-                    auto winSize = CCDirector::sharedDirector()->getWinSize();
-                    auto newLeftMenu = CCMenu::create();
-                    newLeftMenu->setID("left-menu");
-                    newLeftMenu->setPosition({(winSize.width / 2) - 200.f, (winSize.height / 2) + 26.f});
-                    newLeftMenu->setContentSize({60, 84});
-                    newLeftMenu->setZOrder(10);
-                    newLeftMenu->setLayout(
-                        ColumnLayout::create()
-                            ->setGap(3.f)
-                            ->setAxisAlignment(AxisAlignment::Start)
-                            ->setAxisReverse(false)
-                    );
-                    this->m_mainLayer->addChild(newLeftMenu);
-                    leftMenu = newLeftMenu;
-                }
+        if (!this->m_mainLayer) return;
 
-                // asegurar que left-menu sea visible siempre
-                leftMenu->setVisible(true);
+        // ── Referencia al popup ──
+        auto popCenter = getPopupCenter();
+        auto popSize = getPopupSize();
 
-                // añadir boton de reviews si no existe
-                if (!leftMenu->getChildByID("profile-reviews-btn"_spr)) {
-                    auto reviewIcon = CCSprite::createWithSpriteFrameName("GJ_chatBtn_001.png");
-                    if (!reviewIcon) reviewIcon = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
-                    if (reviewIcon) {
-                        // escalar para que encaje en left-menu
-                        float targetSz = 30.f;
-                        float curSz = std::max(reviewIcon->getContentWidth(), reviewIcon->getContentHeight());
-                        if (curSz > 0) reviewIcon->setScale(targetSz / curSz);
+        // ── Obtener o crear left-menu ──
+        auto leftMenuNode = this->m_mainLayer->getChildByID("left-menu");
+        CCMenu* menu = leftMenuNode ? typeinfo_cast<CCMenu*>(leftMenuNode) : nullptr;
 
-                        auto reviewBtn = CCMenuItemSpriteExtra::create(reviewIcon, this, menu_selector(PaimonProfilePage::onProfileReviews));
-                        reviewBtn->setID("profile-reviews-btn"_spr);
+        if (!menu) {
+            menu = CCMenu::create();
+            menu->setID("left-menu");
+            menu->setZOrder(10);
+            this->m_mainLayer->addChild(menu);
 
-                        auto menu = typeinfo_cast<CCMenu*>(leftMenu);
-                        if (menu) {
-                            menu->addChild(reviewBtn);
-                            menu->updateLayout();
-                        }
-                    }
-                }
-            } catch (...) {
-                log::warn("[ProfilePage] Error adding profile reviews button to left-menu");
+            // Solo posicionar si creamos nosotros el menu (fallback)
+            float menuX = popCenter.x - popSize.width / 2 + 18.f;
+            float menuY = popCenter.y;
+            menu->setPosition({menuX, menuY});
+            menu->setContentSize({40.f, popSize.height * 0.75f});
+            menu->setAnchorPoint({0.5f, 0.5f});
+            menu->ignoreAnchorPointForPosition(false);
+
+            menu->setLayout(
+                ColumnLayout::create()
+                    ->setGap(8.f)
+                    ->setAxisAlignment(AxisAlignment::Center)
+                    ->setAxisReverse(false)
+                    ->setCrossAxisAlignment(AxisAlignment::Center)
+            );
+        }
+
+        // ── Limpiar botones paimon anteriores para evitar duplicados ──
+        cleanPaimonButtons(menu);
+
+        // ── Boton de reviews (siempre visible) ──
+        {
+            auto reviewIcon = CCSprite::createWithSpriteFrameName("GJ_chatBtn_001.png");
+            if (!reviewIcon) reviewIcon = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
+            if (reviewIcon) {
+                scaleToFit(reviewIcon, 26.f);
+                auto reviewBtn = CCMenuItemSpriteExtra::create(reviewIcon, this, menu_selector(PaimonProfilePage::onProfileReviews));
+                reviewBtn->setID("profile-reviews-btn"_spr);
+                menu->addChild(reviewBtn);
             }
         }
 
-        // --- boton estrella para calificar perfil en bottom-menu ---
-        // solo en perfiles ajenos
-        if (!this->m_ownProfile && this->m_mainLayer) {
-            try {
-                if (auto bottomMenu = this->m_mainLayer->getChildByIDRecursive("bottom-menu")) {
-                    // evitar duplicados si se reconstruye
-                    if (!bottomMenu->getChildByID("rate-profile-btn"_spr)) {
-                        // boton cuadrado pequeño igual que los demas del bottom-menu
-                        // GJ_chatBtn, GJ_friendBtn, GJ_blockBtn son ~30x30 cuadrados
-                        auto bg = CCScale9Sprite::create("GJ_button_04.png");
-                        if (!bg) bg = CCScale9Sprite::create("GJ_button_01.png");
-                        bg->setContentSize({30.f, 30.f});
+        // ── Boton de calificar perfil en bottom-menu (solo perfiles ajenos) ──
+        if (!this->m_ownProfile) {
+            if (auto bottomMenu = this->m_mainLayer->getChildByIDRecursive("bottom-menu")) {
+                if (!bottomMenu->getChildByID("rate-profile-btn"_spr)) {
+                    auto bg = CCScale9Sprite::create("GJ_button_04.png");
+                    if (!bg) bg = CCScale9Sprite::create("GJ_button_01.png");
+                    bg->setContentSize({30.f, 30.f});
 
-                        // estrella centrada dentro
-                        auto starIcon = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
-                        if (!starIcon) starIcon = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
-                        if (starIcon) {
-                            float iconTarget = 18.f;
-                            float iconCur = std::max(starIcon->getContentWidth(), starIcon->getContentHeight());
-                            if (iconCur > 0) starIcon->setScale(iconTarget / iconCur);
-                            starIcon->setPosition({15.f, 15.f});
-                            bg->addChild(starIcon);
-                        }
+                    auto starIcon = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
+                    if (!starIcon) starIcon = CCSprite::createWithSpriteFrameName("GJ_bigStar_001.png");
+                    if (starIcon) {
+                        scaleToFit(starIcon, 18.f);
+                        starIcon->setPosition({15.f, 15.f});
+                        bg->addChild(starIcon);
+                    }
 
-                        auto starBtn = CCMenuItemSpriteExtra::create(bg, this, menu_selector(PaimonProfilePage::onRateProfile));
-                        starBtn->setID("rate-profile-btn"_spr);
+                    auto starBtn = CCMenuItemSpriteExtra::create(bg, this, menu_selector(PaimonProfilePage::onRateProfile));
+                    starBtn->setID("rate-profile-btn"_spr);
 
-                        auto menu = typeinfo_cast<CCMenu*>(bottomMenu);
-                        if (menu) {
-                            menu->addChild(starBtn);
-                            menu->updateLayout();
-                        }
+                    auto* btmMenu = typeinfo_cast<CCMenu*>(bottomMenu);
+                    if (btmMenu) {
+                        btmMenu->addChild(starBtn);
+                        btmMenu->updateLayout();
                     }
                 }
-            } catch (...) {
-                log::warn("[ProfilePage] Error adding rate profile button");
             }
+        }
+
+        // ── Boton de ban (solo mods/admins, no perfil propio) ──
+        {
+            auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.6f);
+            banSpr->setScale(0.5f);
+            auto banBtn = CCMenuItemSpriteExtra::create(banSpr, this, menu_selector(PaimonProfilePage::onBanUser));
+            banBtn->setID("ban-user-button"_spr);
+            banBtn->setVisible(false);
+            menu->addChild(banBtn);
+            m_fields->m_banBtn = banBtn;
+        }
+        refreshBanButtonVisibility();
+
+        // ── Botones de moderacion (solo perfil propio, segun rango verificado) ──
+        if (this->m_ownProfile) {
+            // Si ya esta verificado como mod o admin → mostrar gear (centro de verificacion)
+            if (m_fields->m_isApprovedMod || m_fields->m_isAdmin) {
+                ensureGearButton(menu);
+            }
+            // Si es admin → mostrar boton de anadir moderador
+            if (m_fields->m_isAdmin) {
+                ensureAddModeratorButton(menu);
+            }
+        }
+
+        // ── Recalcular layout del left-menu ──
+        menu->updateLayout();
+
+        // ── Botones en socials-menu ──
+        auto* socialsMenu = getSocialsMenu();
+        bool createdSocialsMenu = false;
+        if (!socialsMenu) {
+            auto newSocialsMenu = CCMenu::create();
+            newSocialsMenu->setID("socials-menu");
+            newSocialsMenu->setZOrder(10);
+            this->m_mainLayer->addChild(newSocialsMenu);
+            socialsMenu = newSocialsMenu;
+            createdSocialsMenu = true;
+
+            // Solo posicionar si creamos nosotros el menu (fallback)
+            float socialsX = popCenter.x + popSize.width / 2 - 18.f;
+            float socialsY = popCenter.y;
+            socialsMenu->setPosition({socialsX, socialsY});
+            socialsMenu->setContentSize({40.f, popSize.height * 0.7f});
+            socialsMenu->setAnchorPoint({0.5f, 0.5f});
+            socialsMenu->ignoreAnchorPointForPosition(false);
+
+            socialsMenu->setLayout(
+                ColumnLayout::create()
+                    ->setGap(8.f)
+                    ->setAxisAlignment(AxisAlignment::Center)
+                    ->setAxisReverse(false)
+                    ->setCrossAxisAlignment(AxisAlignment::Center)
+            );
+        }
+
+        cleanPaimonSocialsButtons(socialsMenu);
+
+        // ── Anadir nuestros botones DESPUeS de los botones nativos de GD ──
+        // Los botones de YouTube, Twitter, Twitch etc. ya estan en el socials-menu
+        // por el hook de GD; nosotros solo anadimos al final.
+
+        if (this->m_ownProfile) {
+            {
+                auto musicSpr = CCSprite::createWithSpriteFrameName("GJ_audioBtn_001.png");
+                if (!musicSpr) musicSpr = CCSprite::createWithSpriteFrameName("GJ_musicOnBtn_001.png");
+                if (!musicSpr) musicSpr = CCSprite::create();
+                scaleToFit(musicSpr, 22.f);
+                auto musicBtn = CCMenuItemSpriteExtra::create(musicSpr, this, menu_selector(PaimonProfilePage::onConfigureProfileMusic));
+                musicBtn->setID("profile-music-button"_spr);
+                socialsMenu->addChild(musicBtn);
+                m_fields->m_musicBtn = musicBtn;
+            }
+            {
+                auto imgSpr = CCSprite::createWithSpriteFrameName("GJ_duplicateBtn_001.png");
+                if (!imgSpr) imgSpr = CCSprite::createWithSpriteFrameName("GJ_editBtn_001.png");
+                if (!imgSpr) imgSpr = CCSprite::create();
+                scaleToFit(imgSpr, 22.f);
+                auto imgBtn = CCMenuItemSpriteExtra::create(imgSpr, this, menu_selector(PaimonProfilePage::onAddProfileImg));
+                imgBtn->setID("add-profileimg-button"_spr);
+                socialsMenu->addChild(imgBtn);
+                m_fields->m_addProfileImgBtn = imgBtn;
+            }
+        }
+
+        {
+            auto pauseSpr = CCSprite::createWithSpriteFrameName("GJ_pauseBtn_001.png");
+            if (!pauseSpr) pauseSpr = CCSprite::createWithSpriteFrameName("GJ_stopMusicBtn_001.png");
+            if (!pauseSpr) pauseSpr = CCSprite::create();
+            scaleToFit(pauseSpr, 20.f);
+            auto pauseBtn = CCMenuItemSpriteExtra::create(pauseSpr, this, menu_selector(PaimonProfilePage::onToggleProfileMusic));
+            pauseBtn->setID("profile-music-pause-button"_spr);
+            pauseBtn->setVisible(false);
+            socialsMenu->addChild(pauseBtn);
+            m_fields->m_musicPauseBtn = pauseBtn;
+        }
+
+        socialsMenu->updateLayout();
+
+        // ── Badge de moderador/admin en el username ──
+        if (score) {
+            std::string badgeUsername = score->m_userName;
+
+            if (g_moderatorCache.contains(badgeUsername)) {
+                auto [isMod, isAdmin] = g_moderatorCache[badgeUsername];
+                if (isMod || isAdmin) {
+                    this->addModeratorBadge(isMod, isAdmin);
+                }
+            }
+
+            Ref<ProfilePage> badgeSafeRef = this;
+            ThumbnailAPI::get().checkUserStatus(badgeUsername, [badgeSafeRef, badgeUsername](bool isMod, bool isAdmin) {
+                moderatorCacheInsert(badgeUsername, isMod, isAdmin);
+                Loader::get()->queueInMainThread([badgeSafeRef, badgeUsername, isMod, isAdmin]() {
+                    if (!badgeSafeRef->getParent()) return;
+                    if (isMod || isAdmin) {
+                        static_cast<PaimonProfilePage*>(badgeSafeRef.data())->addModeratorBadge(isMod, isAdmin);
+                    }
+                });
+            });
         }
     }
 
@@ -797,7 +1155,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         styleProfileInternalBgs(layer);
     }
 
-    // Tick periódico: reaplica opacidad 0 a icon-background por si GD lo recrea
+    // Tick periodico: reaplica opacidad 0 a icon-background por si GD lo recrea
     // (e.g. al cambiar tab de comentarios).
     void tickStyleBgs(float) {
         if (auto* layer = this->m_mainLayer) {
@@ -809,501 +1167,81 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     bool init(int accountID, bool ownProfile) {
         if (!ProfilePage::init(accountID, ownProfile)) return false;
-        try {
-            // cargo layouts de botones al iniciar
-            ButtonLayoutManager::get().load();
-
-            // siempre creo mi menu vertical compacto
-            auto extraMenu = CCMenu::create();
-            extraMenu->setID("paimon-profile-extra-menu"_spr);
-            // pongo el menu al centro; los items se ponen con offsets
-            auto layer = this->m_mainLayer ? this->m_mainLayer : static_cast<CCNode*>(this);
-            auto cs = layer->getContentSize();
-            extraMenu->setPosition({ cs.width / 2.f, cs.height / 2.f });
-            this->addChild(extraMenu, 20);
-            m_fields->m_extraMenu = extraMenu;
 
             // empiezo siempre como no moderador
             m_fields->m_isApprovedMod = false;
             m_fields->m_isAdmin = false;
             PaimonDebug::log("[ProfilePage] Inicializando perfil - status moderador: false");
 
-            // oculto el menu por defecto, solo lo muestro si esta verificado
-            extraMenu->setVisible(false);
-
-            // boton de ban (solo mods/admins verificados, nunca en tu propio perfil)
-            {
-                auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.6f);
-                banSpr->setScale(0.5f);
-                auto banBtn = CCMenuItemSpriteExtra::create(banSpr, this, menu_selector(PaimonProfilePage::onBanUser));
-                banBtn->setID("ban-user-button"_spr);
-
-                // lo pongo por arriba a la derecha en mi sistema de coordenadas
-                banBtn->setPosition({ -195.f, 75.f });
-
-                extraMenu->addChild(banBtn);
-                m_fields->m_banBtn = banBtn;
-                // empiezo oculto hasta que la verificacion diga que soy mod/admin
-                refreshBanButtonVisibility();
+            // estado mod guardado
+            bool wasVerified = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
+            bool wasAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
+            if (wasVerified) {
+                m_fields->m_isApprovedMod = true;
+                m_fields->m_isAdmin = wasAdmin;
             }
 
-            // si ya estaba verificado de antes, muestro controles de mod
-            try {
-                bool wasVerified = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-                if (wasVerified) {
-                    m_fields->m_isApprovedMod = true;
-                    refreshBanButtonVisibility();
-                } else if (ownProfile) {
-                    // compruebo server si no tengo data local y es mi perfil
-                    auto gm = GameManager::get();
-                    if (gm && !gm->m_playerName.empty()) {
-                        std::string username = gm->m_playerName;
-                        // uso thumbnailapi pa chequear estado seguro
-                        this->retain();
-                        ThumbnailAPI::get().checkModerator(username, [this](bool isApproved, bool isAdmin) {
-                            Loader::get()->queueInMainThread([this, isApproved, isAdmin]() {
-                                if (isApproved && m_fields->m_extraMenu && m_fields->m_extraMenu->getParent()) {
-                                    m_fields->m_isApprovedMod = true;
-                                    m_fields->m_isAdmin = isAdmin;
-                                    
-                                    // guardo estado aprobado
-                                    Mod::get()->setSavedValue("is-verified-moderator", true);
-                                    
-                                    refreshBanButtonVisibility();
-                                    if (m_fields->m_extraMenu) {
-                                        ButtonLayoutManager::get().applyLayoutToMenu("ProfilePage", m_fields->m_extraMenu);
-                                    }
-                                }
-                                this->release();
-                            });
-                        });
-                    }
-                }
-                // mostrar menu para perfil propio (musica, imagen de perfil) sin importar si es mod
-                if (ownProfile) {
-                    extraMenu->setVisible(true);
-                } else if (wasVerified) {
-                    extraMenu->setVisible(true);
-                }
-            } catch (...) {
-            }
-
-            // boton de perfil (solo para mi perfil)
+            // Verificacion automatica con el server (siempre si es perfil propio)
             if (ownProfile) {
-                PaimonDebug::log("[ProfilePage] Cargando perfil propio - configurando botones");
-                
-                /* quitado: boton sync movido a leaderboardslayer
-                auto addSpr = Assets::loadButtonSprite(
-                    "profile-add",
-                    "frame:GJ_plus2Btn_001.png",
-                    [](){
-                        auto s = CCSprite::createWithSpriteFrameName("GJ_plus2Btn_001.png");
-                        if (!s) s = CCSprite::createWithSpriteFrameName("GJ_plusBtn_001.png");
-                        if (!s) s = CCSprite::createWithSpriteFrameName("GJ_button_01.png");
-                        return s;
-                    }
-                );
-                addSpr->setScale(1.0f);
-                auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(PaimonProfilePage::onAddProfileThumb));
-                addBtn->setID("add-profile-thumb-button"_spr);
+                auto gm = GameManager::get();
+                if (gm && !gm->m_playerName.empty()) {
+                    std::string username = gm->m_playerName;
+                    Ref<ProfilePage> self = this;
+                    ThumbnailAPI::get().checkModerator(username, [self](bool isApproved, bool isAdmin) {
+                        Loader::get()->queueInMainThread([self, isApproved, isAdmin]() {
+                            if (!self->getParent()) return;
+                            auto* page = static_cast<PaimonProfilePage*>(self.data());
+                            page->m_fields->m_isApprovedMod = isApproved;
+                            page->m_fields->m_isAdmin = isAdmin;
 
-                // calculo defaults y persisto una vez
-                ButtonLayout defAdd;
-                defAdd.position = cocos2d::CCPoint(-195.f, 8.5f);
-                defAdd.scale = 1.0f;
-                defAdd.opacity = 1.0f;
-                ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "add-profile-thumb-button", defAdd);
+                            // Guardar estado persistente
+                            Mod::get()->setSavedValue("is-verified-moderator", isApproved);
+                            Mod::get()->setSavedValue("is-verified-admin", isAdmin);
 
-                // cargo y aplico layout guardado o default
-                auto savedLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "add-profile-thumb-button");
-                if (savedLayout) {
-                    addBtn->setPosition(savedLayout->position);
-                    addBtn->setScale(savedLayout->scale);
-                    addBtn->setOpacity(static_cast<GLubyte>(savedLayout->opacity * 255));
-                } else {
-                    addBtn->setPosition(defAdd.position);
-                }
-
-                extraMenu->addChild(addBtn);
-                m_fields->m_addProfileBtn = addBtn;
-                
- // animo la entrada del boton
-                addBtn->setScale(0.f);
-                addBtn->runAction(CCSequence::create(
-                    CCDelayTime::create(0.05f),
-                    CCEaseBounceOut::create(CCScaleTo::create(0.5f, savedLayout ? savedLayout->scale : 1.0f)),
-                    nullptr
-                ));
-                */
-
-                // boton verificar mod (solo en mi perfil)
-                auto verifySpr = Assets::loadButtonSprite(
-                    "verify-mod",
-                    "frame:GJ_completesIcon_001.png",
-                    [](){
-                        auto s = CCSprite::createWithSpriteFrameName("GJ_completesIcon_001.png");
-                        if (!s) s = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
-                        if (!s) s = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
-                        return s;
-                    }
-                );
-                
-                // scale por tamaño
-                float targetSize = 35.0f;
-                float currentSize = std::max(verifySpr->getContentWidth(), verifySpr->getContentHeight());
-                if (currentSize > 0) {
-                    verifySpr->setScale(targetSize / currentSize);
-                } else {
-                    verifySpr->setScale(0.85f);
-                }
-                
-                auto verifyBtn = CCMenuItemSpriteExtra::create(verifySpr, this, menu_selector(PaimonProfilePage::onVerifyModeratorStatus));
-                verifyBtn->setID("verify-moderator-button"_spr);
-
-                ButtonLayout defVerify;
-                defVerify.position = cocos2d::CCPoint(-195.f, 45.5f);
-                defVerify.scale = 0.85f;
-                defVerify.opacity = 1.0f;
-                ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "verify-moderator-button", defVerify);
-
-                auto savedLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "verify-moderator-button");
-                if (savedLayout) {
-                    verifyBtn->setPosition(savedLayout->position);
-                    verifyBtn->setScale(savedLayout->scale);
-                    verifyBtn->setOpacity(static_cast<GLubyte>(savedLayout->opacity * 255));
-                } else {
-                    verifyBtn->setPosition(defVerify.position);
-                }
-                
-                extraMenu->addChild(verifyBtn);
-                m_fields->m_verifyModBtn = verifyBtn;
-                
-                // animo la entrada del boton
-                verifyBtn->setScale(0.f);
-                verifyBtn->runAction(CCSequence::create(
-                    CCDelayTime::create(0.15f),
-                    CCEaseBounceOut::create(CCScaleTo::create(0.5f, savedLayout ? savedLayout->scale : 0.85f)),
-                    nullptr
-                ));
-
-                // estado mod guardado
-                bool wasPreviouslyVerified = false;
-                try {
-                    wasPreviouslyVerified = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-                } catch(...) {
-                    log::warn("[ProfilePage] No se pudo cargar estado de verificacion previo");
-                }
-                
-                if (wasPreviouslyVerified) {
-                    log::info("[ProfilePage] Usuario previamente verificado - restaurando boton gear");
-                    m_fields->m_isApprovedMod = true;
-                    
-                    // btn gear si no hay
-                    if (!m_fields->m_gearBtn) {
-                        auto gearSpr = Assets::loadButtonSprite(
-                            "profile-gear",
-                            "frame:GJ_optionsBtn02_001.png",
-                            [](){
-                                auto s = CCSprite::createWithSpriteFrameName("GJ_optionsBtn02_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-                                if (!s) s = CCSprite::create();
-                                return s;
+                            if (isApproved) {
+                                // Guardar archivo de verificacion con timestamp
+                                auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
+                                std::ofstream modFile(modDataPath, std::ios::binary);
+                                if (modFile) {
+                                    auto now = std::chrono::system_clock::now();
+                                    auto timestamp = std::chrono::system_clock::to_time_t(now);
+                                    modFile.write(reinterpret_cast<char const*>(&timestamp), sizeof(timestamp));
+                                    modFile.close();
+                                }
                             }
-                        );
-                        
-                        // scale por tamaño
-                        float gearTargetSz = 35.0f;
-                        float gearCurrentSz = std::max(gearSpr->getContentWidth(), gearSpr->getContentHeight());
-                        if (gearCurrentSz > 0) {
-                            gearSpr->setScale(gearTargetSz / gearCurrentSz);
-                        } else {
-                            gearSpr->setScale(1.0f);
-                        }
-                        
-                        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(PaimonProfilePage::onOpenThumbsCenter));
-                        gearBtn->setID("thumbs-gear-button"_spr);
 
-                        ButtonLayout defGear;
-                        defGear.position = cocos2d::CCPoint(-195.f, -28.5f);
-                        defGear.scale = 1.0f;
-                        defGear.opacity = 1.0f;
-                        ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "thumbs-gear-button"_spr, defGear);
+                            page->refreshBanButtonVisibility();
 
-                        savedLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "thumbs-gear-button"_spr);
-                        float finalScale = savedLayout ? savedLayout->scale : defGear.scale;
-                        if (savedLayout) {
-                            gearBtn->setPosition(savedLayout->position);
-                            gearBtn->setScale(savedLayout->scale);
-                            gearBtn->setOpacity(static_cast<GLubyte>(savedLayout->opacity * 255));
-                        } else {
-                            gearBtn->setPosition(defGear.position);
-                        }
-                        
-                        // importante: actualizar m_basescale para que el hover no resetee la escala
-                        gearBtn->m_baseScale = finalScale;
-
-                        // animo la entrada del boton (mismo efecto q profilepage original)
-                        gearBtn->setScale(0.f);
-                        gearBtn->runAction(CCSequence::create(
-                            CCDelayTime::create(0.1f),
-                            CCEaseBounceOut::create(CCScaleTo::create(0.5f, finalScale)),
-                            nullptr
-                        ));
-                        
-                        extraMenu->addChild(gearBtn);
-                        m_fields->m_gearBtn = gearBtn;
-                        log::info("[ProfilePage] Boton gear restaurado exitosamente");
-                    }
-                } else {
-                    log::info("[ProfilePage] Boton de verificacion anadido - esperando accion del usuario");
-                }
-
-                // anado boton toggle edit mode si el setting esta activado
-                bool showEditor = Mod::get()->getSettingValue<bool>("show-button-editor");
-                if (showEditor) {
-                    // mismo patron q otros botones: _spr primero, luego assets override, luego sprite frames
-                    CCSprite* editSpr = nullptr;
-                    if (!editSpr) editSpr = CCSprite::create("paim_botonMove.png"_spr);
-                    if (!editSpr) {
-                        editSpr = Assets::loadButtonSprite(
-                            "botonMove",
-                            "",
-                            [](){
-                                // usamos _spr para manejar mejor los recursos
-                                CCSprite* s = CCSprite::create("paim_botonMove.png"_spr);
-                                if (!s) s = CCSprite::createWithSpriteFrameName("edit_eTabBtn_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_editBtn_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_button_04.png");
-                                return s;
+                            // Anadir/quitar botones segun rango
+                            if (auto* leftMenu = page->getLeftMenu()) {
+                                if (isApproved || isAdmin) {
+                                    page->ensureGearButton(leftMenu);
+                                }
+                                if (isAdmin) {
+                                    page->ensureAddModeratorButton(leftMenu);
+                                }
+                                leftMenu->updateLayout();
                             }
-                        );
-                    }
-                    
-                    // arreglo: escalar segun el tamanio
-                    float editTargetSz = 30.0f;
-                    float editCurrentSz = std::max(editSpr->getContentWidth(), editSpr->getContentHeight());
-                    if (editCurrentSz > 0) {
-                        editSpr->setScale(editTargetSz / editCurrentSz);
-                    } else {
-                        editSpr->setScale(0.3f);
-                    }
-                    
-                    auto editBtn = CCMenuItemSpriteExtra::create(editSpr, this, menu_selector(PaimonProfilePage::onToggleEditMode));
-                    editBtn->setID("button-edit-toggle"_spr);
-
-                    ButtonLayout defEdit;
-                    defEdit.position = cocos2d::CCPoint(-195.f, -55.5f);
-                    defEdit.scale = 0.3f;
-                    defEdit.opacity = 1.0f;
-                    ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "button-edit-toggle", defEdit);
-
-                    // migramos el default viejo de 0.7 al nuevo
-                    if (auto oldDef = ButtonLayoutManager::get().getDefaultLayout("ProfilePage", "button-edit-toggle")) {
-                        if (oldDef->scale > 0.31f) {
-                            ButtonLayoutManager::get().setDefaultLayout("ProfilePage", "button-edit-toggle", defEdit);
-                        }
-                    }
-
-                    savedLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "button-edit-toggle");
-                    float editFinalScale = savedLayout ? savedLayout->scale : defEdit.scale;
-                    if (savedLayout) {
-                        editBtn->setPosition(savedLayout->position);
-                        editBtn->setScale(savedLayout->scale);
-                        editBtn->setOpacity(static_cast<GLubyte>(savedLayout->opacity * 255));
-                    } else {
-                        editBtn->setPosition(defEdit.position);
-                        editBtn->setScale(defEdit.scale);
-                    }
-
-                    // importante: actualizar m_basescale para que el hover no resetee la escala
-                    editBtn->m_baseScale = editFinalScale;
-
-                    extraMenu->addChild(editBtn);
-                    m_fields->m_editModeBtn = editBtn;
-                    
-                    // animar entrada del boton
-                    editBtn->setScale(0.f);
-                    editBtn->runAction(CCSequence::create(
-                        CCDelayTime::create(0.2f),
-                        CCEaseBounceOut::create(CCScaleTo::create(0.5f, savedLayout ? savedLayout->scale : 0.3f)),
-                        nullptr
-                    ));
-                }
-
-                // === BOTÓN DE MÚSICA (solo en perfil propio) ===
-                {
-                    auto musicSpr = CCSprite::createWithSpriteFrameName("GJ_audioBtn_001.png");
-                    if (!musicSpr) musicSpr = CCSprite::createWithSpriteFrameName("GJ_musicOnBtn_001.png");
-                    if (!musicSpr) musicSpr = CCSprite::create();
-
-                    float musicTargetSz = 30.0f;
-                    float musicCurrentSz = std::max(musicSpr->getContentWidth(), musicSpr->getContentHeight());
-                    if (musicCurrentSz > 0) {
-                        musicSpr->setScale(musicTargetSz / musicCurrentSz);
-                    }
-
-                    auto musicBtn = CCMenuItemSpriteExtra::create(musicSpr, this, menu_selector(PaimonProfilePage::onConfigureProfileMusic));
-                    musicBtn->setID("profile-music-button"_spr);
-
-                    ButtonLayout defMusic;
-                    defMusic.position = cocos2d::CCPoint(-195.f, -82.5f);
-                    defMusic.scale = 0.8f;
-                    defMusic.opacity = 1.0f;
-                    ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "profile-music-button", defMusic);
-
-                    auto musicLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "profile-music-button");
-                    float musicFinalScale = musicLayout ? musicLayout->scale : defMusic.scale;
-                    if (musicLayout) {
-                        musicBtn->setPosition(musicLayout->position);
-                        musicBtn->setScale(musicLayout->scale);
-                        musicBtn->setOpacity(static_cast<GLubyte>(musicLayout->opacity * 255));
-                    } else {
-                        musicBtn->setPosition(defMusic.position);
-                        musicBtn->setScale(defMusic.scale);
-                    }
-
-                    musicBtn->m_baseScale = musicFinalScale;
-                    extraMenu->addChild(musicBtn);
-                    m_fields->m_musicBtn = musicBtn;
-
-                    // Animar entrada
-                    musicBtn->setScale(0.f);
-                    musicBtn->runAction(CCSequence::create(
-                        CCDelayTime::create(0.25f),
-                        CCEaseBounceOut::create(CCScaleTo::create(0.5f, musicFinalScale)),
-                        nullptr
-                    ));
-                }
-
-                // === BOTÓN DE IMAGEN DE PERFIL (solo en perfil propio) ===
-                {
-                    auto imgSpr = CCSprite::createWithSpriteFrameName("GJ_duplicateBtn_001.png");
-                    if (!imgSpr) imgSpr = CCSprite::createWithSpriteFrameName("GJ_editBtn_001.png");
-                    if (!imgSpr) imgSpr = CCSprite::create();
-
-                    float imgTargetSz = 30.0f;
-                    float imgCurrentSz = std::max(imgSpr->getContentWidth(), imgSpr->getContentHeight());
-                    if (imgCurrentSz > 0) {
-                        imgSpr->setScale(imgTargetSz / imgCurrentSz);
-                    }
-
-                    auto imgBtn = CCMenuItemSpriteExtra::create(imgSpr, this, menu_selector(PaimonProfilePage::onAddProfileImg));
-                    imgBtn->setID("add-profileimg-button"_spr);
-
-                    ButtonLayout defImg;
-                    defImg.position = cocos2d::CCPoint(-175.f, -109.5f);
-                    defImg.scale = 0.8f;
-                    defImg.opacity = 1.0f;
-                    ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "add-profileimg-button", defImg);
-
-                    auto imgLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "add-profileimg-button");
-                    float imgFinalScale = imgLayout ? imgLayout->scale : defImg.scale;
-                    if (imgLayout) {
-                        imgBtn->setPosition(imgLayout->position);
-                        imgBtn->setScale(imgLayout->scale);
-                        imgBtn->setOpacity(static_cast<GLubyte>(imgLayout->opacity * 255));
-                    } else {
-                        imgBtn->setPosition(defImg.position);
-                        imgBtn->setScale(defImg.scale);
-                    }
-
-                    imgBtn->m_baseScale = imgFinalScale;
-                    extraMenu->addChild(imgBtn);
-                    m_fields->m_addProfileImgBtn = imgBtn;
-
-                    // Animar entrada
-                    imgBtn->setScale(0.f);
-                    imgBtn->runAction(CCSequence::create(
-                        CCDelayTime::create(0.30f),
-                        CCEaseBounceOut::create(CCScaleTo::create(0.5f, imgFinalScale)),
-                        nullptr
-                    ));
+                        });
+                    });
                 }
             }
 
-            // === BOTÓN DE PAUSA (visible en todos los perfiles) ===
-            // Crear menú separado para el botón de pausa que siempre es visible
-            auto pauseMenu = CCMenu::create();
-            pauseMenu->setID("paimon-profile-pause-menu"_spr);
-            pauseMenu->setPosition({ cs.width / 2.f, cs.height / 2.f });
-            this->addChild(pauseMenu, 21);
-            m_fields->m_pauseMenu = pauseMenu;
-
-            {
-                auto pauseSpr = CCSprite::createWithSpriteFrameName("GJ_pauseBtn_001.png");
-                if (!pauseSpr) pauseSpr = CCSprite::createWithSpriteFrameName("GJ_stopMusicBtn_001.png");
-                if (!pauseSpr) pauseSpr = CCSprite::create();
-
-                float targetSize = 25.0f;
-                float currentSize = std::max(pauseSpr->getContentWidth(), pauseSpr->getContentHeight());
-                if (currentSize > 0) {
-                    pauseSpr->setScale(targetSize / currentSize);
-                }
-
-                auto pauseBtn = CCMenuItemSpriteExtra::create(pauseSpr, this, menu_selector(PaimonProfilePage::onToggleProfileMusic));
-                pauseBtn->setID("profile-music-pause-button"_spr);
-
-                ButtonLayout defPause;
-                defPause.position = cocos2d::CCPoint(195.f, -100.f);  // Lado derecho
-                defPause.scale = 0.7f;
-                defPause.opacity = 1.0f;
-                ButtonLayoutManager::get().setDefaultLayoutIfAbsent("ProfilePage", "profile-music-pause-button", defPause);
-
-                auto pauseLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "profile-music-pause-button");
-                float pauseFinalScale = pauseLayout ? pauseLayout->scale : defPause.scale;
-                if (pauseLayout) {
-                    pauseBtn->setPosition(pauseLayout->position);
-                    pauseBtn->setScale(pauseLayout->scale);
-                    pauseBtn->setOpacity(static_cast<GLubyte>(pauseLayout->opacity * 255));
-                } else {
-                    pauseBtn->setPosition(defPause.position);
-                    pauseBtn->setScale(defPause.scale);
-                }
-
-                pauseBtn->m_baseScale = pauseFinalScale;
-                pauseBtn->setVisible(false); // Oculto hasta que se verifique que hay música
-                pauseMenu->addChild(pauseBtn);
-                m_fields->m_musicPauseBtn = pauseBtn;
-            }
-
-            // Marcar que el perfil está abierto para saber si debemos restaurar BG al cerrar
-            // NO pausamos el menú aquí — el ProfileMusicManager hará crossfade suave.
+            // Marcar que el perfil esta abierto para saber si debemos restaurar BG al cerrar
             m_fields->m_menuMusicPaused = true;
 
-            // Verificar si este perfil tiene música y reproducirla
+            // Verificar si este perfil tiene musica y reproducirla
             checkAndPlayProfileMusic(accountID);
 
             // Cargar imagen de perfil (visible para todos)
             addOrUpdateProfileImgOnPage(accountID, ownProfile);
 
             // schedule permanente: mantiene icon-background con opacidad 0
-            // incluso si GD recrea nodos internos (cambio de tab, recarga, etc.)
-            this->schedule(schedule_selector(PaimonProfilePage::tickStyleBgs), 0.15f);
+            this->schedule(schedule_selector(PaimonProfilePage::tickStyleBgs), 0.01f);
 
-            // nada de layout automatico, las posiciones son fijas
+            // schedule de verificacion de integridad de botones cada 0.5s
+            this->schedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity), 0.5f);
 
-            // pedir assets del server si hay
-            if (m_fields->m_extraMenu) {
-                ButtonLayoutManager::get().applyLayoutToMenu("ProfilePage", m_fields->m_extraMenu);
-            }
-            try {
-                auto gm = GameManager::get();
-                // evitar conversion ambigua en android
-                std::string username;
-                if (ownProfile && gm) {
-                    // convertir a std::string expliciatmente
-                    username = gm->m_playerName.c_str();
-                }
-                if (!username.empty()) {
-                    log::info("Profile assets download disabled for {}", username);
-                    // descarga del server desactivada
-                } else {
-                    log::info("no hay username, pasamos de descarga remota");
-                }
-            } catch (...) {
-                log::warn("fallo pidiendo assets");
-            }
-        } catch (...) {}
         return true;
     }
 
@@ -1311,144 +1249,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (auto* popup = AddModeratorPopup::create(nullptr)) popup->show();
     }
 
-    void onVerifyModeratorStatus(CCObject*) {
-        log::info("[ProfilePage] Botón de verificación manual presionado");
-        
-        // get player username from gamemanager
-        auto gm = GameManager::get();
-        if (!gm) {
-            log::error("[ProfilePage] No se pudo obtener GameManager");
-            return;
-        }
-        
-        std::string username = gm->m_playerName;
-        if (username.empty()) {
-            log::error("[ProfilePage] Username vacío - no se puede verificar");
-            FLAlertLayer::create(Localization::get().getString("general.error").c_str(), Localization::get().getString("profile.username_error").c_str(), Localization::get().getString("general.ok").c_str())->show();
-            return;
-        }
-
-        log::info("[ProfilePage] Iniciando verificación manual para usuario: {}", username);
-        
-        // indicator de carga
-        auto winSz = CCDirector::sharedDirector()->getWinSize();
-        auto spinner = geode::LoadingSpinner::create(30.f);
-        spinner->setPosition(winSz / 2);
-        spinner->setID("paimon-loading-spinner"_spr);
-        this->addChild(spinner, 100);
-        Ref<geode::LoadingSpinner> loadingRef = spinner;
-
-        this->retain();
-        // checkeo con thumbnailapi
-        ThumbnailAPI::get().checkModerator(username, [this, loadingRef, username](bool isApproved, bool isAdmin) {
-            log::info("[ProfilePage] Verificación manual completada para '{}': isApproved={}, isAdmin={}", username, isApproved, isAdmin);
-            Loader::get()->queueInMainThread([this, loadingRef, isApproved, isAdmin]() {
-                if (loadingRef) loadingRef->removeFromParent();
-                
-                m_fields->m_isApprovedMod = isApproved;
-                m_fields->m_isAdmin = isAdmin;
-                refreshBanButtonVisibility();
-
-                // si es admin, anado boton de anadir mod
-                if (isAdmin && m_fields->m_extraMenu) {
-                    if (!m_fields->m_extraMenu->getChildByID("add-moderator-button")) {
-                        auto addModSpr = Assets::loadButtonSprite(
-                            "add-moderator",
-                            "frame:GJ_plus2Btn_001.png",
-                            [](){
-                                auto s = CCSprite::createWithSpriteFrameName("GJ_plus2Btn_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_plusBtn_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_button_01.png");
-                                return s;
-                            }
-                        );
-                        addModSpr->setScale(0.85f);
-                        auto addModBtn = CCMenuItemSpriteExtra::create(addModSpr, this, menu_selector(PaimonProfilePage::onOpenAddModerator));
-                        addModBtn->setID("add-moderator-button"_spr);
-                        // default position un poco mas arriba del verify
-                        addModBtn->setPosition({ -195.f, 72.5f });
-                        m_fields->m_extraMenu->addChild(addModBtn);
-                        addModBtn->setScale(0.f);
-                        auto layout = ButtonLayoutManager::get().getLayout("ProfilePage", "add-moderator-button"_spr);
-                        float targetScale = layout ? layout->scale : 0.85f;
-                        addModBtn->runAction(CCEaseBounceOut::create(CCScaleTo::create(0.5f, targetScale)));
-                    }
-                }
-                
-                if (m_fields->m_extraMenu) {
-                    ButtonLayoutManager::get().applyLayoutToMenu("ProfilePage", m_fields->m_extraMenu);
-                }
-
-                if (isApproved) {
-                    log::info("[ProfilePage] Usuario aprobado - guardando estado y mostrando botón gear");
-                    
-                    // salvo estado de mod
-                    Mod::get()->setSavedValue("is-verified-moderator", true);
-                
-                    // nuevo: salvo archivo de verificacion con timestamp
-                    try {
-                        auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
-                        std::ofstream modFile(modDataPath, std::ios::binary);
-                        if (modFile) {
-                            // escribo timestamp actual
-                            auto now = std::chrono::system_clock::now();
-                            auto timestamp = std::chrono::system_clock::to_time_t(now);
-                            modFile.write(reinterpret_cast<const char*>(&timestamp), sizeof(timestamp));
-                            modFile.close();
-                            log::info("[ProfilePage] Archivo de verificación de moderador guardado: {}", modDataPath.generic_string());
-                        } else {
-                            log::error("[ProfilePage] No se pudo crear archivo de verificación");
-                        }
-                    } catch (const std::exception& e) {
-                        log::error("[ProfilePage] Error al guardar archivo de verificación: {}", e.what());
-                    }
-                    
-                    // anado boton gear para centro de thumbs
-                    if (m_fields->m_extraMenu && !m_fields->m_gearBtn) {
-                        log::info("[ProfilePage] Añadiendo botón gear al menú");
-                        auto gearSpr = Assets::loadButtonSprite(
-                            "profile-gear",
-                            "frame:GJ_optionsBtn02_001.png",
-                            [](){
-                                auto s = CCSprite::createWithSpriteFrameName("GJ_optionsBtn02_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-                                if (!s) s = CCSprite::createWithSpriteFrameName("GJ_button_01.png");
-                                return s;
-                            }
-                        );
-                        gearSpr->setScale(0.9f);
-                        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(PaimonProfilePage::onOpenThumbsCenter));
-                        gearBtn->setID("thumbs-gear-button"_spr);
-                        gearBtn->setPosition({ -195.f, -18.5f });
-                        m_fields->m_extraMenu->addChild(gearBtn);
-                        m_fields->m_gearBtn = gearBtn;
-                    } else {
-                        log::info("[ProfilePage] Botón gear ya existe o menú no disponible");
-                    }
-                    
-                    FLAlertLayer::create(
-                        Localization::get().getString("profile.verified").c_str(),
-                        Localization::get().getString("profile.verified_msg").c_str(),
-                        Localization::get().getString("general.ok").c_str()
-                    )->show();
-                } else {
-                    log::warn("[ProfilePage] Usuario NO aprobado como moderador");
-                    FLAlertLayer::create(
-                        Localization::get().getString("profile.not_verified").c_str(),
-                        Localization::get().getString("profile.not_verified_msg").c_str(),
-                        Localization::get().getString("general.ok").c_str()
-                    )->show();
-                }
-                
-                this->release();
-            });
-        });
-    }
 
     void onOpenThumbsCenter(CCObject*) {
-        // aseguro que el user es mod antes de abrir panel
-        if (!m_fields->m_isApprovedMod) {
-            log::warn("[ProfilePage] Usuario NO es moderador, bloqueando acceso al centro de verificación");
+        // aseguro que el user es mod o admin antes de abrir panel
+        if (!m_fields->m_isApprovedMod && !m_fields->m_isAdmin) {
+            log::warn("[ProfilePage] Usuario NO es moderador ni admin, bloqueando acceso al centro de verificacion");
             FLAlertLayer::create(
                 Localization::get().getString("profile.access_denied").c_str(),
                 Localization::get().getString("profile.moderators_only").c_str(),
@@ -1458,28 +1263,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
         
         // abro centro de verificacion con categorias
-        log::info("[ProfilePage] Abriendo centro de verificación para moderador");
+        log::info("[ProfilePage] Abriendo centro de verificacion para moderador");
         auto scene = VerificationCenterLayer::scene();
         if (scene) {
-            CCDirector::sharedDirector()->pushScene(
-                CCTransitionFade::create(0.5f, scene));
-        }
-    }
-
-    void onToggleEditMode(CCObject*) {
-        if (!m_fields->m_extraMenu) return;
-
-        PaimonButtonHighlighter::highlightAll();
-
-        // Recoger menus extra para incluir en el editor
-        std::vector<cocos2d::CCMenu*> extraMenus;
-        if (m_fields->m_pauseMenu) {
-            extraMenus.push_back(m_fields->m_pauseMenu);
-        }
-
-        auto overlay = ButtonEditOverlay::create("ProfilePage", m_fields->m_extraMenu, extraMenus);
-        if (auto scene = CCDirector::sharedDirector()->getRunningScene()) {
-            scene->addChild(overlay, 1000);
+            TransitionManager::get().pushScene(scene);
         }
     }
 
@@ -1531,9 +1318,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             this->addChild(gifSpinner, 100);
             Ref<geode::LoadingSpinner> loading = gifSpinner;
 
-            this->retain();
+            Ref<ProfilePage> imgGifSafeRef = this;
 
-            ThumbnailAPI::get().uploadProfileImgGIF(accountID, imgData, username, [this, accountID, imgData, loading](bool success, const std::string& msg) {
+            ThumbnailAPI::get().uploadProfileImgGIF(accountID, imgData, username, [imgGifSafeRef, accountID, imgData, loading](bool success, std::string const& msg) {
                 if (loading) loading->removeFromParent();
 
                 if (success) {
@@ -1546,9 +1333,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         auto tex = new CCTexture2D();
                         if (tex->initWithImage(&img)) {
                             tex->autorelease();
-                            // Ref<> hace retain/release automáticamente
+                            // Ref<> hace retain/release automaticamente
                             s_profileImgCache[accountID] = tex;
-                            this->displayProfileImg(accountID, tex);
+                            static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
                         } else {
                             tex->release();
                         }
@@ -1556,13 +1343,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 } else {
                     PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                 }
-
-                this->release();
             });
             return;
         }
 
-        // Imagen estática: usar helper pa cargar y convertir
+        // Imagen estatica: usar helper pa cargar y convertir
         auto loaded = ImageLoadHelper::loadStaticImage(path, 10);
         if (!loaded.success) {
             std::string errKey = loaded.error;
@@ -1608,9 +1393,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         this->addChild(pngSpinner, 100);
                         Ref<geode::LoadingSpinner> loading = pngSpinner;
 
-                        this->retain();
+                        Ref<ProfilePage> imgUploadRef = this;
 
-                        ThumbnailAPI::get().uploadProfileImg(accountID, pngData, username, "image/png", [this, accountID, pngData, loading, buf, w, h](bool success, const std::string& msg) {
+                        ThumbnailAPI::get().uploadProfileImg(accountID, pngData, username, "image/png", [imgUploadRef, accountID, pngData, loading, buf, w, h](bool success, std::string const& msg) {
                             if (loading) loading->removeFromParent();
 
                             if (success) {
@@ -1629,9 +1414,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                                     auto finalTex = new CCTexture2D();
                                     if (finalTex->initWithImage(&finalImg)) {
                                         finalTex->autorelease();
-                                        // Ref<> hace retain/release automáticamente
+                                        // Ref<> hace retain/release automaticamente
                                         s_profileImgCache[accountID] = finalTex;
-                                        this->displayProfileImg(accountID, finalTex);
+                                        static_cast<PaimonProfilePage*>(imgUploadRef.data())->displayProfileImg(accountID, finalTex);
                                     } else {
                                         finalTex->release();
                                     }
@@ -1639,12 +1424,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             } else {
                                 PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                             }
-
-                            this->release();
                         });
                     }
 
-                    try { std::filesystem::remove(tempPath); } catch (...) {}
+                    std::error_code rmEc;
+                    std::filesystem::remove(tempPath, rmEc);
                 }
             }
         );
@@ -1668,9 +1452,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             this->addChild(gifSpinner2, 100);
             Ref<geode::LoadingSpinner> loading = gifSpinner2;
 
-            this->retain();
+            Ref<ProfilePage> gifUploadRef = this;
 
-            ThumbnailAPI::get().uploadProfileGIF(accountID, gifData, username, [this, accountID, gifData, loading](bool success, const std::string& msg) {
+            ThumbnailAPI::get().uploadProfileGIF(accountID, gifData, username, [gifUploadRef, accountID, gifData, loading](bool success, std::string const& msg) {
                 if (loading) loading->removeFromParent();
                 
                 if (success) {
@@ -1698,17 +1482,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     } else {
                         PaimonNotify::create(Localization::get().getString("profile.saved").c_str(), NotificationIcon::Success)->show();
                     }
-                    this->addOrUpdateProfileThumbOnPage(accountID);
+                    static_cast<PaimonProfilePage*>(gifUploadRef.data())->addOrUpdateProfileThumbOnPage(accountID);
                 } else {
                     PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                 }
-                
-                this->release();
             });
             return;
         }
 
-        // imagen estática: usar helper pa cargar
+        // imagen estatica: usar helper pa cargar
         auto loaded = ImageLoadHelper::loadStaticImage(path, 7);
         if (!loaded.success) {
             std::string errKey = loaded.error;
@@ -1753,7 +1535,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (popup) popup->show();
     }
 
-    // === FUNCIONES DE MÚSICA DE PERFIL ===
+    // === FUNCIONES DE MuSICA DE PERFIL ===
 
     void onConfigureProfileMusic(CCObject*) {
         // Solo disponible en tu propio perfil
@@ -1762,7 +1544,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             return;
         }
 
-        // Abrir popup de configuración de música
+        // Abrir popup de configuracion de musica
         if (auto popup = ProfileMusicPopup::create(this->m_accountID)) {
             popup->show();
         }
@@ -1782,7 +1564,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 updatePauseButtonSprite(false);
             }
         } else {
-            // Si no está sonando, intentar reproducir
+            // Si no esta sonando, intentar reproducir
             musicManager.playProfileMusic(this->m_accountID);
             m_fields->m_musicPlaying = true;
             updatePauseButtonSprite(true);
@@ -1792,7 +1574,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void updatePauseButtonSprite(bool isPlaying) {
         if (!m_fields->m_musicPauseBtn) return;
 
-        // Cambiar el sprite según el estado
+        // Cambiar el sprite segun el estado
         CCSprite* newSpr = nullptr;
         if (isPlaying) {
             newSpr = CCSprite::createWithSpriteFrameName("GJ_pauseBtn_001.png");
@@ -1813,48 +1595,39 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void checkAndPlayProfileMusic(int accountID) {
-        // Verificar si la música de perfiles está habilitada
+        // Verificar si la musica de perfiles esta habilitada
         if (!ProfileMusicManager::get().isEnabled()) {
             m_fields->m_menuMusicPaused = false;
             return;
         }
 
-        this->retain();
-        // Obtener configuración de música del perfil
-        ProfileMusicManager::get().getProfileMusicConfig(accountID, [this, accountID](bool success, const ProfileMusicManager::ProfileMusicConfig& config) {
-            Loader::get()->queueInMainThread([this, success, config, accountID]() {
+        Ref<ProfilePage> self = this;
+        // Obtener configuracion de musica del perfil
+        ProfileMusicManager::get().getProfileMusicConfig(accountID, [self, accountID](bool success, const ProfileMusicManager::ProfileMusicConfig& config) {
+            Loader::get()->queueInMainThread([self, success, config, accountID]() {
+                if (!self->getParent()) return;
+                auto* page = static_cast<PaimonProfilePage*>(self.data());
+
                 if (!success || config.songID <= 0 || !config.enabled) {
-                    // No hay música configurada o está deshabilitada
-                    if (this->getParent() && m_fields->m_musicPauseBtn) {
-                        m_fields->m_musicPauseBtn->setVisible(false);
+                    if (page->m_fields->m_musicPauseBtn) {
+                        page->m_fields->m_musicPauseBtn->setVisible(false);
                     }
-                    // No hay música de perfil — el BG sigue sonando normalmente
-                    // (no lo pausamos en init, así que no hay nada que restaurar)
-                    m_fields->m_menuMusicPaused = false;
-                    this->release();
+                    page->m_fields->m_menuMusicPaused = false;
                     return;
                 }
 
-                // Hay música, mostrar botón de pausa
-                if (m_fields->m_musicPauseBtn) {
-                    m_fields->m_musicPauseBtn->setVisible(true);
-
-                    // Animar entrada del botón
-                    m_fields->m_musicPauseBtn->setScale(0.f);
-                    auto pauseLayout = ButtonLayoutManager::get().getLayout("ProfilePage", "profile-music-pause-button");
-                    float finalScale = pauseLayout ? pauseLayout->scale : 0.7f;
-                    m_fields->m_musicPauseBtn->runAction(CCSequence::create(
-                        CCDelayTime::create(0.3f),
-                        CCEaseBounceOut::create(CCScaleTo::create(0.5f, finalScale)),
-                        nullptr
-                    ));
+                // Hay musica, mostrar boton de pausa y recalcular layout
+                if (page->m_fields->m_musicPauseBtn) {
+                    page->m_fields->m_musicPauseBtn->setVisible(true);
+                    if (auto* socialsMenu = page->getSocialsMenu()) {
+                        socialsMenu->updateLayout();
+                    }
                 }
 
-                // Reproducir música automáticamente
+                // Reproducir musica automaticamente
                 ProfileMusicManager::get().playProfileMusic(accountID);
-                m_fields->m_musicPlaying = true;
-                updatePauseButtonSprite(true);
-                this->release();
+                page->m_fields->m_musicPlaying = true;
+                page->updatePauseButtonSprite(true);
             });
         });
     }
@@ -1881,25 +1654,25 @@ class $modify(PaimonProfilePage, ProfilePage) {
         ProfilePage::onExit();
     }
 
-    // Restaura la música del menú principal con fade-in suave
-    // si no hubo música de perfil (el ProfileMusicManager no tocó el BG).
+    // Restaura la musica del menu principal con fade-in suave
+    // si no hubo musica de perfil (el ProfileMusicManager no toco el BG).
     void resumeMenuMusicIfNeeded() {
         if (!m_fields->m_menuMusicPaused) return;
         m_fields->m_menuMusicPaused = false;
 
-        // Si ProfileMusicManager está haciendo fade-out, él restaurará el BG con crossfade
+        // Si ProfileMusicManager esta haciendo fade-out, el restaurara el BG con crossfade
         if (ProfileMusicManager::get().isFadingOut()) return;
-        // Si hay música de perfil activa, stopProfileMusic ya inició el crossfade
+        // Si hay musica de perfil activa, stopProfileMusic ya inicio el crossfade
         if (ProfileMusicManager::get().isPlaying()) return;
 
-        // No hubo música de perfil — restaurar BG con fade-in suave
+        // No hubo musica de perfil — restaurar BG con fade-in suave
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
 
         bool isPaused = false;
         engine->m_backgroundMusicChannel->getPaused(&isPaused);
         if (isPaused) {
-            // Si estaba pausado (ej: crossfade previo lo pausó), despausar con volumen 0 y subir
+            // Si estaba pausado (ej: crossfade previo lo pauso), despausar con volumen 0 y subir
             engine->m_backgroundMusicChannel->setVolume(0.0f);
             engine->m_backgroundMusicChannel->setPaused(false);
         }
@@ -1908,30 +1681,31 @@ class $modify(PaimonProfilePage, ProfilePage) {
         float targetVol = engine->m_musicVolume;
         float currentVol = 0.0f;
         engine->m_backgroundMusicChannel->getVolume(&currentVol);
-        if (currentVol >= targetVol * 0.95f) return; // ya está a volumen normal
+        if (currentVol >= targetVol * 0.95f) return; // ya esta a volumen normal
 
-        this->retain();
-        fadeMenuMusicStep(0, 15, currentVol, targetVol);
+        // Ref<> mantiene vivo el objeto mientras el thread ejecuta
+        Ref<ProfilePage> fadeSafeRef = this;
+        fadeMenuMusicStep(fadeSafeRef, 0, 15, currentVol, targetVol);
     }
 
-    void fadeMenuMusicStep(int step, int totalSteps, float fromVol, float toVol) {
+    void fadeMenuMusicStep(Ref<ProfilePage> safeRef, int step, int totalSteps, float fromVol, float toVol) {
         // Single-thread fade: one thread loops all steps instead of spawning 15+ threads.
         float stepMs = 500.0f / static_cast<float>(totalSteps);
 
-        std::thread([this, step, totalSteps, fromVol, toVol, stepMs]() {
+        std::thread([safeRef, step, totalSteps, fromVol, toVol, stepMs]() {
             for (int s = step; s <= totalSteps; s++) {
                 if (s > step) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
                 }
 
                 int currentStep = s;
-                Loader::get()->queueInMainThread([this, currentStep, totalSteps, fromVol, toVol]() {
+                Loader::get()->queueInMainThread([safeRef, currentStep, totalSteps, fromVol, toVol]() {
                     if (currentStep >= totalSteps) {
                         auto engine = FMODAudioEngine::sharedEngine();
                         if (engine && engine->m_backgroundMusicChannel) {
                             engine->m_backgroundMusicChannel->setVolume(toVol);
                         }
-                        this->release();
+                        // Ref<> se destruye automaticamente al salir del scope
                         return;
                     }
 

@@ -1,12 +1,38 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelSearchLayer.hpp>
 #include "../layers/LeaderboardLayer.hpp"
+#include "../managers/LayerBackgroundManager.hpp"
+#include "../managers/TransitionManager.hpp"
 
 using namespace geode::prelude;
 
 class $modify(MyLevelSearchLayer, LevelSearchLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("LevelSearchLayer::init", geode::Priority::Late);
+    }
+
     bool init(int searchType) {
         if (!LevelSearchLayer::init(searchType)) return false;
+
+        // ── Aplicar fondo custom unificado ──
+        bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");
+
+        // ── Si hay fondo custom, ocultar sprites decorativos de busqueda ──
+        if (hasCustomBg) {
+            static char const* hideIDs[] = {
+                "level-search-bg",
+                "quick-search-bg",
+                "difficulty-filters-bg",
+                "length-filters-bg",
+                nullptr
+            };
+            for (int i = 0; hideIDs[i]; i++) {
+                if (auto node = this->getChildByID(hideIDs[i])) {
+                    node->setVisible(false);
+                }
+            }
+        }
+
 
         CCSprite* spr = CCSprite::create("paim_Daily.png"_spr);
         if (!spr) {
@@ -37,6 +63,6 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     }
 
     void onLeaderboard(CCObject*) {
-        CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, LeaderboardLayer::scene(LeaderboardLayer::BackTarget::LevelSearchLayer)));
+        TransitionManager::get().replaceScene(LeaderboardLayer::scene(LeaderboardLayer::BackTarget::LevelSearchLayer));
     }
 };

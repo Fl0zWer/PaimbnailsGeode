@@ -20,7 +20,7 @@ ListThumbnailCarousel::~ListThumbnailCarousel() {
     this->unschedule(schedule_selector(ListThumbnailCarousel::updatePan));
 }
 
-ListThumbnailCarousel* ListThumbnailCarousel::create(const std::vector<int>& levelIDs, CCSize size) {
+ListThumbnailCarousel* ListThumbnailCarousel::create(std::vector<int> const& levelIDs, CCSize size) {
     auto ret = new ListThumbnailCarousel();
     if (ret && ret->init(levelIDs, size)) {
         ret->autorelease();
@@ -30,7 +30,7 @@ ListThumbnailCarousel* ListThumbnailCarousel::create(const std::vector<int>& lev
     return nullptr;
 }
 
-bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) {
+bool ListThumbnailCarousel::init(std::vector<int> const& levelIDs, CCSize size) {
     if (!CCNode::init()) return false;
     
     m_alive = std::make_shared<bool>(true);
@@ -184,20 +184,8 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
     
     CCSprite* sprite = nullptr;
     
-    #ifdef GEODE_IS_WINDOWS
-    __try {
-        sprite = CCSprite::createWithTexture(texture);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
-    }
-    #else
-    try {
-        sprite = CCSprite::createWithTexture(texture);
-    } catch(...) {
-        return;
-    }
-    #endif
+    // texture validity already verified by isTextureSane above
+    sprite = CCSprite::createWithTexture(texture);
 
     if (!sprite) return;
     
@@ -289,14 +277,5 @@ void ListThumbnailCarousel::setOpacity(GLubyte opacity) {
 }
 
 void ListThumbnailCarousel::visit() {
-#ifdef GEODE_IS_WINDOWS
-    __try {
-        CCNode::visit();
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Swallow SEH exceptions to avoid crashing during rendering.
-    }
-#else
     CCNode::visit();
-#endif
 }

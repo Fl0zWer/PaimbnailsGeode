@@ -22,16 +22,13 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace Shaders;
 
-// alias pa compatibilidad con el resto del archivo
-using BlurSprite = PaimonBlurSprite;
-
 
 
 // helpers pa los efectos premium
 namespace {
-    // mete partículas premium pegadas al nombre
-    void addPremiumParticlesToUsername(CCNode* parent, const CCPoint& namePos, float nameWidth) {
-        // crear 3 particulas pequeñas alrededor del nombre
+    // mete particulas premium pegadas al nombre
+    void addPremiumParticlesToUsername(CCNode* parent, CCPoint const& namePos, float nameWidth) {
+        // crear 3 particulas pequenas alrededor del nombre
         for (int i = 0; i < 3; ++i) {
             auto particle = CCSprite::createWithSpriteFrameName("star_small01_001.png");
             if (!particle) continue;
@@ -63,37 +60,42 @@ namespace {
     }
 }
 
-// cache estático pa mover botones sin gastar de más
+// Cache estatico pa mover botones sin gastar de mas.
+// NOTA AUDIT VC-07: intencionalmente global — el offset es constante entre
+// todas las celdas de score (se calcula una sola vez al primer renderizado).
+// NO migrar a struct Fields: el valor no varia per-instancia.
 namespace {
     struct ButtonMoveCache {
         bool initialized = false;
         float buttonOffset = 30.f;
-        std::unordered_set<int> processedCells; // ids de celdas ya tocadas
-        
+
         void reset() {
             initialized = false;
-            processedCells.clear();
         }
     };
-    
+
     ButtonMoveCache g_buttonCache;
 }
 
 class $modify(PaimonGJScoreCell, GJScoreCell) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("GJScoreCell::loadFromScore", geode::Priority::Late);
+    }
+
     struct Fields {
-        CCClippingNode* m_profileClip = nullptr;
-        CCLayerColor* m_profileSeparator = nullptr;
-        CCNode* m_profileBg = nullptr;
-        CCLayerColor* m_darkOverlay = nullptr;
+        Ref<CCClippingNode> m_profileClip = nullptr;
+        Ref<CCLayerColor> m_profileSeparator = nullptr;
+        Ref<CCNode> m_profileBg = nullptr;
+        Ref<CCLayerColor> m_darkOverlay = nullptr;
         bool m_buttonsMoved = false; // pa no andar moviendo botones mil veces
-        geode::LoadingSpinner* m_loadingSpinner = nullptr;
+        Ref<geode::LoadingSpinner> m_loadingSpinner = nullptr;
         bool m_isBeingDestroyed = false; // pa no tocar celdas que ya se mueren
     };
     
     void showLoadingSpinner() {
         auto f = m_fields.self();
         
-        // quita el spinner viejo si ya había
+        // quita el spinner viejo si ya habia
         if (f->m_loadingSpinner) {
             f->m_loadingSpinner->removeFromParent();
             f->m_loadingSpinner = nullptr;
@@ -102,7 +104,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         // crear spinner usando geode::LoadingSpinner (10px diametro ≈ loadingCircle.png * 0.25)
         auto spinner = geode::LoadingSpinner::create(10.f);
         
-        // lo pongo a la derecha donde iría la mini
+        // lo pongo a la derecha donde iria la mini
         auto cs = this->getContentSize();
         if (cs.width <= 1.f || cs.height <= 1.f) {
             cs.width = this->m_width;
@@ -141,22 +143,21 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         else if (geode::cast::typeinfo_cast<CCScale9Sprite*>(node) != nullptr) isBackground = true;
 
         if (isBackground) {
-            // empuja solo si aún no está al fondo
+            // empuja solo si aun no esta al fondo
             if (node->getZOrder() > -20) {
                 if (auto parent = node->getParent()) parent->reorderChild(node, -20);
                 else node->setZOrder(-20);
             }
         }
-        // recursivo pa limpiar todo el árbol
+        // recursivo pa limpiar todo el arbol
         auto children = CCArrayExt<CCNode*>(node->getChildren());
         for (auto* ch : children) pushGameColorLayersBehind(ch);
     }
 
     void addOrUpdateProfileThumb(CCTexture2D* texture) {
-        // dejo textura null si hay gifKey, se apaña con eso
+        // dejo textura null si hay gifKey, se apana con eso
         
-        try {
-            // check crítico: la celda tiene que tener parent
+        // check critico: la celda tiene que tener parent
             if (!this->getParent()) {
                 log::warn("[GJScoreCell] Cell has no parent, skipping addOrUpdateProfileThumb");
                 return;
@@ -170,7 +171,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 return;
             }
             
-            // mira si la celda ya se está destruyendo
+            // mira si la celda ya se esta destruyendo
             if (f->m_isBeingDestroyed) {
                 log::debug("[GJScoreCell] Cell marked as destroyed, skipping thumbnail update");
                 return;
@@ -179,17 +180,19 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             log::debug("[GJScoreCell] Starting profile thumbnail update");
             
             // limpieza agresiva pa que no se apilen cosas raras
+            // NOTE: reverse-index iteration avoids retain()/copy which can crash
+            // on dangling pointers in the children array
             if (auto children = this->getChildren()) {
-                for (int i = children->count() - 1; i >= 0; i--) {
-                    if (auto node = typeinfo_cast<CCNode*>(children->objectAtIndex(i))) {
-                        std::string id = node->getID();
-                        if (id == "paimon-profile-bg"_spr || 
-                            id == "paimon-profile-clip"_spr || 
-                            id == "paimon-profile-thumb"_spr ||
-                            id == "paimon-score-bg-clipper"_spr ||
-                            id == "paimon-profile-separator"_spr) {
-                            node->removeFromParent();
-                        }
+                for (int i = static_cast<int>(children->count()) - 1; i >= 0; --i) {
+                    auto* node = static_cast<CCNode*>(children->data->arr[i]);
+                    if (!node) continue;
+                    std::string id = node->getID();
+                    if (id == "paimon-profile-bg"_spr ||
+                        id == "paimon-profile-clip"_spr ||
+                        id == "paimon-profile-thumb"_spr ||
+                        id == "paimon-score-bg-clipper"_spr ||
+                        id == "paimon-profile-separator"_spr) {
+                        node->removeFromParent();
                     }
                 }
             }
@@ -199,7 +202,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             f->m_profileBg = nullptr;
             f->m_darkOverlay = nullptr;
 
-            // geometría base según tamaño de la celda
+            // geometria base segun tamano de la celda
             auto cs = this->getContentSize();
             if (cs.width <= 0 || cs.height <= 0) {
                 log::error("[GJScoreCell] Invalid cell content size: {}x{}", cs.width, cs.height);
@@ -210,7 +213,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 cs.height = this->m_height;
             }
 
-            // --- lógica del fondo (gradiente vs mini blur) ---
+            // --- logica del fondo (gradiente vs mini blur) ---
             std::string bgType = "gradient";
             float blurIntensity = 3.0f;
             float darkness = 0.2f;
@@ -230,9 +233,9 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
 
             if (isCurrentUser) {
                 // usuario actual: siempre tira de config local (SavedValue)
-                try { bgType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail"); } catch (...) {}
-                try { blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f); } catch (...) {}
-                try { darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f); } catch (...) {}
+                bgType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
+                blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
+                darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
             } else {
                 // otros usuarios: intento config desde cache
                 if (config.hasConfig) {
@@ -249,7 +252,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 }
             }
             
-            // validación básica
+            // validacion basica
             if (!texture && gifKey.empty()) {
                 log::error("[GJScoreCell] No texture and no GIF key available for account {}", accountID);
                 return;
@@ -274,10 +277,10 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 // primero intento fondo con GIF
                 if (!gifKey.empty()) {
                     // usar un AnimatedGIFSprite directamente como fondo con shader blur
-                    // así anima solo sin necesidad de sincronizar texturas
+                    // asi anima solo sin necesidad de sincronizar texturas
                     auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
                     if (bgGif) {
-                        // escalo pa cubrir toda el área
+                        // escalo pa cubrir toda el area
                         float scaleX = targetSize.width / bgGif->getContentSize().width;
                         float scaleY = targetSize.height / bgGif->getContentSize().height;
                         float scale = std::max(scaleX, scaleY);
@@ -306,18 +309,18 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 
                 // fallback a fondo con textura
                 if (!bgNode && texture) {
-                    // imagen estática: blur multi-paso fino
+                    // imagen estatica: blur multi-paso fino
                     CCSize blurTargetSize = cs;
                     blurTargetSize.width = std::max(blurTargetSize.width, 512.f);
                     blurTargetSize.height = std::max(blurTargetSize.height, 256.f);
 
-                    float stronger = std::min(10.0f, blurIntensity + 3.0f); // le doy un pelín más de blur
+                    float stronger = std::min(10.0f, blurIntensity + 3.0f); // le doy un pelin mas de blur
                     auto blurredBg = Shaders::createBlurredSprite(texture, blurTargetSize, stronger);
                     if (blurredBg) {
                         blurredBg->setPosition(blurTargetSize * 0.5f);
                         bgNode = blurredBg;
                     } else {
-                        // último fallback: textura normal con shader
+                        // ultimo fallback: textura normal con shader
                         auto tempSprite = CCSprite::createWithTexture(texture);
                         float scaleX = blurTargetSize.width / texture->getContentSize().width;
                         float scaleY = blurTargetSize.height / texture->getContentSize().height;
@@ -352,7 +355,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     clipper->setID("paimon-score-bg-clipper"_spr);
 
                     // escalo bgNode pa llenar la celda
-                    // el blur viene a targetSize, aquí lo ajusto al tamaño real
+                    // el blur viene a targetSize, aqui lo ajusto al tamano real
                     CCSize bgSize = bgNode->getContentSize();
                     if (bgSize.width > 0 && bgSize.height > 0) {
                         float scaleToFitX = cs.width / bgSize.width;
@@ -377,12 +380,12 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                         f->m_darkOverlay = overlay;
                     }
 
-                    // me aseguro de que el fondo original se quede atrás
+                    // me aseguro de que el fondo original se quede atras
                     pushGameColorLayersBehind(this);
                 }
             }
 
-            // --- lógica del sprite principal ---
+            // --- logica del sprite principal ---
             CCNode* mainNode = nullptr;
             float contentW = 0, contentH = 0;
 
@@ -390,7 +393,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             if (!gifKey.empty()) {
                 log::debug("[GJScoreCell] Trying to create GIF sprite from cache key: {}", gifKey);
 
-                // miro si el GIF ya está en cache
+                // miro si el GIF ya esta en cache
                 if (AnimatedGIFSprite::isCached(gifKey)) {
                     log::debug("[GJScoreCell] GIF is cached, creating sprite...");
                     auto gifSprite = AnimatedGIFSprite::createFromCache(gifKey);
@@ -399,7 +402,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                         contentW = gifSprite->getContentSize().width;
                         contentH = gifSprite->getContentSize().height;
 
-                        // aseguro que la animación esté corriendo
+                        // aseguro que la animacion este corriendo
                         gifSprite->play();
 
                         gifSprite->setID("paimon-profile-thumb-gif"_spr);
@@ -444,7 +447,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             float factor = 0.80f;
             
             if (isCurrentUser) {
-                try { factor = Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f); } catch (...) {}
+                factor = Mod::get()->getSavedValue<float>("profile-thumb-width", 0.6f);
             } else {
                 // resto de usuarios: tiro de config en cache
                 int accountID = (this->m_score) ? this->m_score->m_accountID : 0;
@@ -466,7 +469,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             mainNode->setScaleY(scaleY);
             mainNode->setScaleX(scaleX);
 
-        // recorte en ángulo que imita el corte del lado derecho
+        // recorte en angulo que imita el corte del lado derecho
     constexpr float angle = 18.f;
         CCSize scaledSize{ desiredWidth, contentH * scaleY };
         auto mask = CCLayerColor::create({255,255,255});
@@ -478,16 +481,16 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         clip->setStencil(mask);
         clip->setContentSize(scaledSize);
         clip->setAnchorPoint({1,0});
-        // pegado al borde derecho con un pelín de offset pa que no se vea feo
+        // pegado al borde derecho con un pelin de offset pa que no se vea feo
         clip->setPosition({ cs.width, 0.3f });
         clip->setID("paimon-profile-clip"_spr);
-    // lo dejo detrás de textos/iconos pa no tapar stats
+    // lo dejo detras de textos/iconos pa no tapar stats
     clip->setZOrder(-1);
 
         mainNode->setPosition(clip->getContentSize() * 0.5f);
         clip->addChild(mainNode);
         
-        // aquí antes había otro check defensivo, pero ya no hace falta
+        // aqui antes habia otro check defensivo, pero ya no hace falta
         /*
         if (!this->getParent()) {
             log::warn("[GJScoreCell] Cell destroyed before clipping node could be added");
@@ -521,7 +524,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         topBorder->setID("paimon-profile-border-top"_spr);
         this->addChild(topBorder);
         
-        // animación de brillo solo si es premium
+        // animacion de brillo solo si es premium
         if (isPremiumUser) {
             topBorder->runAction(CCRepeatForever::create(CCSequence::create(
                 CCFadeTo::create(0.8f, 255),
@@ -565,7 +568,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             )));
         }
 
-    // separador detrás de la imagen (estilo fijo)
+    // separador detras de la imagen (estilo fijo)
     auto sep = CCLayerColor::create(ccc4(0, 0, 0, 50));
     sep->setScaleX(0.45f);
         sep->ignoreAnchorPointForPosition(false);
@@ -578,13 +581,8 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         this->addChild(sep);
         f->m_profileSeparator = sep;
 
-        // el fondo ya lo metí más arriba
+        // el fondo ya lo meti mas arriba
         log::debug("[GJScoreCell] Profile thumbnail added successfully");
-        } catch (std::exception& e) {
-            log::error("[GJScoreCell] Exception in addOrUpdateProfileThumb: {}", e.what());
-        } catch (...) {
-            log::error("[GJScoreCell] Unknown exception in addOrUpdateProfileThumb");
-        }
     }
 
 
@@ -593,10 +591,9 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         GJScoreCell::loadFromScore(score);
         
         // empujar capas de color del juego atras pa que se vea el gradiente
-        try { pushGameColorLayersBehind(this); } catch (...) {}
-        
-        try {
-            if (!score) return;
+        pushGameColorLayersBehind(this);
+
+        if (!score) return;
 
             int accountID = score->m_accountID;
             if (accountID <= 0) return;
@@ -607,7 +604,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             // usuario actual: antes tiraba del perfil local primero
             if (isCurrent) {
                 // ahora paso del disco y uso siempre cache/descarga
-                // así se ve igual que en BannerConfigPopup y sin thumbs viejas
+                // asi se ve igual que en BannerConfigPopup y sin thumbs viejas
                 loadedLocally = false;
             }
 
@@ -623,32 +620,30 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 auto cachedProfile = ProfileThumbs::get().getCachedProfile(accountID);
                 if (cachedProfile && (cachedProfile->texture || !cachedProfile->gifKey.empty())) {
                     log::debug("[GJScoreCell] Found cached profile for account {}", accountID);
-                    // cargo desde cache de forma asíncrona
+                    // cargo desde cache de forma asincrona
                     Loader::get()->queueInMainThread([this, accountID]() {
-                        try {
-                            auto mod = Mod::get();
-                            auto oldWidth = mod->getSavedValue<float>("profile-thumb-width", 0.6f);
-                            
-                            auto cached = ProfileThumbs::get().getCachedProfile(accountID);
-                            if (cached) {
-                                addOrUpdateProfileThumb(cached->texture);
-                            } else {
-                                log::warn("[GJScoreCell] Cache entry disappeared for account {}", accountID);
-                            }
-                            
-                            // devuelvo el valor que tenía antes
-                            mod->setSavedValue("profile-thumb-width", oldWidth);
-                        } catch (...) {}
+                        auto mod = Mod::get();
+                        auto oldWidth = mod->getSavedValue<float>("profile-thumb-width", 0.6f);
+
+                        auto cached = ProfileThumbs::get().getCachedProfile(accountID);
+                        if (cached) {
+                            addOrUpdateProfileThumb(cached->texture);
+                        } else {
+                            log::warn("[GJScoreCell] Cache entry disappeared for account {}", accountID);
+                        }
+
+                        // devuelvo el valor que tenia antes
+                        mod->setSavedValue("profile-thumb-width", oldWidth);
                     });
                     return;
                 }
                 
                 log::debug("[GJScoreCell] No cache for account {}, downloading...", accountID);
                 
-                // no está en cache: toca descargar del server
+                // no esta en cache: toca descargar del server
                 log::debug("[GJScoreCell] Profile not in cache for user: {} - Downloading...", username);
                 
-                // muestro el spinner solo si está habilitado
+                // muestro el spinner solo si esta habilitado
                 bool enableSpinners = true;
                 // try { // si quieres setting lo descomentas
                 //     enableSpinners = Mod::get()->getSettingValue<bool>("enable-loading-spinners");
@@ -658,15 +653,14 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     showLoadingSpinner();
                 }
                 
-                // retengo la celda pa que no crashee si se destruye en mitad de la descarga
-                this->retain();
-                
+                // Ref<> en vez de retain/release para seguridad de memoria
+                Ref<GJScoreCell> safeRef = this;
+
                 // uso queueLoad en vez de bajar directo
-                ProfileThumbs::get().queueLoad(accountID, username, [this, accountID, enableSpinners](bool success, CCTexture2D* texture) {
+                ProfileThumbs::get().queueLoad(accountID, username, [safeRef, accountID, enableSpinners](bool success, CCTexture2D* texture) {
                     if (!success || !texture) {
-                        if (enableSpinners) this->hideLoadingSpinner();
+                        if (enableSpinners) static_cast<PaimonGJScoreCell*>(safeRef.data())->hideLoadingSpinner();
                         log::warn("[GJScoreCell] Failed to download profile for account {}", accountID);
-                        this->release();
                         return;
                     }
 
@@ -674,37 +668,31 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     texture->retain();
 
                     // descargar config
-                    ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, texture, enableSpinners](bool success2, const ProfileConfig& config) {
-                        try {
-                            if (enableSpinners) this->hideLoadingSpinner();
-                            
+                    ThumbnailAPI::get().downloadProfileConfig(accountID, [safeRef, accountID, texture, enableSpinners](bool success2, ProfileConfig const& config) {
+                        auto* self = static_cast<PaimonGJScoreCell*>(safeRef.data());
+                        if (enableSpinners) self->hideLoadingSpinner();
+
                         // guardo en cache
-                            ProfileThumbs::get().cacheProfile(accountID, texture, {255,255,255}, {255,255,255}, 0.5f);
-                            if (success2) {
-                                ProfileThumbs::get().cacheProfileConfig(accountID, config);
-                            }
-                            
-                            // aplico la textura al final
-                            this->addOrUpdateProfileThumb(texture);
-                        } catch (...) {
-                            log::error("[GJScoreCell] Error handling profile download callback");
+                        ProfileThumbs::get().cacheProfile(accountID, texture, {255,255,255}, {255,255,255}, 0.5f);
+                        if (success2) {
+                            ProfileThumbs::get().cacheProfileConfig(accountID, config);
                         }
-                        
-                        // libero la textura después de usarla
+
+                        // aplico la textura al final
+                        self->addOrUpdateProfileThumb(texture);
+
+                        // libero la textura despues de usarla
                         texture->release();
-                        this->release();
                     });
                 });
             }
-        } catch (...) {}
-        
-        // muevo el botón de perfil del jugador (tirando del cache ese)
+
+        // muevo el boton de perfil del jugador (tirando del cache ese)
         auto f = m_fields.self();
         if (!f->m_buttonsMoved) {
             f->m_buttonsMoved = true; // marcado como ya procesado
             
-            try {
-                // init del cache solo una vez
+            // init del cache solo una vez
                 if (!g_buttonCache.initialized) {
                         g_buttonCache.buttonOffset = 0.0f;
                     g_buttonCache.initialized = true;
@@ -722,7 +710,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 
                 bool foundButton = false;
                 
-                // limito la búsqueda a los primeros 10 nodos (los menús suelen estar al inicio)
+                // limito la busqueda a los primeros 10 nodos (los menus suelen estar al inicio)
                 int searchCount = 0;
 
                 for (auto* child : CCArrayExt<CCNode*>(children)) {
@@ -735,7 +723,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     auto menuChildren = menu->getChildren();
                     if (!menuChildren) continue;
                     
-                    // solo miro los primeros 5 items del menú
+                    // solo miro los primeros 5 items del menu
                     int menuSearchCount = 0;
 
                     for (auto* menuChild : CCArrayExt<CCNode*>(menuChildren)) {
@@ -752,7 +740,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                         if (btnIDStr.empty() || btnIDStr.compare(0, 7, "paimon-") != 0) {
                             auto currentPos = btn->getPosition();
                             
-                            // lo muevo solo si está en una posición razonable
+                            // lo muevo solo si esta en una posicion razonable
                             if (currentPos.x > 50.f && currentPos.x < 400.f) {
                                 btn->setPosition({currentPos.x - g_buttonCache.buttonOffset, currentPos.y});
                                 foundButton = true;
@@ -761,13 +749,8 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                                          currentPos.x - g_buttonCache.buttonOffset, currentPos.y);
                                 break;
                             }
-                        }
                     }
                 }
-            } catch (std::exception& e) {
-                log::error("[GJScoreCell] Exception moving button: {}", e.what());
-            } catch (...) {
-                // pillo cualquier excepción pa que no crashee
             }
         }
     }

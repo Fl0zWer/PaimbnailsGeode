@@ -37,12 +37,12 @@ namespace Assets {
 CCSprite* loadButtonSprite(
     std::string const& key,
     std::string const& defaultContent,
-    std::function<CCSprite*()> fallback
+    geode::CopyableFunction<CCSprite*()> fallback
 ) {
     auto path = cfgPathFor(key);
     std::error_code ecAsset;
     if (!std::filesystem::exists(path, ecAsset)) {
-        // si no existe, creo un txt base explicando cómo va
+        // si no existe, creo un txt base explicando como va
         std::stringstream ss;
         ss << "# Button: " << key << "\n";
         ss << "# Supported formats (first non-empty line):\n";
@@ -117,7 +117,7 @@ CCSprite* loadButtonSprite(
         }
     }
 
-    // último recurso: llamo al fallback que me pasaste
+    // ultimo recurso: llamo al fallback que me pasaste
     return fallback();
 }
 

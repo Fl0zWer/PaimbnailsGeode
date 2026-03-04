@@ -26,14 +26,14 @@ protected:
     // Safety flag for async callbacks
     std::shared_ptr<bool> m_alive;
 
-    bool init(const std::vector<int>& levelIDs, cocos2d::CCSize size);
+    bool init(std::vector<int> const& levelIDs, cocos2d::CCSize size);
     void tryShowNextImage();
     void updateCarousel(float dt);
     void updatePan(float dt);
     void onImageLoaded(cocos2d::CCTexture2D* texture, int index);
 
 public:
-    static ListThumbnailCarousel* create(const std::vector<int>& levelIDs, cocos2d::CCSize size);
+    static ListThumbnailCarousel* create(std::vector<int> const& levelIDs, cocos2d::CCSize size);
     virtual ~ListThumbnailCarousel();
     
     void visit() override;

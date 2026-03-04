@@ -7,7 +7,7 @@
 #include <memory>
 #include <algorithm>
 
-// stb_image: solo declaraciones (la implementación está en GifManager.cpp)
+// stb_image: solo declaraciones (la implementacion esta en ThumbnailLoader.cpp)
 #include "stb_image.h"
 
 using namespace geode::prelude;
@@ -57,9 +57,9 @@ namespace ImageLoadHelper {
 
     /**
      * Fallback con stb_image: decodifica JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
-     * Soporta más formatos y perfiles de color que CCImage de cocos2d-x.
+     * Soporta mas formatos y perfiles de color que CCImage de cocos2d-x.
      */
-    inline LoadedImage loadWithSTB(const std::filesystem::path& path) {
+    inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
 
         int w = 0, h = 0, channels = 0;
@@ -88,22 +88,22 @@ namespace ImageLoadHelper {
     }
 
     /**
-     * carga imagen estática (png/jpg/bmp/tga/psd/etc) desde path.
+     * carga imagen estatica (png/jpg/bmp/tga/psd/etc) desde path.
      * devuelve textura + buffer RGBA listo pa CapturePreviewPopup.
      *
      * Intenta en orden:
-     * 1. CCImage::initWithImageFile (rápido, nativo cocos2d)
+     * 1. CCImage::initWithImageFile (rapido, nativo cocos2d)
      * 2. CCImage::initWithImageData con bytes crudos
      * 3. stb_image fallback (soporta BMP, TGA, PSD, JPEG CMYK, etc)
      *
      * @param path ruta al archivo
-     * @param maxSizeMB tamaño maximo en MB (0 = sin limite)
+     * @param maxSizeMB tamano maximo en MB (0 = sin limite)
      * @return LoadedImage con los datos o error
      */
-    inline LoadedImage loadStaticImage(const std::filesystem::path& path, size_t maxSizeMB = 10) {
+    inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         LoadedImage result;
 
-        // verificar tamaño
+        // verificar tamano
         if (maxSizeMB > 0) {
             try {
                 if (std::filesystem::file_size(path) > maxSizeMB * 1024 * 1024) {
@@ -113,7 +113,7 @@ namespace ImageLoadHelper {
             } catch (...) {}
         }
 
-        // === Intento 1: CCImage::initWithImageFile (PNG, JPEG estándar) ===
+        // === Intento 1: CCImage::initWithImageFile (PNG, JPEG estandar) ===
         {
             CCImage img;
             if (img.initWithImageFile(path.generic_string().c_str())) {
@@ -208,10 +208,10 @@ namespace ImageLoadHelper {
      * lee archivo en binario (gif, png, etc).
      *
      * @param path ruta al archivo
-     * @param maxSizeMB tamaño maximo en MB
+     * @param maxSizeMB tamano maximo en MB
      * @return vector con datos o vacio si falla
      */
-    inline std::vector<uint8_t> readBinaryFile(const std::filesystem::path& path, size_t maxSizeMB = 10) {
+    inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         std::ifstream file(path, std::ios::binary);
         if (!file) return {};
 
@@ -227,8 +227,8 @@ namespace ImageLoadHelper {
     /**
      * verifica si la extension es gif (case insensitive)
      */
-    inline bool isGIF(const std::filesystem::path& path) {
-        std::string ext = path.extension().string();
+    inline bool isGIF(std::filesystem::path const& path) {
+        std::string ext = geode::utils::string::pathToString(path.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
         return ext == ".gif";
     }

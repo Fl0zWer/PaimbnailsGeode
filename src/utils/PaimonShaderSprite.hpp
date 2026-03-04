@@ -102,7 +102,7 @@ public:
     ccColor3B m_startColor = {255, 255, 255};
     ccColor3B m_endColor = {255, 255, 255};
 
-    static PaimonShaderGradient* create(const ccColor4B& start, const ccColor4B& end) {
+    static PaimonShaderGradient* create(ccColor4B const& start, ccColor4B const& end) {
         auto sprite = new PaimonShaderGradient();
 
         unsigned char data[] = {
@@ -128,12 +128,12 @@ public:
         return nullptr;
     }
 
-    void setStartColor(const ccColor3B& color) {
+    void setStartColor(ccColor3B const& color) {
         m_startColor = color;
         updateGradient();
     }
 
-    void setEndColor(const ccColor3B& color) {
+    void setEndColor(ccColor3B const& color) {
         m_endColor = color;
         updateGradient();
     }
@@ -154,7 +154,7 @@ public:
         updateGradient();
     }
 
-    void setContentSize(const CCSize& size) override {
+    void setContentSize(CCSize const& size) override {
         CCSprite::setContentSize(size);
 
         m_sQuad.bl.vertices = {0.0f, 0.0f, 0.0f};
@@ -165,7 +165,7 @@ public:
         updateGradient();
     }
 
-    void setVector(const CCPoint&) {}
+    void setVector(CCPoint const&) {}
 
     void draw() override {
         CC_NODE_DRAW_SETUP();
@@ -242,7 +242,7 @@ public:
             // pa no romper la escala calculada al crear el blur
             auto targetTex = m_syncTarget->getTexture();
             if (targetTex && targetTex != this->getTexture()) {
-                // guardar tamaño original pa que setTextureRect no lo rompa
+                // guardar tamano original pa que setTextureRect no lo rompa
                 auto savedSize = this->getContentSize();
                 auto savedScale = this->getScale();
 
@@ -253,7 +253,7 @@ public:
                 auto texSize = targetTex->getContentSize();
                 this->setTextureRect(CCRect(0, 0, texSize.width, texSize.height));
 
-                // restaurar tamaño y escala originales pa no romper el layout
+                // restaurar tamano y escala originales pa no romper el layout
                 this->setContentSize(savedSize);
                 this->setScale(savedScale);
             }

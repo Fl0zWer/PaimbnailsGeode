@@ -43,7 +43,7 @@ int  FramebufferCapture::s_maxTextureSize = 0;
 
 bool FramebufferCapture::isCapturing() { return s_isCapturing; }
 
-std::pair<int, int> FramebufferCapture::getCaptureSize() {
+ std::pair<int, int> FramebufferCapture::getCaptureSize() {
     return { s_captureW, s_captureH };
 }
 
@@ -108,21 +108,16 @@ static CaptureQualitySettings getQualitySettings() {
     settings.useAntialiasing    = true;
     settings.highQualityFiltering = true;
 
-    try {
-        std::string res = Mod::get()->getSettingValue<std::string>("capture-resolution");
-        if      (res == "720p")  settings.targetWidth = 1280;
-        else if (res == "1080p") settings.targetWidth = 1920;
-        else if (res == "1440p") settings.targetWidth = 2560;
-        else if (res == "4k")    settings.targetWidth = 3840;
-        else if (res == "8k")    settings.targetWidth = 7680;
-        else if (res == "ultra") { settings.targetWidth = 3840; settings.supersampleFactor = 2; }
-        else                     settings.targetWidth = 1920;
+    std::string res = Mod::get()->getSettingValue<std::string>("capture-resolution");
+    if      (res == "720p")  settings.targetWidth = 1280;
+    else if (res == "1080p") settings.targetWidth = 1920;
+    else if (res == "1440p") settings.targetWidth = 2560;
+    else if (res == "4k")    settings.targetWidth = 3840;
+    else if (res == "8k")    settings.targetWidth = 7680;
+    else if (res == "ultra") { settings.targetWidth = 3840; settings.supersampleFactor = 2; }
+    else                     settings.targetWidth = 1920;
 
-        log::info("[FramebufferCapture] Resolution setting: '{}' -> Target Width: {}", res, settings.targetWidth);
-    } catch (...) {
-        settings.targetWidth = 1920;
-        log::warn("[FramebufferCapture] Failed to read resolution setting, defaulting to 1080p");
-    }
+    log::info("[FramebufferCapture] Resolution setting: '{}' -> Target Width: {}", res, settings.targetWidth);
 
     return settings;
 }
@@ -132,7 +127,7 @@ static CaptureQualitySettings getQualitySettings() {
 // ─────────────────────────────────────────────────────────────
 void FramebufferCapture::requestCapture(
     int levelID,
-    std::function<void(bool, CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback,
+    geode::CopyableFunction<void(bool, CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback,
     CCNode* nodeToCapture
 ) {
     log::info("[FramebufferCapture] Capture requested for level {}", levelID);
@@ -150,9 +145,12 @@ void FramebufferCapture::requestCapture(
 void FramebufferCapture::cancelPending() {
     if (s_request.active) {
         log::info("[FramebufferCapture] Pending capture cancelled");
-        s_request.active   = false;
-        s_request.callback = nullptr;
     }
+    // siempre liberar el callback para soltar cualquier Ref<> capturado
+    // (la lambda puede sobrevivir despues de ejecutar si solo se puso active=false)
+    s_request.active   = false;
+    s_request.callback = nullptr;
+    s_request.nodeToCapture = nullptr;
 }
 
 bool FramebufferCapture::hasPendingCapture() {
@@ -260,22 +258,16 @@ void FramebufferCapture::processDeferredCallbacks() {
     log::debug("[FramebufferCapture] Processing {} deferred callbacks", s_deferredCallbacks.size());
 
     for (auto& d : s_deferredCallbacks) {
-        try {
-            if (d.callback) {
-                // chequeo rapido textura
-                if (d.texture) {
-                    try { d.texture->getContentSize(); }
-                    catch (...) { d.texture = nullptr; d.success = false; }
-                }
-                d.callback(d.success, d.texture, d.rgbaData, d.width, d.height);
+        if (d.callback) {
+            // validacion de textura sin excepciones — verificar puntero directamente
+            if (d.texture && d.texture->getPixelsWide() == 0) {
+                d.texture = nullptr;
+                d.success = false;
             }
-            if (d.texture) {
-                try { d.texture->release(); } catch (...) {}
-            }
-        } catch (const std::exception& e) {
-            log::error("[FramebufferCapture] Exception in deferred callback: {}", e.what());
-        } catch (...) {
-            log::error("[FramebufferCapture] Unknown exception in deferred callback");
+            d.callback(d.success, d.texture, d.rgbaData, d.width, d.height);
+        }
+        if (d.texture) {
+            d.texture->release();
         }
     }
 
@@ -321,7 +313,7 @@ static CCTexture2D* createTextureFromRGBA(const uint8_t* data, int W, int H) {
 // auxiliar: chequea si buffer es color uniforme
 // devuelve true si imagen tiene contenido variado
 // ─────────────────────────────────────────────────────────────
-static bool pixelBufferHasContent(const std::vector<uint8_t>& pixels, int width, int height) {
+static bool pixelBufferHasContent(std::vector<uint8_t> const& pixels, int width, int height) {
     if (pixels.size() < 4) return false;
 
     uint8_t r0 = pixels[0], g0 = pixels[1], b0 = pixels[2];
@@ -348,16 +340,15 @@ static bool pixelBufferHasContent(const std::vector<uint8_t>& pixels, int width,
 //   2. si uniforme, prueba fbo 0 (framebuffer estandar)
 //   3. si sigue uniforme, recurre a rerender
 // ─────────────────────────────────────────────────────────────
-void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW, int viewportH, const CaptureQualitySettings& quality) {
-    try {
-        auto* director = CCDirector::sharedDirector();
+void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
+    auto* director = CCDirector::sharedDirector();
         if (!director) {
             log::error("[FramebufferCapture] CCDirector is null");
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
             return;
         }
 
-        // ── reune valores tamaño para diagnostico ──
+        // ── reune valores tamano para diagnostico ──
         auto* glView = director->getOpenGLView();
         CCSize frameSize = glView ? glView->getFrameSize() : CCSize(0, 0);
         CCSize winPixels = director->getWinSizeInPixels();
@@ -377,9 +368,9 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         log::info("  current FBO    = {}", currentFBO);
 
         // ── determina dimensiones lectura ────────────────────────
-        // usa tamaño frame (dimensiones reales ventana)
+        // usa tamano frame (dimensiones reales ventana)
         // viewport en swapBuffers puede no coincidir
-        // pero tamaño frame es lo que ventana contiene
+        // pero tamano frame es lo que ventana contiene
         int glWidth  = static_cast<int>(frameSize.width);
         int glHeight = static_cast<int>(frameSize.height);
 
@@ -434,7 +425,7 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             glBindFramebuffer(GL_FRAMEBUFFER, currentFBO);
         }
 
-        // ── intento 3: prueba lectura tamaño viewport fbo 0 ────
+        // ── intento 3: prueba lectura tamano viewport fbo 0 ────
         // en algunos sistemas, viewport es menor que frame
         // y contenido juego solo esta en region viewport
         if (!hasContent && (currentViewport[2] != glWidth || currentViewport[3] != glHeight)
@@ -610,11 +601,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         if (s_request.callback) {
             s_deferredCallbacks.push_back({s_request.callback, true, texture, outBuffer, outW, outH});
         }
-
-    } catch (const std::exception& e) {
-        log::error("[FramebufferCapture] Exception in direct capture: {}", e.what());
-        if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
-    }
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -633,9 +619,8 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 //   • chequeo limite gpu via gl_max_texture_size.
 //   • glfinish() antes de leer asegura renderizado listo.
 // ─────────────────────────────────────────────────────────────
-void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int viewportH, const CaptureQualitySettings& quality) {
-    try {
-        auto* director = CCDirector::sharedDirector();
+void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
+    auto* director = CCDirector::sharedDirector();
         if (!director) {
             log::error("[FramebufferCapture] CCDirector is null");
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
@@ -658,7 +643,7 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         int renderW = std::max(1, targetWidth);
         int renderH = std::max(1, static_cast<int>(std::round(renderW / aspect)));
 
-        // ── limita a tamaño maximo textura gpu ────────────────
+        // ── limita a tamano maximo textura gpu ────────────────
         int maxTex = getMaxTextureSize();
         if (renderW > maxTex || renderH > maxTex) {
             log::warn("[FramebufferCapture] Requested {}x{} exceeds GL_MAX_TEXTURE_SIZE={}, clamping",
@@ -817,21 +802,13 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         if (s_request.callback) {
             s_deferredCallbacks.push_back({s_request.callback, true, texture, rgbaBuffer, W, H});
         }
-
-    } catch (const std::exception& e) {
-        log::error("[FramebufferCapture] Exception during rerender: {}", e.what());
-        if (s_request.callback) {
-            s_deferredCallbacks.push_back({s_request.callback, false, nullptr, nullptr, 0, 0});
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────
 // doCaptureNode - renderiza nodo unico a fbo
 // ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureNode(CCNode* node) {
-    try {
-        log::info("[FramebufferCapture] Capturing specific node");
+    log::info("[FramebufferCapture] Capturing specific node");
 
         if (!node) {
             log::error("[FramebufferCapture] Node is null");
@@ -904,13 +881,6 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
         if (s_request.callback) {
             s_deferredCallbacks.push_back({s_request.callback, true, texture, rgbaBuffer, W, H});
         }
-
-    } catch (const std::exception& e) {
-        log::error("[FramebufferCapture] Exception capturing node: {}", e.what());
-        if (s_request.callback) {
-            s_deferredCallbacks.push_back({s_request.callback, false, nullptr, nullptr, 0, 0});
-        }
-    }
 }
 
 // ─────────────────────────────────────────────────────────────

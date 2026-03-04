@@ -1,9 +1,6 @@
 #pragma once
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <cocos2d.h>
-#include <vector>
-#include <unordered_set>
-#include <unordered_map>
 
 // Helper to mark mod buttons
 class PaimonButtonHighlighter {
@@ -28,19 +25,4 @@ public:
         std::string id = btn->getID();
         return id.find("paimon-mod-btn") == 0;
     }
-    
-    // Legacy no-ops kept for API compatibility
-    
-    static void updateButtonScale(CCMenuItemSpriteExtra* btn) {}
-    
-    static void unregisterButton(CCMenuItemSpriteExtra* btn) {}
-    
-    static void ensureScaleCaptured(CCMenuItemSpriteExtra* btn) {}
-    
-    static float getBaseScale(CCMenuItemSpriteExtra* btn) { 
-        return btn ? btn->getScale() : 1.0f; 
-    }
-    
-    static void highlightAll() {}
-    static void restoreAll() {}
 };

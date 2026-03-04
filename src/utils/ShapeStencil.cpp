@@ -7,7 +7,7 @@ using namespace cocos2d;
 #define M_PI 3.14159265358979323846
 #endif
 
-// Helper: crea un CCDrawNode con un polígono regular de N lados
+// Helper: crea un CCDrawNode con un poligono regular de N lados
 static CCDrawNode* drawRegularPolygon(int sides, float radius, CCPoint center) {
     auto draw = CCDrawNode::create();
     std::vector<CCPoint> verts;
@@ -41,16 +41,16 @@ static CCDrawNode* drawStar(int points, float outerR, float innerR, CCPoint cent
     return draw;
 }
 
-// Helper: corazón aproximado con polígono
+// Helper: corazon aproximado con poligono
 static CCDrawNode* drawHeart(float size, CCPoint center) {
     auto draw = CCDrawNode::create();
-    // Corazón paramétrico
+    // Corazon parametrico
     const int segments = 60;
     std::vector<CCPoint> verts;
     verts.reserve(segments);
     for (int i = 0; i < segments; i++) {
         float t = static_cast<float>(2.0 * M_PI * i / segments);
-        // Fórmula paramétrica del corazón
+        // Formula parametrica del corazon
         float x = 16.0f * powf(sinf(t), 3.0f);
         float y = 13.0f * cosf(t) - 5.0f * cosf(2*t) - 2.0f * cosf(3*t) - cosf(4*t);
         // Normalizar a [-1, 1] y escalar
@@ -64,12 +64,12 @@ static CCDrawNode* drawHeart(float size, CCPoint center) {
     return draw;
 }
 
-// Helper: círculo con muchos segmentos
+// Helper: circulo con muchos segmentos
 static CCDrawNode* drawCircle(float radius, CCPoint center) {
     return drawRegularPolygon(64, radius, center);
 }
 
-CCNode* createShapeStencil(const std::string& shapeName, float size) {
+CCNode* createShapeStencil(std::string const& shapeName, float size) {
     float half = size / 2.f;
     CCPoint center = ccp(half, half);
     
@@ -105,7 +105,7 @@ CCNode* createShapeStencil(const std::string& shapeName, float size) {
     
     if (draw) {
         draw->setContentSize({size, size});
-        // NO setPosition ni setAnchorPoint: los vértices ya están dibujados
+        // NO setPosition ni setAnchorPoint: los vertices ya estan dibujados
         // en coordenadas absolutas centradas en (half, half) dentro del nodo.
         
         auto container = CCNode::create();
@@ -135,7 +135,7 @@ CCNode* createShapeStencil(const std::string& shapeName, float size) {
 
 // === BORDER: dibuja solo el contorno de la forma ===
 
-// Helper: genera vértices de un polígono regular
+// Helper: genera vertices de un poligono regular
 static std::vector<CCPoint> getRegularPolygonVerts(int sides, float radius, CCPoint center) {
     std::vector<CCPoint> verts;
     verts.reserve(sides);
@@ -149,7 +149,7 @@ static std::vector<CCPoint> getRegularPolygonVerts(int sides, float radius, CCPo
     return verts;
 }
 
-// Helper: genera vértices de estrella
+// Helper: genera vertices de estrella
 static std::vector<CCPoint> getStarVerts(int points, float outerR, float innerR, CCPoint center) {
     int totalVerts = points * 2;
     std::vector<CCPoint> verts;
@@ -165,7 +165,7 @@ static std::vector<CCPoint> getStarVerts(int points, float outerR, float innerR,
     return verts;
 }
 
-// Helper: genera vértices de corazón
+// Helper: genera vertices de corazon
 static std::vector<CCPoint> getHeartVerts(float size, CCPoint center) {
     const int segments = 60;
     std::vector<CCPoint> verts;
@@ -180,8 +180,8 @@ static std::vector<CCPoint> getHeartVerts(float size, CCPoint center) {
     return verts;
 }
 
-// Obtener vértices de la forma por nombre
-static std::vector<CCPoint> getShapeVerts(const std::string& shapeName, float half, CCPoint center) {
+// Obtener vertices de la forma por nombre
+static std::vector<CCPoint> getShapeVerts(std::string const& shapeName, float half, CCPoint center) {
     if (shapeName == "circle") return getRegularPolygonVerts(64, half, center);
     if (shapeName == "triangle") return getRegularPolygonVerts(3, half, center);
     if (shapeName == "diamond") return getRegularPolygonVerts(4, half, center);
@@ -194,7 +194,7 @@ static std::vector<CCPoint> getShapeVerts(const std::string& shapeName, float ha
     return {};
 }
 
-CCNode* createShapeBorder(const std::string& shapeName, float size, float thickness, ccColor3B color, GLubyte opacity) {
+CCNode* createShapeBorder(std::string const& shapeName, float size, float thickness, ccColor3B color, GLubyte opacity) {
     float half = size / 2.f;
     CCPoint center = ccp(half, half);
     
@@ -211,7 +211,7 @@ CCNode* createShapeBorder(const std::string& shapeName, float size, float thickn
         }
         
         draw->setContentSize({size, size});
-        // NO setPosition: los vértices ya están en coordenadas centradas en (half, half)
+        // NO setPosition: los vertices ya estan en coordenadas centradas en (half, half)
         
         auto container = CCNode::create();
         container->setContentSize({size, size});

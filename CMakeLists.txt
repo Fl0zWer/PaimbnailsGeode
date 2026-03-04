@@ -39,14 +39,6 @@ elseif (APPLE)
     message(STATUS "Building for macOS: arm64 + x86_64")
 endif()
 
-# Optional WebP support: define HAVE_WEBP and link libwebp on your system or via CPM.
-option(USE_WEBP "Enable WebP encode/decode (requires libwebp)" OFF)
-if (USE_WEBP)
-    add_compile_definitions(HAVE_WEBP=1)
-    # If you have libwebp installed, uncomment the following and adjust as needed:
-    # find_package(WebP REQUIRED)
-    # target_link_libraries(${PROJECT_NAME} WebP::webp WebP::webpdemux)
-endif()
 
 # ==========================================
 # CONFIGURACIONES POR PLATAFORMA

@@ -1,10 +1,8 @@
 #include <Geode/modify/LevelAreaInnerLayer.hpp>
-#include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
-#include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../managers/ThumbnailLoader.hpp"
@@ -18,12 +16,12 @@ protected:
 
         this->setTitle(title.c_str());
         
-        auto m_size = this->m_mainLayer->getContentSize();
-        
+        auto contentSize = this->m_mainLayer->getContentSize();
+
         auto spr = CCSprite::createWithTexture(tex);
         if (spr) {
             float maxWidth = 340.f;
-            float maxHeight = 220.f; // espacio pa título y botones
+            float maxHeight = 220.f; // espacio pa titulo y botones
             
             float scaleX = maxWidth / spr->getContentWidth();
             float scaleY = maxHeight / spr->getContentHeight();
@@ -31,7 +29,7 @@ protected:
             if (scale > 1.0f) scale = 1.0f; 
             
             spr->setScale(scale);
-            spr->setPosition(m_size / 2);
+            spr->setPosition(contentSize / 2);
             this->m_mainLayer->addChild(spr);
         }
         
@@ -53,20 +51,25 @@ public:
 };
 
 class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("LevelAreaInnerLayer::init", geode::Priority::Late);
+    }
+
     struct Fields {
         std::unordered_map<int, CCSprite*> m_doorThumbnails;
         bool m_thumbnailsAdded = false;
     };
 
+    $override
     bool init(bool returning) {
-        log::info("[LevelAreaInnerLayer] init() called with returning={}", returning);
-        
+        log::debug("[LevelAreaInnerLayer] init() called with returning={}", returning);
+
         if (!LevelAreaInnerLayer::init(returning)) {
             return false;
         }
 
-        log::info("[LevelAreaInnerLayer] Init successful, scheduling thumbnail addition");
-        
+        log::debug("[LevelAreaInnerLayer] Init successful, scheduling thumbnail addition");
+
         // mini delay pa que ya existan las puertas
         this->scheduleOnce(schedule_selector(PaimonLevelAreaInnerLayer::addThumbnailsToDoors), 0.1f);
 
@@ -78,8 +81,8 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
         if (fields->m_thumbnailsAdded) return;
         fields->m_thumbnailsAdded = true;
 
-        log::info("[LevelAreaInnerLayer] Adding thumbnails to main level doors");
-        
+        log::debug("[LevelAreaInnerLayer] Adding thumbnails to main level doors");
+
         // niveles main del 1 al 21
         std::vector<int> mainLevelIDs;
         for (int i = 1; i <= 21; i++) {
@@ -130,7 +133,6 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
         log::info("[LevelAreaInnerLayer] Adding thumbnail for level {}", levelID);
 
-        auto doorSize = doorNode->getContentSize();
         std::string fileName = fmt::format("{}.png", levelID);
         ThumbnailLoader::get().requestLoad(
             levelID,
@@ -181,7 +183,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     }
     
     void checkAndAddButton(float) {
-        // no metas el botón en mi propio popup
+        // no metas el boton en mi propio popup
         if (this->getID() == "SimpleThumbnailPopup") return;
         
         int foundLevelID = 0;
@@ -199,9 +201,6 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                            else if (txt == "The Secret Hollow") foundLevelID = 5004;
                            
                            if (foundLevelID > 0) break;
-                      }
-                      // a veces el título viene en un textarea
-                      if (auto txtArea = typeinfo_cast<TextArea*>(child)) {
                       }
                  }
             }
@@ -242,7 +241,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                 // bajo el icono un 20%
                 iconSpr->setScale(0.8f);
                 
-                // botón circular verde
+                // boton circular verde
                 auto btnSprite = CircleButtonSprite::create(
                     iconSpr,
                     CircleBaseColor::Green,

@@ -25,7 +25,7 @@ public:
         return m_currentLanguage;
     }
 
-    std::string getString(const std::string& key) const {
+    std::string getString(std::string const& key) const {
         auto& translations = (m_currentLanguage == Language::SPANISH) ? m_spanish : m_english;
         auto it = translations.find(key);
         if (it != translations.end()) {
@@ -111,7 +111,7 @@ private:
             {"pause.only_moderators", "Solo moderadores pueden subir miniaturas"},
             {"pause.access_error", "Error al acceder a miniatura local"},
             {"pause.read_error", "Error al leer miniatura local"},
-            {"pause.gif_disabled", "Grabación GIF deshabilitada temporalmente"},
+            {"pause.gif_disabled", "Grabacion GIF deshabilitada temporalmente"},
             {"pause.playlayer_error", "Error: PlayLayer no disponible"},
             {"pause.capture_error", "Error al iniciar captura"},
             {"pause.gif_open_error", "Error: No se pudo abrir el GIF"},
@@ -204,7 +204,7 @@ private:
             {"bulk.title", "Subida Masiva"},
             {"bulk.select_folder_label", "Selecciona una carpeta con thumbnails"},
             {"bulk.progress_label", "0 / 0 thumbnails"},
-            {"bulk.info_text", "Los archivos deben tener el formato:\nlevelID.png (ej: 12345.png)\n\nSolo se subirán thumbnails de\nniveles que no tengan ya uno."},
+            {"bulk.info_text", "Los archivos deben tener el formato:\nlevelID.png (ej: 12345.png)\n\nSolo se subiran thumbnails de\nniveles que no tengan ya uno."},
             {"bulk.scanning", "Escaneando carpeta..."},
 
             // GIFUploadPopup
@@ -258,14 +258,14 @@ private:
             {"leaderboard.load_error", "Error al cargar leaderboard: {}"},
             {"leaderboard.parse_error", "Error al procesar JSON"},
             {"leaderboard.server_error", "Error del servidor"},
-            {"leaderboard.invalid_format", "Formato de datos inválido"},
+            {"leaderboard.invalid_format", "Formato de datos invalido"},
             {"leaderboard.loading", "Cargando..."},
             {"leaderboard.unknown", "Desconocido"},
             {"mods.title", "Moderadores de Paimbnails"},
             {"leaderboard.no_refreshes", "No more refreshes available today!"},
             {"leaderboard.no_gamemanager", "No se pudo obtener GameManager"},
-            {"leaderboard.empty_username", "Nombre de usuario vacío"},
-            {"leaderboard.no_image", "No se seleccionó imagen"},
+            {"leaderboard.empty_username", "Nombre de usuario vacio"},
+            {"leaderboard.no_image", "No se selecciono imagen"},
             {"leaderboard.png_open_error", "No se pudo abrir PNG"},
             {"leaderboard.profile_saved_local", "Profile saved locally (server upload disabled)"},
             {"leaderboard.uploading_profile", "Subiendo perfil..."},
@@ -310,7 +310,7 @@ private:
             {"report.placeholder", "Escribe aqui..."},
             {"report.empty_reason", "Debes especificar una razon"},
             {"report.sent_synced", "Reporte enviado y sincronizado: "},
-            {"report.saved_local", "Reporte guardado localmente (sin conexión)"},
+            {"report.saved_local", "Reporte guardado localmente (sin conexion)"},
 
             // PauseLayer
             {"pause.gif_not_supported", "Archivos GIF no soportados en esta plataforma"},
@@ -318,7 +318,7 @@ private:
             {"pause.create_texture_error", "Error: No se pudo crear textura"},
             {"pause.init_texture_error", "Error: No se pudo inicializar textura"},
             {"pause.username_error", "Error: No se pudo obtener nombre de usuario"},
-            {"pause.gif_recording_started", "Grabación GIF iniciada"},
+            {"pause.gif_recording_started", "Grabacion GIF iniciada"},
 
             // Ban System
             {"ban.list.title", "Baneados"},
@@ -346,31 +346,31 @@ private:
             {"ban.profile.read_error", "No se pudo leer el usuario"},
 
             // Profile Music
-            {"music.title", "Música de Perfil"},
+            {"music.title", "Musica de Perfil"},
             {"music.load_song", "Cargar"},
             {"music.play_preview", "Reproducir"},
             {"music.stop_preview", "Detener"},
             {"music.save", "Guardar"},
             {"music.delete", "Eliminar"},
-            {"music.song_id_placeholder", "ID de canción..."},
-            {"music.no_song_loaded", "Sin canción cargada"},
+            {"music.song_id_placeholder", "ID de cancion..."},
+            {"music.no_song_loaded", "Sin cancion cargada"},
             {"music.loading", "Cargando..."},
-            {"music.download_song", "Descargar canción"},
-            {"music.song_downloaded", "¡Canción descargada!"},
-            {"music.enter_song_id", "Ingresa un ID de canción"},
-            {"music.invalid_song_id", "ID de canción inválido"},
+            {"music.download_song", "Descargar cancion"},
+            {"music.song_downloaded", "¡Cancion descargada!"},
+            {"music.enter_song_id", "Ingresa un ID de cancion"},
+            {"music.invalid_song_id", "ID de cancion invalido"},
             {"music.load_error", "No se pudo cargar info. Verifica el ID."},
             {"music.waveform_error", "No se pudo analizar la forma de onda"},
-            {"music.download_error", "Error al descargar canción"},
+            {"music.download_error", "Error al descargar cancion"},
             {"music.fragment_too_long", "El fragmento no puede exceder 20 segundos"},
             {"music.fragment_too_short", "El fragmento debe ser al menos 5 segundos"},
             {"music.save_error", "Error al guardar: {}"},
-            {"music.saved", "¡Música de perfil guardada!"},
-            {"music.delete_confirm", "¿Eliminar música de perfil?"},
-            {"music.deleted", "Música de perfil eliminada"},
-            {"music.own_profile_only", "Solo puedes configurar música en tu propio perfil"},
+            {"music.saved", "¡Musica de perfil guardada!"},
+            {"music.delete_confirm", "¿Eliminar musica de perfil?"},
+            {"music.deleted", "Musica de perfil eliminada"},
+            {"music.own_profile_only", "Solo puedes configurar musica en tu propio perfil"},
             {"music.volume", "Volumen:"},
-            {"music.selection", "Selección:"}
+            {"music.selection", "Seleccion:"}
         };
 
         // English translations
