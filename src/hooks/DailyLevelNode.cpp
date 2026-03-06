@@ -1,11 +1,12 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/DailyLevelNode.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include "../managers/ThumbnailLoader.hpp"
 
 using namespace geode::prelude;
 
-// shaders
-const char* kVertexShaderDaily = R"(
+// shaders (static pa evitar colisiones de linkage con otros TU)
+static char const* kVertexShaderDaily = R"(
 attribute vec4 a_position;
 attribute vec4 a_color;
 attribute vec2 a_texCoord;
@@ -26,7 +27,7 @@ void main()
 }
 )";
 
-const char* kFragmentShaderBlurDaily = R"(
+static char const* kFragmentShaderBlurDaily = R"(
 #ifdef GL_ES
 precision mediump float;
 #endif
@@ -136,6 +137,8 @@ public:
                     }
                 }
                 break;
+            default:
+                break;
         }
         CCSprite::update(dt);
     }
@@ -157,9 +160,9 @@ public:
 
 class $modify(PaimonDailyLevelNode, DailyLevelNode) {
     struct Fields {
-        CCSprite* m_paimonThumb = nullptr;
-        CCClippingNode* m_paimonClipper = nullptr;
-        CCSprite* m_loadingSpinner = nullptr;
+        Ref<CCSprite> m_paimonThumb = nullptr;
+        Ref<CCClippingNode> m_paimonClipper = nullptr;
+        Ref<geode::LoadingSpinner> m_loadingSpinner = nullptr;
         int m_levelID = 0;
     };
 
@@ -169,28 +172,19 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         if (!level) return true;
         m_fields->m_levelID = level->m_levelID;
 
-        // saco el size/pos pa la miniatura
+        // saco el size pa la miniatura
         CCSize nodeSize = this->getContentSize();
-        CCPoint nodePos = {0.f, 0.f};
-        CCPoint nodeAnchor = {0.f, 0.f};
-        
+
         CCNode* bg = this->getChildByID("background");
         if (!bg) {
              // intento pillar un scale9sprite si no esta el id
-             if (this->getChildren() && this->getChildrenCount() > 0) {
-                 for(int i=0; i<this->getChildrenCount(); ++i) {
-                     if (auto sprite = typeinfo_cast<CCScale9Sprite*>(this->getChildren()->objectAtIndex(i))) {
-                         bg = sprite;
-                         break;
-                     }
-                 }
+             if (auto scale9 = this->getChildByType<CCScale9Sprite>(0)) {
+                 bg = scale9;
              }
         }
 
         if (bg) {
             nodeSize = bg->getContentSize();
-            nodePos = bg->getPosition();
-            nodeAnchor = bg->getAnchorPoint();
         } else if (nodeSize.width < 10.f) {
             // fallback de size
             nodeSize = CCSize(340.f, 230.f);
@@ -217,58 +211,56 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         // lo meto con z=1
         this->addChild(m_fields->m_paimonClipper, 1);
 
-        // creo el spinner de carga
-        auto spinner = CCSprite::create("loadingCircle.png");
-        if (!spinner) spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-        if (spinner) {
-            spinner->setScale(0.6f);
-            spinner->setOpacity(200);
-            spinner->setPosition({382.f / 2.f, 116.f / 2.f});
-            spinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.0f)));
-            m_fields->m_paimonClipper->addChild(spinner, 10);
-            m_fields->m_loadingSpinner = spinner;
-        }
+        // creo el spinner de carga (geode::LoadingSpinner gira solo y respeta content size)
+        auto spinner = geode::LoadingSpinner::create(25.f);
+        spinner->setPosition({382.f / 2.f, 116.f / 2.f});
+        m_fields->m_paimonClipper->addChild(spinner, 10);
+        m_fields->m_loadingSpinner = spinner;
 
         // pido la miniatura
         int levelID = level->m_levelID;
         std::string fileName = fmt::format("{}.png", levelID);
         
-        this->retain(); // me mantengo vivo pa el callback
-        ThumbnailLoader::get().requestLoad(levelID, fileName, [this](CCTexture2D* tex, bool success) {
+        // Ref<> mantiene vivo este nodo hasta que el callback termine
+        Ref<DailyLevelNode> self = this;
+        ThumbnailLoader::get().requestLoad(levelID, fileName, [self](CCTexture2D* tex, bool success) {
+            auto* fields = static_cast<PaimonDailyLevelNode*>(self.data())->m_fields.self();
             // chequeo rapido por si ya no existo
-            if (!this->getParent() && !this->m_fields->m_paimonClipper) {
-                this->release();
+            if (!self->getParent() && !fields->m_paimonClipper) {
                 return;
             }
 
             // quito el spinner
-            if (this->m_fields->m_loadingSpinner) {
-                this->m_fields->m_loadingSpinner->removeFromParent();
-                this->m_fields->m_loadingSpinner = nullptr;
+            if (fields->m_loadingSpinner) {
+                fields->m_loadingSpinner->removeFromParent();
+                fields->m_loadingSpinner = nullptr;
             }
 
-            if (success && tex && this->m_fields->m_paimonClipper) {
-                if (this->m_fields->m_paimonThumb) {
-                    this->m_fields->m_paimonThumb->removeFromParent();
+            if (success && tex && fields->m_paimonClipper) {
+                if (fields->m_paimonThumb) {
+                    fields->m_paimonThumb->removeFromParent();
                 }
                 
                 auto sprite = PaimonBlurSprite::createWithTexture(tex);
                 sprite->m_texSize = tex->getContentSizeInPixels();
-                this->m_fields->m_paimonThumb = sprite;
-                
+                fields->m_paimonThumb = sprite;
+
                 // seteo shader
                 auto shader = new CCGLProgram();
-                shader->initWithVertexShaderByteArray(kVertexShaderDaily, kFragmentShaderBlurDaily);
-                shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
-                shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
-                shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
-                shader->link();
-                shader->updateUniforms();
-                sprite->setShaderProgram(shader);
-                shader->release();
-                
+                if (shader) {
+                    shader->initWithVertexShaderByteArray(kVertexShaderDaily, kFragmentShaderBlurDaily);
+                    shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
+                    shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
+                    shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
+                    if (shader->link()) {
+                        shader->updateUniforms();
+                        sprite->setShaderProgram(shader);
+                    }
+                    shader->release();
+                }
+
                 // hago aspect fill
-                CCSize containerSize = this->m_fields->m_paimonClipper->getContentSize();
+                CCSize containerSize = fields->m_paimonClipper->getContentSize();
                 float sx = containerSize.width / sprite->getContentWidth();
                 float sy = containerSize.height / sprite->getContentHeight();
                 float scale = std::max(sx, sy); // aspect fill: cubro todo el area
@@ -283,9 +275,8 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
                 // arranco el loop del blur
                 sprite->startLoop();
 
-                this->m_fields->m_paimonClipper->addChild(sprite);
+                fields->m_paimonClipper->addChild(sprite);
             }
-            this->release();
         });
 
         return true;

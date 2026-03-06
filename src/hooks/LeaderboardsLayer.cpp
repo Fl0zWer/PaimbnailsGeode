@@ -9,7 +9,9 @@
 #include <Geode/binding/LeaderboardsLayer.hpp>
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Localization.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <fstream>
 #include <algorithm>
 #include <random>
@@ -17,6 +19,7 @@
 #include "../utils/FileDialog.hpp"
 #include "../layers/ModeratorsLayer.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../managers/LayerBackgroundManager.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -25,7 +28,7 @@ class ProfilePreviewPopup : public geode::Popup {
 protected:
     std::vector<uint8_t> m_data;
     std::string m_username;
-    std::function<void()> m_callback;
+    geode::CopyableFunction<void()> m_callback;
 
     bool init() {
         if (!Popup::init(360.f, 180.f)) return false;
@@ -39,22 +42,24 @@ protected:
             return false;
         }
         auto texture = new CCTexture2D();
-        texture->initWithImage(image);
+        if (!texture->initWithImage(image)) {
+            image->release();
+            texture->release();
+            return false;
+        }
         image->release();
         texture->autorelease();
 
         // recoger config actual
         ProfileConfig config;
-        try {
-            config.backgroundType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
-            config.blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
-            config.darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
-            config.useGradient = false; 
-            config.colorA = {255, 255, 255};
-            config.colorB = {255, 255, 255};
-            config.separatorColor = {0, 0, 0};
-            config.separatorOpacity = 50;
-        } catch (...) {}
+        config.backgroundType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
+        config.blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
+        config.darkness = Mod::get()->getSavedValue<float>("scorecell-background-darkness", 0.2f);
+        config.useGradient = false;
+        config.colorA = {255, 255, 255};
+        config.colorB = {255, 255, 255};
+        config.separatorColor = {0, 0, 0};
+        config.separatorOpacity = 50;
 
         // crear nodo de preview
         CCSize previewSize = {340, 50}; // tamano aprox de celda de puntuacion
@@ -65,7 +70,7 @@ protected:
             m_mainLayer->addChild(previewNode);
         }
 
-        // añadir boton subir
+        // anadir boton subir
         auto uploadBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("Upload"),
             this,
@@ -85,7 +90,7 @@ protected:
     }
 
 public:
-    static ProfilePreviewPopup* create(const std::vector<uint8_t>& data, const std::string& username, std::function<void()> callback) {
+    static ProfilePreviewPopup* create(std::vector<uint8_t> const& data, std::string const& username, geode::CopyableFunction<void()> callback) {
         auto ret = new ProfilePreviewPopup();
         ret->m_data = data;
         ret->m_username = username;
@@ -106,9 +111,16 @@ public:
 
 
 class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("LeaderboardsLayer::init", geode::Priority::Late);
+    }
+
     bool init(LeaderboardType type, LeaderboardStat stat) {
         if (!LeaderboardsLayer::init(type, stat)) return false;
         
+        // ── Aplicar fondo custom unificado ──
+        LayerBackgroundManager::get().applyBackground(this, "leaderboards");
+
         createPaimonButtons();
         updateTabColors(type);
         
@@ -116,53 +128,34 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void updateTabColors(LeaderboardType type) {
-        // buscar el menu que contiene las pestañas
-        CCMenu* tabMenu = nullptr;
-        CCArrayExt<CCNode*> children(this->getChildren());
-        for (auto child : children) {
-            if (auto menu = typeinfo_cast<CCMenu*>(child)) {
-                // heuristica: el menu de tabs suele tener los botones Top, Global, etc
-                if (menu->getChildrenCount() >= 3) {
-                    tabMenu = menu;
-                    break;
+        // usar node IDs oficiales de geode.node-ids para tabs
+        // cada tab es un menu separado: top-100-menu, global-menu, creators-menu, friends-menu
+        std::vector<std::string> tabIDs = {"top-100-menu", "global-menu", "creators-menu", "friends-menu"};
+
+        // reset todos los tabs
+        for (auto const& tabID : tabIDs) {
+            if (auto menu = this->getChildByID(tabID)) {
+                if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
+                    btn->setColor({255, 255, 255});
                 }
             }
         }
 
-        if (!tabMenu) return;
-
-        // reset
-        for (auto item : CCArrayExt<CCNode*>(tabMenu->getChildren())) {
-            if (auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(item)) {
-                btn->setColor({255, 255, 255});
-            }
-        }
-
-        // resaltar boton activo (mapeo aproximado)
-        // LeaderboardType::Default (Top 100) -> 0?
-        // LeaderboardType::Friends -> ?
-        // LeaderboardType::Relative (Global conmigo) -> ?
-        // LeaderboardType::Creators -> ?
-        
-        int tag = -1;
-        // NOTE: estos valores son suposiciones pa tabs estandar
-        // puede hacer falta ajustar segun checks reales de Geode/GD
-        // Default=Top100, Relative=Global, Creators=Creators, Friends=Friends
+        // mapeo tipo -> ID del menu tab
+        std::string activeID;
         switch (type) {
-            case LeaderboardType::Default: tag = 1; break; // Top (1)
-            case LeaderboardType::Global: tag = 2; break; // Global (2)
-            case LeaderboardType::Creator: tag = 3; break; // Creators (3)
-            case LeaderboardType::Friends: tag = 4; break; // Friends (4)
+            case LeaderboardType::Default: activeID = "top-100-menu"; break;
+            case LeaderboardType::Global: activeID = "global-menu"; break;
+            case LeaderboardType::Creator: activeID = "creators-menu"; break;
+            case LeaderboardType::Friends: activeID = "friends-menu"; break;
             default: break;
         }
-        
-        // en GD suelen ser tags: Top=1, Global=2, Creators=3, Friends=4
-        // comprobar si el hijo tiene ese tag
-        
-        if (tag != -1) {
-             if (auto btn = tabMenu->getChildByTag(tag)) {
-                if (auto spriteBtn = typeinfo_cast<CCMenuItemSpriteExtra*>(btn)) {
-                    spriteBtn->setColor({0, 255, 0});
+
+        // resaltar tab activo
+        if (!activeID.empty()) {
+            if (auto menu = this->getChildByID(activeID)) {
+                if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
+                    btn->setColor({0, 255, 0});
                 }
             }
         }
@@ -228,26 +221,25 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
     void onUploadBanner(CCObject*) {
         // comprobar permisos pa GIF
-        bool isMod = false;
-        bool isAdmin = false;
-        try {
-            isMod = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-            isAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
-        } catch(...) {}
+        bool isVip = Mod::get()->getSavedValue<bool>("is-verified-vip", false);
+        bool isMod = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
+        bool isAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
         
-        bool canUploadGIF = isMod || isAdmin;
+        bool canUploadGIF = isVip || isMod || isAdmin;
 
+        this->setTouchEnabled(false);
         auto result = pt::openImageFileDialog();
+        this->setTouchEnabled(true);
 
         if (result.has_value()) {
             auto path = result.value();
             if (!path.empty()) {
-                std::string ext = path.extension().string();
+                std::string ext = geode::utils::string::pathToString(path.extension());
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
                 if (ext == ".gif") {
                     if (!canUploadGIF) {
-                         Notification::create("GIFs are restricted to Mods/Admins/Donators", NotificationIcon::Error)->show();
+                         PaimonNotify::create("GIFs are restricted to Mods/Admins/Donators", NotificationIcon::Error)->show();
                          return;
                     }
                     this->processProfileGIF(path);
@@ -261,26 +253,26 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     void processProfileGIF(std::filesystem::path path) {
         std::ifstream file(path, std::ios::binary);
         if (!file) {
-            Notification::create("Failed to read GIF file", NotificationIcon::Error)->show();
+            PaimonNotify::create("Failed to read GIF file", NotificationIcon::Error)->show();
             return;
         }
         std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         
         if (data.size() > 10 * 1024 * 1024) {
-             Notification::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
+             PaimonNotify::create("GIF too large (max 10MB)", NotificationIcon::Error)->show();
              return;
         }
 
         int accountID = GJAccountManager::get()->m_accountID;
         std::string username = GJAccountManager::get()->m_username;
 
-        Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
 
-        ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [this](bool success, const std::string& msg) {
+        ThumbnailAPI::get().uploadProfileGIF(accountID, data, username, [this](bool success, std::string const& msg) {
             if (success) {
-                Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
             } else {
-                Notification::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
             }
         });
     }
@@ -290,7 +282,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         std::vector<uint8_t> data;
         CCImage img;
         if (!img.initWithImageFile(path.generic_string().c_str())) { 
-            Notification::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
+            PaimonNotify::create(Localization::get().getString("profile.image_open_error").c_str(), NotificationIcon::Error)->show(); 
             return; 
         }
 
@@ -300,7 +292,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         std::vector<uint8_t> rawData((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
 
         if (rawData.size() > 7 * 1024 * 1024) {
-             Notification::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
+             PaimonNotify::create("Image too large (max 7MB)", NotificationIcon::Error)->show();
              return;
         }
 
@@ -314,12 +306,17 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
         // Let's use it!
         
         ProfilePreviewPopup::create(rawData, username, [rawData, accountID, username]() {
-            Notification::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
-            ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, const std::string& msg) {
+            PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();
+            ThumbnailAPI::get().uploadProfile(accountID, rawData, username, [](bool success, std::string const& msg) {
                 if (success) {
-                    Notification::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                    bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
+                    if (isPending) {
+                        PaimonNotify::create("Background submitted! Pending moderator verification.", NotificationIcon::Warning)->show();
+                    } else {
+                        PaimonNotify::create(Localization::get().getString("capture.upload_success").c_str(), NotificationIcon::Success)->show();
+                    }
                 } else {
-                    Notification::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
+                    PaimonNotify::create((Localization::get().getString("capture.upload_error") + ": " + msg).c_str(), NotificationIcon::Error)->show();
                 }
             });
         })->show();

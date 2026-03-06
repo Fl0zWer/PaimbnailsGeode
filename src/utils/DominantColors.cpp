@@ -9,7 +9,7 @@
 #include <limits>
 
 namespace {
-    // helpers de conversión de espacio de color
+    // helpers de conversion de espacio de color
     
     struct LABColor {
         double L;  // luminosidad [0, 100]
@@ -80,7 +80,7 @@ namespace {
     }
     
     // LAB -> XYZ
-    static void labToXYZ(const LABColor& lab, double& X, double& Y, double& Z) {
+    static void labToXYZ(LABColor const& lab, double& X, double& Y, double& Z) {
         const double Xn = 95.047;
         const double Yn = 100.000;
         const double Zn = 108.883;
@@ -129,7 +129,7 @@ namespace {
     }
     
     // LAB -> RGB
-    static DCColor labToRGB(const LABColor& lab) {
+    static DCColor labToRGB(LABColor const& lab) {
         double X, Y, Z;
         labToXYZ(lab, X, Y, Z);
         return xyzToRGB(X, Y, Z);
@@ -137,8 +137,8 @@ namespace {
     
     // ==================== CIEDE2000 DELTA E ====================
     
-    // distancia LAB rápida (sirve pa hacer clustering)
-    static double deltaESimple(const LABColor& lab1, const LABColor& lab2) {
+    // distancia LAB rapida (sirve pa hacer clustering)
+    static double deltaESimple(LABColor const& lab1, LABColor const& lab2) {
         double dL = lab1.L - lab2.L;
         double da = lab1.a - lab2.a;
         double db = lab1.b - lab2.b;
@@ -146,8 +146,8 @@ namespace {
     }
     
     // Delta E (CIEDE2000) para comparaciones finas
-    static double deltaE2000(const LABColor& lab1, const LABColor& lab2) {
-        // implementación CIEDE2000 simplificada
+    static double deltaE2000(LABColor const& lab1, LABColor const& lab2) {
+        // implementacion CIEDE2000 simplificada
         
         const double kL = 1.0, kC = 1.0, kH = 1.0;
         
@@ -226,13 +226,13 @@ namespace {
     
     struct Cluster {
         LABColor centroid;
-        std::vector<size_t> members;  // índices de píxel
+        std::vector<size_t> members;  // indices de pixel
         uint32_t pixelCount = 0;
     };
     
     // inicializo K centroides con un K-Means++ simplificado
     static std::vector<LABColor> initializeCentroids(
-        const std::vector<LABColor>& pixels, int K, std::mt19937& rng
+        std::vector<LABColor> const& pixels, int K, std::mt19937& rng
     ) {
         std::vector<LABColor> centroids;
         if (pixels.empty()) return centroids;
@@ -248,15 +248,15 @@ namespace {
             
             for (size_t i = 0; i < pixels.size(); i++) {
                 double minDist = std::numeric_limits<double>::max();
-                for (const auto& c : centroids) {
-                    double d = deltaESimple(pixels[i], c);  // distancia rápida
+                for (auto const& c : centroids) {
+                    double d = deltaESimple(pixels[i], c);  // distancia rapida
                     minDist = std::min(minDist, d);
                 }
                 distances[i] = minDist * minDist;
                 totalDist += distances[i];
             }
             
-            if (totalDist == 0.0) break;  // evito división por cero
+            if (totalDist == 0.0) break;  // evito division por cero
             
             // elijo el siguiente centroide con prob proporcional a la distancia
             std::uniform_real_distribution<double> prob(0.0, totalDist);
@@ -271,7 +271,7 @@ namespace {
                 }
             }
             
-            // si no se eligió ninguno, meto uno random y sigo
+            // si no se eligio ninguno, meto uno random y sigo
             if (centroids.size() <= static_cast<size_t>(k)) {
                 centroids.push_back(pixels[dist(rng)]);
             }
@@ -282,7 +282,7 @@ namespace {
     
     // K-means en LAB (un poco optimizado)
     static std::vector<Cluster> kMeansClustering(
-        const std::vector<LABColor>& pixels, int K, int maxIterations = 10
+        std::vector<LABColor> const& pixels, int K, int maxIterations = 10
     ) {
         if (pixels.empty() || K <= 0) return {};
         
@@ -297,7 +297,7 @@ namespace {
         
         std::vector<Cluster> clusters(K);
         
-        // iteración de k-means (distancia simple para ir rápido)
+        // iteracion de k-means (distancia simple para ir rapido)
         for (int iter = 0; iter < maxIterations; iter++) {
             // limpio clusters
             for (auto& cluster : clusters) {
@@ -305,13 +305,13 @@ namespace {
                 cluster.pixelCount = 0;
             }
             
-            // asigno cada píxel al centroide más cercano
+            // asigno cada pixel al centroide mas cercano
             for (size_t i = 0; i < pixels.size(); i++) {
                 double minDist = std::numeric_limits<double>::max();
                 int bestCluster = 0;
                 
                 for (int k = 0; k < K; k++) {
-                    double dist = deltaESimple(pixels[i], centroids[k]);  // distancia rápida
+                    double dist = deltaESimple(pixels[i], centroids[k]);  // distancia rapida
                     if (dist < minDist) {
                         minDist = dist;
                         bestCluster = k;
@@ -339,7 +339,7 @@ namespace {
                 newCentroid.a = sumA / clusters[k].members.size();
                 newCentroid.b = sumB / clusters[k].members.size();
                 
-                // comprobación cutre de convergencia
+                // comprobacion cutre de convergencia
                 if (deltaESimple(centroids[k], newCentroid) > 1.0) {
                     converged = false;
                 }
@@ -351,9 +351,9 @@ namespace {
             if (converged) break;
         }
         
-        // ordeno clusters por tamaño (desc)
+        // ordeno clusters por tamano (desc)
         std::sort(clusters.begin(), clusters.end(),
-            [](const Cluster& a, const Cluster& b) {
+            [](Cluster const& a, Cluster const& b) {
                 return a.pixelCount > b.pixelCount;
             });
         
@@ -362,7 +362,7 @@ namespace {
     
     // ==================== UTILS ====================
     
-    // mira si el píxel parece UI/objeto (muy oscuro o negro/blanco puro)
+    // mira si el pixel parece UI/objeto (muy oscuro o negro/blanco puro)
     static bool isLikelyUIOrObject(uint8_t r, uint8_t g, uint8_t b) {
         // negro puro / casi negro (UI, texto)
         if (r < PaimonConstants::UI_BLACK_THRESHOLD && 
@@ -485,7 +485,7 @@ std::pair<DCColor, DCColor> DominantColors::extract(const uint8_t* rgb, int widt
     if (K < 2) {
         // muy pocas muestras
         double sumL = 0, sumA = 0, sumB = 0;
-        for (const auto& lab : labPixels) {
+        for (auto const& lab : labPixels) {
             sumL += lab.L; sumA += lab.a; sumB += lab.b;
         }
         LABColor avgLab;

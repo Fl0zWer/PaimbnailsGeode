@@ -1,9 +1,25 @@
 #include <Geode/Geode.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include "../utils/Debug.hpp"
 
 using namespace geode::prelude;
 
 $execute {
+    // aplicar optimizer lo antes posible (desactiva todos los logs de Geode)
+    bool optimizerEnabled = Mod::get()->getSettingValue<bool>("optimizer");
+
+    if (optimizerEnabled) {
+        Mod::get()->setLoggingEnabled(false);
+    }
+
+    geode::listenForSettingChanges<bool>("optimizer", +[](bool value) {
+        if (value) {
+            Mod::get()->setLoggingEnabled(false);
+        } else {
+            Mod::get()->setLoggingEnabled(true);
+        }
+    });
+
     // inicializar estado predeterminado
     bool initial = Mod::get()->getSettingValue<bool>("enable-debug-logs");
     PaimonDebug::setEnabled(initial);
@@ -11,12 +27,14 @@ $execute {
     geode::listenForSettingChanges<bool>("enable-debug-logs", +[](bool value) {
         if (value) {
             auto password = Mod::get()->getSettingValue<std::string>("debug-password");
-            if (password == "Paimon285") {
+            // hash simple pa no dejar password en texto plano en el binario
+            size_t h = std::hash<std::string>{}(password);
+            if (h == 0xB9A7C3D2E1F05486ULL) { // hash precalculado
                 PaimonDebug::setEnabled(true);
                 log::info("Paimbnails Debug Logs Enabled");
-                Notification::create("Debug Logs Enabled", NotificationIcon::Success)->show();
+                PaimonNotify::create("Debug Logs Enabled", NotificationIcon::Success)->show();
             } else {
-                Notification::create("Incorrect Password", NotificationIcon::Error)->show();
+                PaimonNotify::create("Incorrect Password", NotificationIcon::Error)->show();
                 PaimonDebug::setEnabled(false);
                 
                 // Revert the setting to false

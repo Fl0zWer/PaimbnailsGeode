@@ -10,7 +10,7 @@
 #include <string>
 #include <unordered_map>
 
-// overlay fullscreen pa editar pos/scale/opacity de botones. aceptar, reiniciar, selección, sliders, highlight
+// overlay fullscreen pa editar pos/scale/opacity de botones. aceptar, reiniciar, seleccion, sliders, highlight
 
 struct EditableButton {
     cocos2d::CCMenuItem* item = nullptr;
@@ -24,6 +24,8 @@ class ButtonEditOverlay : public cocos2d::CCLayer {
 protected:
     std::string m_sceneKey;
     cocos2d::CCMenu* m_targetMenu = nullptr;
+    std::vector<cocos2d::CCMenu*> m_extraMenus;
+    std::vector<geode::Ref<cocos2d::CCMenu>> m_disabledMenus;
     std::vector<EditableButton> m_editableButtons;
     EditableButton* m_selectedButton = nullptr;
     bool m_isClosing = false;
@@ -45,14 +47,15 @@ protected:
 
     // snap/alinear
     float m_snapThreshold = 8.0f; // px pa activar snap
-    cocos2d::CCDrawNode* m_snapGuideX = nullptr; // guía X
-    cocos2d::CCDrawNode* m_snapGuideY = nullptr; // guía Y
+    cocos2d::CCDrawNode* m_snapGuideX = nullptr; // guia X
+    cocos2d::CCDrawNode* m_snapGuideY = nullptr; // guia Y
     bool m_snappedX = false;
     bool m_snappedY = false;
 
-    bool init(const std::string& sceneKey, cocos2d::CCMenu* menu);
+    bool init(std::string const& sceneKey, cocos2d::CCMenu* menu, std::vector<cocos2d::CCMenu*> const& extraMenus = {});
     
     void collectEditableButtons();
+    void disableOtherMenus(cocos2d::CCNode* root);
     void createControls();
     void selectButton(EditableButton* btn);
     void updateSelectionHighlight();
@@ -84,7 +87,8 @@ protected:
     void onClose(cocos2d::CCObject*);
 
 public:
-    static ButtonEditOverlay* create(const std::string& sceneKey, cocos2d::CCMenu* menu);
+    static ButtonEditOverlay* create(std::string const& sceneKey, cocos2d::CCMenu* menu,
+                                     std::vector<cocos2d::CCMenu*> const& extraMenus = {});
     ~ButtonEditOverlay() override;
 };
 

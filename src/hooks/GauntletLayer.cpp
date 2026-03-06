@@ -9,7 +9,7 @@
 
 using namespace geode::prelude;
 
-const char* g_vertexShader = R"(
+static char const* g_vertexShader = R"(
     attribute vec4 a_position;
     attribute vec4 a_color;
     attribute vec2 a_texCoord;
@@ -32,7 +32,7 @@ const char* g_vertexShader = R"(
 
 // Gaussian blur 13-tap, linear sampling
 // pesos gaussianos sigma ~4
-const char* g_fragmentShaderGaussianBlur = R"(
+static char const* g_fragmentShaderGaussianBlur = R"(
     #ifdef GL_ES
     precision highp float;
     #endif
@@ -71,7 +71,7 @@ const char* g_fragmentShaderGaussianBlur = R"(
 )";
 
 // Kawase blur 1 pasada, rapido
-const char* g_fragmentShaderKawaseBlur = R"(
+static char const* g_fragmentShaderKawaseBlur = R"(
     #ifdef GL_ES
     precision highp float;
     #endif
@@ -99,7 +99,7 @@ const char* g_fragmentShaderKawaseBlur = R"(
 
 // Dual Kawase
 // una pasada, sampling
-const char* g_fragmentShaderDualKawase = R"(
+static char const* g_fragmentShaderDualKawase = R"(
     #ifdef GL_ES
     precision highp float;
     #endif
@@ -145,7 +145,7 @@ class GauntletThumbnailNode : public CCNode {
     bool m_firstLoad = true;
 
 public:
-    static GauntletThumbnailNode* create(const std::vector<int>& levelIDs) {
+    static GauntletThumbnailNode* create(std::vector<int> const& levelIDs) {
         auto node = new GauntletThumbnailNode();
         if (node && node->init(levelIDs)) {
             node->autorelease();
@@ -155,7 +155,7 @@ public:
         return nullptr;
     }
 
-    bool init(const std::vector<int>& levelIDs) {
+    bool init(std::vector<int> const& levelIDs) {
         if (!CCNode::init()) return false;
         
         m_levelIDs = levelIDs;
@@ -196,8 +196,10 @@ public:
         if (m_loadingStarted) return;
         m_loadingStarted = true;
 
+        // Ref<> mantiene vivo este nodo hasta que los callbacks terminen
+        Ref<GauntletThumbnailNode> self = this;
         for (int id : m_levelIDs) {
-            ThumbnailLoader::get().requestLoad(id, "", [this, id](CCTexture2D* tex, bool success) {
+            ThumbnailLoader::get().requestLoad(id, "", [self, id](CCTexture2D* tex, bool success) {
                 // precache
             }, 10, false);
         }
@@ -250,9 +252,11 @@ public:
             if (!found) return;
         }
 
-        ThumbnailLoader::get().requestLoad(id, "", [this](CCTexture2D* tex, bool success) {
-            if (success && tex) {
-                transitionTo(tex);
+        // Ref<> evita use-after-free si el nodo se destruye antes del callback
+        Ref<GauntletThumbnailNode> self = this;
+        ThumbnailLoader::get().requestLoad(id, "", [self](CCTexture2D* tex, bool success) {
+            if (success && tex && self->getParent()) {
+                self->transitionTo(tex);
             }
         }, 11, false);
     }
@@ -274,13 +278,17 @@ public:
 
         // shader Dual Kawase
         auto shader = new CCGLProgram();
+        if (!shader) return;
         shader->initWithVertexShaderByteArray(g_vertexShader, g_fragmentShaderDualKawase);
 
         shader->addAttribute(kCCAttributeNamePosition, kCCVertexAttrib_Position);
         shader->addAttribute(kCCAttributeNameColor, kCCVertexAttrib_Color);
         shader->addAttribute(kCCAttributeNameTexCoord, kCCVertexAttrib_TexCoords);
         
-        shader->link();
+        if (!shader->link()) {
+            shader->release();
+            return;
+        }
         shader->updateUniforms();
 
         shader->use();
@@ -340,6 +348,10 @@ public:
 
 
 class $modify(PaimonGauntletLayer, GauntletLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("GauntletLayer::init", geode::Priority::Late);
+    }
+
     bool init(GauntletType type) {
         if (!GauntletLayer::init(type)) return false;
         
@@ -348,10 +360,8 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
             bg->setVisible(false);
         } else {
             // fallback primer hijo = fondo
-            if (this->getChildrenCount() > 0) {
-                 if (auto node = typeinfo_cast<CCNode*>(this->getChildren()->objectAtIndex(0))) {
-                     node->setVisible(false);
-                 }
+            if (auto firstChild = this->getChildByType<CCNode>(0)) {
+                 firstChild->setVisible(false);
             }
         }
 
@@ -361,11 +371,9 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
         std::vector<int> ids;
         if (mapPack && mapPack->m_levels) {
             // m_levels = ccarray strings (ids)
-            for (int i = 0; i < mapPack->m_levels->count(); ++i) {
-                if (auto str = typeinfo_cast<CCString*>(mapPack->m_levels->objectAtIndex(i))) {
-                    try {
-                        ids.push_back(str->intValue());
-                    } catch(...) {}
+            for (auto* str : CCArrayExt<CCString*>(mapPack->m_levels)) {
+                if (str) {
+                    ids.push_back(str->intValue());
                 }
             }
         }

@@ -1,30 +1,31 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/utils/function.hpp>
 #include "../utils/HttpClient.hpp"
 #include "../utils/ThumbnailTypes.hpp"
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/PendingQueue.hpp"
 #include "../managers/ProfileThumbs.hpp"
-#include <functional>
 #include <string>
 
 /**
  * thumbnailapi - manager singleton operaciones miniaturas
  * maneja subida/bajada con servidor, cache, y fallback a local
+ * Geode v5: CopyableFunction reemplaza std::function
  */
 class ThumbnailAPI {
 public:
-    using UploadCallback = std::function<void(bool success, const std::string& message)>;
-    using DownloadCallback = std::function<void(bool success, cocos2d::CCTexture2D* texture)>;
-    using DownloadDataCallback = std::function<void(bool success, const std::vector<uint8_t>& data)>;
-    using ExistsCallback = std::function<void(bool exists)>;
-    using ModeratorCallback = std::function<void(bool isModerator, bool isAdmin)>;
-    using QueueCallback = std::function<void(bool success, const std::vector<PendingItem>& items)>;
-    using ActionCallback = std::function<void(bool success, const std::string& message)>;
+    using UploadCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
+    using DownloadCallback = geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture)>;
+    using DownloadDataCallback = geode::CopyableFunction<void(bool success, std::vector<uint8_t> const& data)>;
+    using ExistsCallback = geode::CopyableFunction<void(bool exists)>;
+    using ModeratorCallback = geode::CopyableFunction<void(bool isModerator, bool isAdmin)>;
+    using QueueCallback = geode::CopyableFunction<void(bool success, std::vector<PendingItem> const& items)>;
+    using ActionCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
 
     using ThumbnailInfo = ::ThumbnailInfo;
-    using ThumbnailListCallback = std::function<void(bool success, const std::vector<ThumbnailInfo>& thumbnails)>;
+    using ThumbnailListCallback = geode::CopyableFunction<void(bool success, std::vector<ThumbnailInfo> const& thumbnails)>;
 
     static ThumbnailAPI& get() {
         static ThumbnailAPI instance;
@@ -61,47 +62,56 @@ public:
      * @param username Username of uploader
      * @param callback Callback with success status and message
      */
-    void uploadThumbnail(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
 
     // subir miniatura GIF (solo mod/admin)
-    void uploadGIF(int levelId, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    void uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
 
     // subir sugerencia (no moderador) a /suggestions
-    void uploadSuggestion(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // subir propuesta de update (no moderador) a /updates
-    void uploadUpdate(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // subir imagen de perfil por accountID
-    void uploadProfile(int accountID, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback);
+    void uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
     // subir GIF de perfil por accountID
-    void uploadProfileGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback);
+    void uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
     // descargar imagen de perfil por accountID
-    void downloadProfile(int accountID, const std::string& username, DownloadCallback callback);
+    void downloadProfile(int accountID, std::string const& username, DownloadCallback callback);
+
+    // subir imagen de foto de perfil (profileimg) por accountID
+    void uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback);
+    // subir GIF de foto de perfil (profileimg) por accountID
+    void uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback);
+    // descargar foto de perfil (profileimg) por accountID
+    void downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf = false);
 
     // descargar imagen desde una URL cualquiera
-    void downloadFromUrl(const std::string& url, DownloadCallback callback);
+    void downloadFromUrl(std::string const& url, DownloadCallback callback);
     // descargar solo los datos binarios de una imagen desde una URL
-    void downloadFromUrlData(const std::string& url, DownloadDataCallback callback);
+    void downloadFromUrlData(std::string const& url, DownloadDataCallback callback);
 
 
     
     // subir config de perfil
-    void uploadProfileConfig(int accountID, const ProfileConfig& config, ActionCallback callback);
+    void uploadProfileConfig(int accountID, ProfileConfig const& config, ActionCallback callback);
     // bajar config de perfil
-    void downloadProfileConfig(int accountID, std::function<void(bool success, const ProfileConfig& config)> callback);
+    void downloadProfileConfig(int accountID, geode::CopyableFunction<void(bool success, ProfileConfig const& config)> callback);
 
     // descargar sugerencia desde /suggestions
     void downloadSuggestion(int levelId, DownloadCallback callback);
     // descargar imagen de sugerencia por nombre de archivo
-    void downloadSuggestionImage(const std::string& filename, DownloadCallback callback);
+    void downloadSuggestionImage(std::string const& filename, DownloadCallback callback);
     // descargar update desde /updates
     void downloadUpdate(int levelId, DownloadCallback callback);
     // descargar reportada (la mini actual del servidor)
     void downloadReported(int levelId, DownloadCallback callback);
+    // descargar background de perfil pendiente (para moderadores en centro de verificacion)
+    void downloadPendingProfile(int accountID, DownloadCallback callback);
 
 
     // sistema de votos
-    void getRating(int levelId, const std::string& username, const std::string& thumbnailId, std::function<void(bool success, float average, int count, int userVote)> callback);
-    void submitVote(int levelId, int stars, const std::string& username, const std::string& thumbnailId, ActionCallback callback);
+    void getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback);
+    void submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, ActionCallback callback);
 
     /**
      * descargar miniatura desde servidor (con cache)
@@ -122,15 +132,15 @@ public:
      * @param username Username to check
      * @param callback Callback with moderator status
      */
-    void checkModerator(const std::string& username, ModeratorCallback callback);
+    void checkModerator(std::string const& username, ModeratorCallback callback);
     // chequeo de moderador “seguro” con accountID > 0 obligatorio
-    void checkModeratorAccount(const std::string& username, int accountID, ModeratorCallback callback);
+    void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
     
     /**
      * confirmar estado mod de cualquier usuario (publico)
      * no hace chequeo seguridad usuario actual.
      */
-    void checkUserStatus(const std::string& username, ModeratorCallback callback);
+    void checkUserStatus(std::string const& username, ModeratorCallback callback);
 
     /**
      * obtener textura miniatura (prueba cache, local, luego servidor)
@@ -153,7 +163,7 @@ public:
      * @param username Moderator username
      * @param callback Callback with success status
      */
-    void claimQueueItem(int levelId, PendingCategory category, const std::string& username, ActionCallback callback);
+    void claimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback);
     
     /**
      * aceptar item cola verificacion
@@ -162,7 +172,7 @@ public:
      * @param username Moderator username
      * @param callback Callback with success status
      */
-    void acceptQueueItem(int levelId, PendingCategory category, const std::string& username, ActionCallback callback, const std::string& targetFilename = "");
+    void acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename = "");
     
     /**
      * rechazar item cola verificacion
@@ -172,7 +182,7 @@ public:
      * @param reason Rejection reason
      * @param callback Callback with success status
      */
-    void rejectQueueItem(int levelId, PendingCategory category, const std::string& username, const std::string& reason, ActionCallback callback);
+    void rejectQueueItem(int levelId, PendingCategory category, std::string const& username, std::string const& reason, ActionCallback callback);
     
     /**
      * enviar reporte al servidor
@@ -181,7 +191,7 @@ public:
      * @param note Report reason
      * @param callback Callback with success status
      */
-    void submitReport(int levelId, const std::string& username, const std::string& note, ActionCallback callback);
+    void submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback);
     
     /**
      * aÃ±adir moderador (solo admin)
@@ -189,7 +199,7 @@ public:
      * @param adminUser Admin username
      * @param callback Callback with success status
      */
-    void addModerator(const std::string& username, const std::string& adminUser, ActionCallback callback);
+    void addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback);
     
     /**
      * quitar moderador (solo admin) - reutiliza endpoint add-moderator con action=remove
@@ -197,7 +207,7 @@ public:
      * @param adminUser Admin username
      * @param callback Callback with success status
      */
-    void removeModerator(const std::string& username, const std::string& adminUser, ActionCallback callback);
+    void removeModerator(std::string const& username, std::string const& adminUser, ActionCallback callback);
     
     /**
      * borrar miniatura servidor (solo moderador)
@@ -205,18 +215,13 @@ public:
      * @param username Moderator username
      * @param callback Callback with success status
      */
-    void deleteThumbnail(int levelId, const std::string& username, int accountID, ActionCallback callback);
+    void deleteThumbnail(int levelId, std::string const& username, int accountID, ActionCallback callback);
     
-    // configuración
+    // configuracion
     void setServerEnabled(bool enabled);
-    bool isServerEnabled() const { return m_serverEnabled; }
-    
-    // estadísticas
-    int getUploadCount() const { return m_uploadCount; }
-    int getDownloadCount() const { return m_downloadCount; }
 
     // helper pa convertir datos a CCTexture2D
-    cocos2d::CCTexture2D* webpToTexture(const std::vector<uint8_t>& webpData);
+    cocos2d::CCTexture2D* webpToTexture(std::vector<uint8_t> const& webpData);
 
 private:
     ThumbnailAPI();
@@ -227,9 +232,7 @@ private:
 
     bool m_serverEnabled = true;
     int m_uploadCount = 0;
-    int m_downloadCount = 0;
-    
+
     // helper para cargar desde almacenamiento local
     cocos2d::CCTexture2D* loadFromLocal(int levelId);
 };
-

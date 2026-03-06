@@ -5,6 +5,7 @@
 #include <deque>
 #include <algorithm>
 #include <Geode/Geode.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 
 class ListThumbnailCarousel : public cocos2d::CCNode {
 protected:
@@ -14,7 +15,7 @@ protected:
     cocos2d::CCSprite* m_nextSprite = nullptr;
     cocos2d::CCSize m_size;
     GLubyte m_opacity = 255;
-    cocos2d::CCSprite* m_loadingCircle = nullptr;
+    geode::LoadingSpinner* m_loadingSpinner = nullptr;
     float m_waitForImageTime = 0.0f;
 
     // Animation State
@@ -25,14 +26,14 @@ protected:
     // Safety flag for async callbacks
     std::shared_ptr<bool> m_alive;
 
-    bool init(const std::vector<int>& levelIDs, cocos2d::CCSize size);
+    bool init(std::vector<int> const& levelIDs, cocos2d::CCSize size);
     void tryShowNextImage();
     void updateCarousel(float dt);
     void updatePan(float dt);
     void onImageLoaded(cocos2d::CCTexture2D* texture, int index);
 
 public:
-    static ListThumbnailCarousel* create(const std::vector<int>& levelIDs, cocos2d::CCSize size);
+    static ListThumbnailCarousel* create(std::vector<int> const& levelIDs, cocos2d::CCSize size);
     virtual ~ListThumbnailCarousel();
     
     void visit() override;

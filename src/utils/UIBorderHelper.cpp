@@ -14,19 +14,15 @@ void UIBorderHelper::createBorder(
 ) {
     if (!parent) return;
     
-    // borde superior
     auto topBorder = createTopBorder(centerX, centerY, width, height, thickness, color);
     parent->addChild(topBorder, zOrder);
     
-    // borde inferior
     auto bottomBorder = createBottomBorder(centerX, centerY, width, height, thickness, color);
     parent->addChild(bottomBorder, zOrder);
     
-    // borde izquierdo
     auto leftBorder = createLeftBorder(centerX, centerY, width, height, thickness, color);
     parent->addChild(leftBorder, zOrder);
     
-    // borde derecho
     auto rightBorder = createRightBorder(centerX, centerY, width, height, thickness, color);
     parent->addChild(rightBorder, zOrder);
 }

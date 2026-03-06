@@ -6,22 +6,13 @@ using namespace geode::prelude;
 
 class $modify(CaptureView, CCEGLView) {
     static void onModify(auto& self) {
-        // lo pongo con prioridad bajisima: despues de otros mods y antes del swap
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4834)
-#endif
-        auto res = self.setHookPriority("cocos2d::CCEGLView::swapBuffers", -9999);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-        if (res.isErr()) {
-            log::warn("[CaptureView] Failed to set hook priority: {}", res.unwrapErr());
-        }
+        // corre despues de otros mods pero antes del swap original
+        // Priority::Last + Pre = ultimo hook antes de llamar al original
+        (void)self.setHookPriorityPre("cocos2d::CCEGLView::swapBuffers", geode::Priority::Last);
     }
 
     void swapBuffers() {
-        // ejecuto la captura pendiente antes del swap (pilla el back buffer ya renderizado)
+        // ejecuto la captura pendiente antes del swap (agarra el back buffer ya renderizado)
         if (FramebufferCapture::hasPendingCapture()) {
             log::debug("[CaptureView] Executing capture in swapBuffers (back buffer)");
             FramebufferCapture::executeIfPending();
@@ -30,7 +21,7 @@ class $modify(CaptureView, CCEGLView) {
         // hago el swap de verdad
         CCEGLView::swapBuffers();
 
-        // proceso callbacks diferidos despues del swap
+        // proceso los callbacks diferidos despues del swap
         FramebufferCapture::processDeferredCallbacks();
     }
 };

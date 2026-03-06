@@ -1,8 +1,8 @@
 #include "CaptureLayerEditorPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "CapturePreviewPopup.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
-#include "../utils/FramebufferCapture.hpp"
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/CCMenuItemToggler.hpp>
@@ -24,10 +24,10 @@ static std::vector<std::pair<CCNode*, bool>> s_originalVisibilities;
 
 // ─── auxiliares ───────────────────────────────────────────────────
 
-static std::string simplifyClassName(const std::string& cls) {
+static std::string simplifyClassName(std::string const& cls) {
     std::string name = cls;
 
-    for (const char* prefix : {"class ", "struct "}) {
+    for (char const* prefix : {"class ", "struct "}) {
         if (name.find(prefix) == 0) {
             name = name.substr(std::strlen(prefix));
         }
@@ -44,8 +44,8 @@ static std::string simplifyClassName(const std::string& cls) {
 
 CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* previewPopup) {
     auto ret = new CaptureLayerEditorPopup();
-    ret->m_previewPopup = previewPopup;
-    if (ret->init()) {
+    if (ret && ret->init()) {
+        ret->m_previewPopup = previewPopup;
         ret->autorelease();
         return ret;
     }
@@ -56,7 +56,7 @@ CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* pr
 void CaptureLayerEditorPopup::restoreAllLayers() {
     for (auto& [node, vis] : s_originalVisibilities) {
         if (node) {
-            try { node->setVisible(vis); } catch (...) {}
+            node->setVisible(vis);
         }
     }
     s_originalVisibilities.clear();
@@ -158,7 +158,7 @@ void CaptureLayerEditorPopup::populateLayers() {
 
     // registra nodo con visibilidad real (sin ocultar auto)
     // editor muestra lo que hay en pantalla; usuario decide
-    auto addEntry = [&](CCNode* node, const std::string& name) {
+    auto addEntry = [&](CCNode* node, std::string const& name) {
         if (!node || added.count(node)) return;
         added.insert(node);
         if (needRecordOriginals) {
@@ -419,7 +419,7 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
 // ─── callbacks ─────────────────────────────────────────────────
 
 void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
-    auto* toggler = static_cast<CCMenuItemToggler*>(sender);
+    auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
     if (!toggler) return;
 
     int idx = toggler->getTag();
@@ -437,7 +437,7 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
 
     // actualiza color etiqueta
     if (m_listMenu) {
-        if (auto* label = dynamic_cast<CCLabelBMFont*>(
+        if (auto* label = typeinfo_cast<CCLabelBMFont*>(
                 m_listMenu->getChildByTag(1000 + idx))) {
             label->setColor(newVisible ? ccColor3B{255, 255, 255}
                                        : ccColor3B{150, 150, 150});
@@ -479,7 +479,7 @@ void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
     // muestra estado restaurado
     updateMiniPreview();
 
-    Notification::create(
+    PaimonNotify::create(
         Localization::get().getString("layers.restored").c_str(),
         NotificationIcon::Success
     )->show();

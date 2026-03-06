@@ -27,26 +27,29 @@ public:
     void saveDefaults();
 
     // obtener diseno guardado para boton; retorna nullopt si no personalizado
-    std::optional<ButtonLayout> getLayout(const std::string& sceneKey, const std::string& buttonID) const;
+    std::optional<ButtonLayout> getLayout(std::string const& sceneKey, std::string const& buttonID) const;
 
     // establecer diseno personalizado para boton
-    void setLayout(const std::string& sceneKey, const std::string& buttonID, const ButtonLayout& layout);
+    void setLayout(std::string const& sceneKey, std::string const& buttonID, const ButtonLayout& layout);
 
     // eliminar diseno personalizado para boton (revertir a default)
-    void removeLayout(const std::string& sceneKey, const std::string& buttonID);
+    void removeLayout(std::string const& sceneKey, std::string const& buttonID);
 
     // verificar si escena+boton tiene diseno personalizado
-    bool hasCustomLayout(const std::string& sceneKey, const std::string& buttonID) const;
+    bool hasCustomLayout(std::string const& sceneKey, std::string const& buttonID) const;
 
     // resetear todos disenos para escena especifica
-    void resetScene(const std::string& sceneKey);
+    void resetScene(std::string const& sceneKey);
+
+    // aplica disenos guardados a todos los items de un menu
+    void applyLayoutToMenu(std::string const& sceneKey, cocos2d::CCMenu* menu);
 
     // api defaults: posiciones base persistentes independientes de ediciones usuario
-    std::optional<ButtonLayout> getDefaultLayout(const std::string& sceneKey, const std::string& buttonID) const;
+    std::optional<ButtonLayout> getDefaultLayout(std::string const& sceneKey, std::string const& buttonID) const;
     // establecer default solo si ausente; evita sobreescribir una vez capturado
-    void setDefaultLayoutIfAbsent(const std::string& sceneKey, const std::string& buttonID, const ButtonLayout& layout);
+    void setDefaultLayoutIfAbsent(std::string const& sceneKey, std::string const& buttonID, const ButtonLayout& layout);
     // sobreescribir default para boton (usado para migraciones/ajustes)
-    void setDefaultLayout(const std::string& sceneKey, const std::string& buttonID, const ButtonLayout& layout);
+    void setDefaultLayout(std::string const& sceneKey, std::string const& buttonID, const ButtonLayout& layout);
 
 private:
     ButtonLayoutManager() = default;

@@ -1,8 +1,8 @@
 #pragma once
 
+#include <Geode/utils/function.hpp>
 #include <vector>
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <utility>
 
@@ -22,13 +22,9 @@ struct CaptureQualitySettings {
 /**
  * Captures the game scene by re-rendering into a high-resolution FBO.
  *
- * Works with shaders via a ShaderLayer::visit() hook that redirects
- * the shader output into our capture FBO instead of the screen.
+ * Works with shaders via direct back-buffer capture that already contains
+ * the final composited frame with all effects applied.
  * Resolution is configurable via mod.json "capture-resolution".
- *
- * During capture, ShaderLayerHook reads getCaptureSize() and temporarily
- * overrides ShaderLayer's internal FBO dimensions so shader effects
- * render at the capture resolution instead of the screen resolution.
  */
 class FramebufferCapture {
 public:
@@ -36,7 +32,7 @@ public:
     // Callback receives: (success, texture, rgbaData, width, height)
     static void requestCapture(
         int levelID, 
-        std::function<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,
+        geode::CopyableFunction<void(bool success, cocos2d::CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height)> callback,
         cocos2d::CCNode* nodeToCapture = nullptr
     );
     
@@ -49,13 +45,12 @@ public:
     // Returns whether a capture is pending.
     static bool hasPendingCapture();
     
-    // Whether a capture is currently in progress (used by ShaderLayerHook).
+    // Whether a capture is currently in progress.
     static bool isCapturing();
     
     // Current capture target dimensions (valid only when isCapturing() == true).
-    // Used by ShaderLayerHook to resize ShaderLayer's internal FBO.
     static std::pair<int, int> getCaptureSize();
-    
+
     // Process deferred callbacks (call after the full frame).
     static void processDeferredCallbacks();
     
@@ -65,13 +60,13 @@ public:
 private:
     struct CaptureRequest {
         int levelID;
-        std::function<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
+        geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
         cocos2d::CCNode* nodeToCapture = nullptr;
         bool active = false;
     };
     
     struct DeferredCallback {
-        std::function<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
+        geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback;
         bool success;
         cocos2d::CCTexture2D* texture;
         std::shared_ptr<uint8_t> rgbaData;
@@ -84,16 +79,16 @@ private:
     struct CaptureGuard {
         CaptureGuard(int w, int h);
         ~CaptureGuard();
-        CaptureGuard(const CaptureGuard&) = delete;
-        CaptureGuard& operator=(const CaptureGuard&) = delete;
+        CaptureGuard(CaptureGuard const&) = delete;
+        CaptureGuard& operator=(CaptureGuard const&) = delete;
     };
 
     // RAII guard that saves and restores critical GL state around a render pass.
     struct GLStateGuard {
         GLStateGuard();
         ~GLStateGuard();
-        GLStateGuard(const GLStateGuard&) = delete;
-        GLStateGuard& operator=(const GLStateGuard&) = delete;
+        GLStateGuard(GLStateGuard const&) = delete;
+        GLStateGuard& operator=(GLStateGuard const&) = delete;
     private:
         int m_viewport[4]{};
         int m_fbo = 0;
@@ -113,10 +108,10 @@ private:
     static void doCaptureNode(cocos2d::CCNode* node);
 
     // Re-render the scene into a separate FBO at the target resolution.
-    static void doCaptureRerender(int targetWidth, int viewportW, int viewportH, const CaptureQualitySettings& quality);
+    static void doCaptureRerender(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality);
 
     // Capture directly from the back-buffer and high-quality downscale.
-    static void doCaptureDirectWithScale(int targetWidth, int viewportW, int viewportH, const CaptureQualitySettings& quality);
+    static void doCaptureDirectWithScale(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality);
 
     // Vertical flip (OpenGL origin is bottom-left).
     static void flipVertical(std::vector<uint8_t>& pixels, int width, int height, int channels);
@@ -124,7 +119,7 @@ private:
     // High-quality Lanczos-3 downscale for RGBA buffers.
     // Returns a new buffer of size outW * outH * 4.
     static std::shared_ptr<uint8_t> lanczosDownscale(
-        const uint8_t* src, int srcW, int srcH,
+        uint8_t const* src, int srcW, int srcH,
         int outW, int outH
     );
 };

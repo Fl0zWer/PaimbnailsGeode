@@ -3,15 +3,17 @@
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
 #include <cmath>
 #include <unordered_set>
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/LevelColors.hpp"
 #include "../managers/ThumbnailLoader.hpp"
 #include "../utils/Constants.hpp"
-#include "../utils/SafeGuard.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/Shaders.hpp"
+#include "../utils/PaimonShaderSprite.hpp"
+#include "../layers/LevelCellSettingsPopup.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -19,246 +21,28 @@ using namespace Shaders;
 
 
 
-
-
-
-
-class PaimonShaderSprite : public CCSprite {
-public:
-    float m_intensity = 0.0f;
-    float m_time = 0.0f;
-    float m_brightness = 1.0f;
-    CCSize m_texSize = {0, 0};
-    
-    static PaimonShaderSprite* createWithTexture(CCTexture2D* texture) {
-        auto sprite = new PaimonShaderSprite();
-        if (sprite && sprite->initWithTexture(texture)) {
-            sprite->autorelease();
-            sprite->setID("paimon-shader-sprite"_spr);
-            return sprite;
-        }
-        CC_SAFE_DELETE(sprite);
-        return nullptr;
-    }
-
-    void draw() override {
-        // manual draw implementation pa saltarse hooks potenciales (ej: happy textures)
-        // que puedan crashear con shader sprites custom o texturas generadas.
-
-        CC_NODE_DRAW_SETUP();
-
-        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-        if (intensityLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
-        }
-        
-        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
-        if (timeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
-        }
-
-        GLint brightLoc = getShaderProgram()->getUniformLocationForName("u_brightness");
-        if (brightLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(brightLoc, m_brightness);
-        }
-        
-        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-        if (sizeLoc != -1) {
-            if (m_texSize.width == 0) {
-                    m_texSize = getTexture()->getContentSizeInPixels();
-            }
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, m_texSize.width, m_texSize.height);
-        }
-        
-        ccGLBlendFunc( m_sBlendFunc.src, m_sBlendFunc.dst );
-
-        if (getTexture()) {
-            ccGLBindTexture2D( getTexture()->getName() );
-        } else {
-            ccGLBindTexture2D(0);
-        }
-        
-        // fix: desvincular explicitamente cualquier vbo activo para evitar crashes en drivers (ej: atio6axx.dll)
-        // cuando paso punteros client-side a glvertexattribpointer.
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        ccGLEnableVertexAttribs( kCCVertexAttribFlag_PosColorTex );
-
-        #define kQuadSize sizeof(m_sQuad.bl)
-        uintptr_t offset = (uintptr_t)&m_sQuad;
-
-        // vertex
-        int diff = offsetof( ccV3F_C4B_T2F, vertices);
-        glVertexAttribPointer(kCCVertexAttrib_Position, 3, GL_FLOAT, GL_FALSE, kQuadSize, (void*) (offset + diff));
-
-        // texturas
-        diff = offsetof( ccV3F_C4B_T2F, texCoords);
-        glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
-
-        // color
-        diff = offsetof( ccV3F_C4B_T2F, colors);
-        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, kQuadSize, (void*)(offset + diff));
-
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-        
-        CHECK_GL_ERROR_DEBUG();
-        
-        CC_INCREMENT_GL_DRAWS(1);
-    }
-};
-
-class PaimonShaderGradient : public CCSprite {
-public:
-    float m_intensity = 0.0f;
-    float m_time = 0.0f;
-    CCSize m_texSize = {0, 0};
-    ccColor3B m_startColor = {255, 255, 255};
-    ccColor3B m_endColor = {255, 255, 255};
-
-    static PaimonShaderGradient* create(const ccColor4B& start, const ccColor4B& end) {
-        auto sprite = new PaimonShaderGradient();
-        
-        // creo una textura 2x2 blanca manualmente para asegurar que exista
-        unsigned char data[] = {
-            255, 255, 255, 255, 255, 255, 255, 255,
-            255, 255, 255, 255, 255, 255, 255, 255
-        };
-        
-        auto texture = new CCTexture2D();
-        if (texture && texture->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, 2, 2, {2.0f, 2.0f})) {
-            if (sprite && sprite->initWithTexture(texture)) {
-                texture->release(); // el sprite la retiene
-                sprite->autorelease();
-                sprite->setTextureRect({0, 0, 2, 2});
-                sprite->setStartColor({start.r, start.g, start.b});
-                sprite->setEndColor({end.r, end.g, end.b});
-                sprite->setOpacity(start.a);
-                return sprite;
-            }
-        }
-        
-        CC_SAFE_DELETE(texture);
-        CC_SAFE_DELETE(sprite);
-        return nullptr;
-    }
-
-    void setStartColor(const ccColor3B& color) {
-        m_startColor = color;
-        updateGradient();
-    }
-
-    void setEndColor(const ccColor3B& color) {
-        m_endColor = color;
-        updateGradient();
-    }
-    
-    void updateGradient() {
-        GLubyte opacity = getOpacity();
-        ccColor4B start4 = {m_startColor.r, m_startColor.g, m_startColor.b, opacity};
-        ccColor4B end4 = {m_endColor.r, m_endColor.g, m_endColor.b, opacity};
-        
-        // horizontal: izquierda=inicio, derecha=fin
-        // ccsprite quad: bl, br, tl, tr
-        m_sQuad.bl.colors = start4;
-        m_sQuad.tl.colors = start4;
-        m_sQuad.br.colors = end4;
-        m_sQuad.tr.colors = end4;
-    }
-    
-    void setOpacity(GLubyte opacity) override {
-        CCSprite::setOpacity(opacity);
-        updateGradient();
-    }
-    
-    void setContentSize(const CCSize& size) override {
-        CCSprite::setContentSize(size);
-        
-        // fix: actualizo vertices del quad manualmente para coincidir con content size
-        // sprite al tamaño bien, textura 2x2
-        m_sQuad.bl.vertices = {0.0f, 0.0f, 0.0f};
-        m_sQuad.br.vertices = {size.width, 0.0f, 0.0f};
-        m_sQuad.tl.vertices = {0.0f, size.height, 0.0f};
-        m_sQuad.tr.vertices = {size.width, size.height, 0.0f};
-        
-        updateGradient();
-    }
-    
-    // metodo dummy pa coincidir con interfaz cclayergradient
-    void setVector(const CCPoint& vec) {}
-
-    void draw() override {
-        // manual draw implementation pa saltarse hooks potenciales (ej: happy textures)
-        // que puedan crashear con setup de textura costom del gradiente.
-
-        CC_NODE_DRAW_SETUP();
-        
-        GLint intensityLoc = getShaderProgram()->getUniformLocationForName("u_intensity");
-        if (intensityLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(intensityLoc, m_intensity);
-        }
-        
-        GLint timeLoc = getShaderProgram()->getUniformLocationForName("u_time");
-        if (timeLoc != -1) {
-            getShaderProgram()->setUniformLocationWith1f(timeLoc, m_time);
-        }
-        
-        GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
-        if (sizeLoc != -1) {
-            // usar siempre content size actual pa efectos shader en gradiente
-            getShaderProgram()->setUniformLocationWith2f(sizeLoc, getContentSize().width, getContentSize().height);
-        }
-
-        ccGLBlendFunc( m_sBlendFunc.src, m_sBlendFunc.dst );
-
-        if (getTexture()) {
-            ccGLBindTexture2D( getTexture()->getName() );
-        } else {
-            ccGLBindTexture2D(0);
-        }
-        
-        // fix: desvincular explicitamente cualquier vbo activo para evitar crashes en drivers (ej: atio6axx.dll)
-        // cuando paso punteros client-side a glvertexattribpointer.
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-
-        ccGLEnableVertexAttribs( kCCVertexAttribFlag_PosColorTex );
-
-        #define kQuadSize sizeof(m_sQuad.bl)
-        uintptr_t offset = (uintptr_t)&m_sQuad;
-
-        // vertex
-        int diff = offsetof( ccV3F_C4B_T2F, vertices);
-        glVertexAttribPointer(kCCVertexAttrib_Position, 3, GL_FLOAT, GL_FALSE, kQuadSize, (void*) (offset + diff));
-
-        // texturas
-        diff = offsetof( ccV3F_C4B_T2F, texCoords);
-        glVertexAttribPointer(kCCVertexAttrib_TexCoords, 2, GL_FLOAT, GL_FALSE, kQuadSize, (void*)(offset + diff));
-
-        // color
-        diff = offsetof( ccV3F_C4B_T2F, colors);
-        glVertexAttribPointer(kCCVertexAttrib_Color, 4, GL_UNSIGNED_BYTE, GL_TRUE, kQuadSize, (void*)(offset + diff));
-
-        glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
-        CHECK_GL_ERROR_DEBUG();
-        CC_INCREMENT_GL_DRAWS(1);
-    }
-};
-
 class $modify(PaimonLevelCell, LevelCell) {
+    static void onModify(auto& self) {
+        // Late = ejecutar despuÃ©s de otros mods (NodeIDs, BetterInfo, etc.)
+        // para que los IDs de nodos ya estÃ©n asignados cuando aÃ±adimos thumbnails
+        (void)self.setHookPriorityPost("LevelCell::loadFromLevel", geode::Priority::Late);
+        (void)self.setHookPriorityPost("LevelCell::loadCustomLevelCell", geode::Priority::Late);
+    }
+
     struct Fields {
-        CCClippingNode* m_clippingNode = nullptr;
-        CCLayerColor* m_separator = nullptr;
-        CCNode* m_gradient = nullptr;
-        CCParticleSystemQuad* m_mythicParticles = nullptr;
-        CCLayerColor* m_darkOverlay = nullptr;
+        Ref<CCClippingNode> m_clippingNode = nullptr;
+        Ref<CCLayerColor> m_separator = nullptr;
+        Ref<CCNode> m_gradient = nullptr;
+        Ref<CCParticleSystemQuad> m_mythicParticles = nullptr;
+        Ref<CCLayerColor> m_darkOverlay = nullptr;
         float m_gradientTime = 0.0f;
-        ccColor3B m_gradientColorA;
-        ccColor3B m_gradientColorB;
-        CCSprite* m_gradientLayer = nullptr;
+        ccColor3B m_gradientColorA = {0, 0, 0};
+        ccColor3B m_gradientColorB = {0, 0, 0};
+        Ref<CCSprite> m_gradientLayer = nullptr;
         bool m_loaderConfigured = false;
-        CCSprite* m_loadingSpinner = nullptr;
+        Ref<geode::LoadingSpinner> m_loadingSpinner = nullptr;
         bool m_isBeingDestroyed = false;
-        CCSprite* m_thumbSprite = nullptr;
+        Ref<CCSprite> m_thumbSprite = nullptr;
         CCPoint m_thumbBasePos = {0.f, 0.f};
         CCPoint m_clipBasePos = {0.f, 0.f}; // posicion base del nodo de clipping
         CCPoint m_separatorBasePos = {0.f, 0.f}; // posicion base del separador
@@ -277,6 +61,24 @@ class $modify(PaimonLevelCell, LevelCell) {
         Ref<CCTexture2D> m_gifTexture = nullptr;
         Ref<CCTexture2D> m_staticTexture = nullptr;
         bool m_isHovering = false;
+
+        // cache de settings pa no leerlas cada frame (60fps)
+        bool m_settingsCached = false;
+        std::string m_cachedAnimType = "zoom-slide";
+        float m_cachedAnimSpeed = 1.0f;
+        std::string m_cachedAnimEffect = "none";
+        bool m_cachedHoverEnabled = true;
+        bool m_cachedCompactMode = false;
+        bool m_cachedEffectOnGradient = false;
+        std::string m_cachedBgType = "gradient";
+
+        // version de invalidacion: si cambia, recargar miniatura
+        int m_loadedInvalidationVersion = 0;
+
+        // version de settings del popup: si cambia, invalidar cache y re-aplicar
+        int m_loadedSettingsVersion = 0;
+
+        int m_cellLevelID = 0;
     };
     
     // destructor pa marcar celda como destruyendose
@@ -332,22 +134,8 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_loadingSpinner = nullptr;
         }
         
-        // crear spinner de carga con efecto de pulso
-        auto spinner = CCSprite::create("loadingCircle.png");
-        if (!spinner) {
-            // fallback a sprite frame si no se encuentra archivo
-            spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-        }
-        if (!spinner) {
-            // fallback: crear circulo simple
-            spinner = CCSprite::create();
-            auto circle = CCLayerColor::create({100, 100, 100, 200});
-            circle->setContentSize({40, 40});
-            spinner->addChild(circle);
-        }
-        
-        spinner->setScale(0.25f);
-        spinner->setOpacity(180);
+        // crear spinner usando geode::LoadingSpinner (10px diametro â‰ˆ loadingCircle.png * 0.25)
+        auto spinner = geode::LoadingSpinner::create(10.f);
         
         // posicionar en el centro del area de miniatura
         auto bg = m_backgroundLayer;
@@ -355,24 +143,15 @@ class $modify(PaimonLevelCell, LevelCell) {
             auto cs = bg->getContentSize();
             spinner->setPosition({cs.width - 75.f, cs.height / 2.f});
         } else {
-            spinner->setPosition({280.f, 30.f});
+            spinner->setPosition({PaimonConstants::LEVELCELL_SPINNER_FALLBACK_X, PaimonConstants::LEVELCELL_SPINNER_FALLBACK_Y});
         }
         
         spinner->setZOrder(999);
         
-        try {
-            spinner->setID("paimon-loading-spinner"_spr);
-        } catch (...) {}
+        spinner->setID("paimon-loading-spinner"_spr);
         
         this->addChild(spinner);
         fields->m_loadingSpinner = spinner;
-        
-        // animacion: solo rotacion
-        auto rotateAction = CCRepeatForever::create(
-            CCRotateBy::create(0.8f, 360.0f)
-        );
-        
-        spinner->runAction(rotateAction);
         
         // fade-in suave
         spinner->setOpacity(0);
@@ -382,13 +161,13 @@ class $modify(PaimonLevelCell, LevelCell) {
     void hideLoadingSpinner() {
         auto fields = m_fields.self();
         if (fields->m_loadingSpinner) {
-            fields->m_loadingSpinner->stopAllActions();
-            
-            // animacion fade out
-            auto fadeOut = CCFadeOut::create(0.2f);
-            auto remove = CCCallFunc::create(fields->m_loadingSpinner, callfunc_selector(CCNode::removeFromParent));
-            auto sequence = CCSequence::create(fadeOut, remove, nullptr);
-            fields->m_loadingSpinner->runAction(sequence);
+            // animacion fade out y remover
+            auto* spinnerNode = static_cast<geode::LoadingSpinner*>(fields->m_loadingSpinner);
+            spinnerNode->runAction(CCSequence::create(
+                CCFadeOut::create(0.2f),
+                CCCallFunc::create(spinnerNode, callfunc_selector(CCNode::removeFromParent)),
+                nullptr
+            ));
             
             fields->m_loadingSpinner = nullptr;
         }
@@ -397,15 +176,10 @@ class $modify(PaimonLevelCell, LevelCell) {
     void configureThumbnailLoader() {
         auto fields = m_fields.self();
         if (!fields->m_loaderConfigured) {
-            try {
-                int maxDownloads = Mod::get()->getSettingValue<int64_t>("thumbnail-concurrent-downloads");
-                ThumbnailLoader::get().setMaxConcurrentTasks(maxDownloads);
-                fields->m_loaderConfigured = true;
-                log::debug("[LevelCell] ThumbnailLoader configured with {} max downloads", maxDownloads);
-            } catch (...) {
-                ThumbnailLoader::get().setMaxConcurrentTasks(3);
-                fields->m_loaderConfigured = true;
-            }
+            int maxDownloads = static_cast<int>(Mod::get()->getSettingValue<int64_t>("thumbnail-concurrent-downloads"));
+            ThumbnailLoader::get().setMaxConcurrentTasks(maxDownloads);
+            fields->m_loaderConfigured = true;
+            log::debug("[LevelCell] ThumbnailLoader configured with {} max downloads", maxDownloads);
         }
     }
 
@@ -462,8 +236,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
-    void setupDarkMode(CCNode* bg) {
-    }
+    // setupDarkMode removed â€” was empty (dead code)
 
     CCSprite* createThumbnailSprite(CCTexture2D* texture) {
         CCSprite* sprite = PaimonShaderSprite::createWithTexture(texture);
@@ -474,11 +247,15 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF)) {
             auto path = ThumbnailLoader::get().getCachePath(levelIDForGIF);
             
-            this->retain();
-            AnimatedGIFSprite::createAsync(path.generic_string(), [this, levelIDForGIF](AnimatedGIFSprite* anim) {
-                if (this->m_level && this->m_level->m_levelID == levelIDForGIF) {
-                    if (anim && m_fields->m_thumbSprite) {
-                        auto old = m_fields->m_thumbSprite;
+            Ref<LevelCell> safeRef = this;
+            AnimatedGIFSprite::createAsync(path.generic_string(), [safeRef, levelIDForGIF](AnimatedGIFSprite* anim) {
+                auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
+                if (!cell->getParent()) return; // cell removed from scene
+                if (cell->m_level && cell->m_level->m_levelID == levelIDForGIF) {
+                    auto fields = cell->m_fields.self();
+                    if (!fields || fields->m_isBeingDestroyed) return;
+                    if (anim && fields->m_thumbSprite) {
+                        auto old = fields->m_thumbSprite;
                         auto parent = old->getParent();
                         if (parent) {
                             anim->setScaleX(old->getScaleX());
@@ -494,11 +271,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                             
                             old->removeFromParent();
                             parent->addChild(anim);
-                            m_fields->m_thumbSprite = anim;
+                            fields->m_thumbSprite = anim;
                         }
                     }
                 }
-                this->release();
             });
         }
         
@@ -509,9 +285,8 @@ class $modify(PaimonLevelCell, LevelCell) {
                  pss->setID("paimon-shader-sprite"_spr);
             }
             
-            std::string bgType = "gradient";
-            try { bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type"); } catch (...) {}
-            
+            std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
+
             if (bgType == "thumbnail") {
                 auto shader = getOrCreateShader("paimon_cell_saturation", vertexShaderCell, fragmentShaderSaturationCell);
                 if (shader) {
@@ -530,11 +305,10 @@ class $modify(PaimonLevelCell, LevelCell) {
         return sprite;
     }
 
-    void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite, bool androidSafe) {
+    void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite) {
         auto fields = m_fields.self();
         
-        float kThumbWidthFactor = PaimonConstants::DEFAULT_THUMB_WIDTH_FACTOR;
-        try { kThumbWidthFactor = Mod::get()->getSettingValue<float>("level-thumb-width"); } catch (...) {}
+        float kThumbWidthFactor = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
         kThumbWidthFactor = std::max(PaimonConstants::MIN_THUMB_WIDTH_FACTOR, std::min(PaimonConstants::MAX_THUMB_WIDTH_FACTOR, kThumbWidthFactor));
         
         // forzar ancho completo pa celdas Daily
@@ -599,10 +373,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_thumbBaseScaleX = scaleX;
         fields->m_thumbBaseScaleY = scaleY;
         
-        bool hoverEnabled = true;
-        try { hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects"); } catch (...) {}
-        if (androidSafe) hoverEnabled = false;
-        
+        bool hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
+
         if (hoverEnabled) {
             this->schedule(schedule_selector(PaimonLevelCell::checkCenterPosition), 0.05f);
             this->schedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
@@ -612,10 +384,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         // NOTE: clippingNode is added to 'this' above.
         
-        bool showSeparator = true;
-        try { showSeparator = Mod::get()->getSettingValue<bool>("levelcell-show-separator"); } catch (...) {}
-        if (androidSafe) showSeparator = false;
-        
+        bool showSeparator = Mod::get()->getSettingValue<bool>("levelcell-show-separator");
+
         if (showSeparator && !isDaily) { // No separator for Daily
             float separatorXMul = m_compactView ? 0.75f : 1.0f;
             auto separator = CCLayerColor::create({0,0,0});
@@ -635,7 +405,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
-    void setupGradient(CCNode* bg, int levelID, bool androidSafe, CCTexture2D* texture) {
+    void setupGradient(CCNode* bg, int levelID, CCTexture2D* texture) {
         auto fields = m_fields.self();
 
         // Clean up previous background nodes
@@ -654,23 +424,23 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
         fields->m_gradientLayer = nullptr;
 
-        std::string bgType = "gradient";
-        try { bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type"); } catch (...) {}
-        
-        if (bgType == "thumbnail" && texture && !androidSafe) {
+        std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
+
+        if (bgType == "thumbnail" && texture) {
              CCSprite* bgSprite = nullptr;
              bool isGIF = false;
              
-             float blurIntensity = 1.0f;
-             try { blurIntensity = Mod::get()->getSettingValue<float>("levelcell-background-blur"); } catch (...) {}
+             float blurIntensity = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-blur"));
 
              if (ThumbnailLoader::get().hasGIFData(levelID)) {
                  auto path = ThumbnailLoader::get().getCachePath(levelID);
-                 this->retain();
-                 AnimatedGIFSprite::createAsync(path.generic_string(), [this, levelID, blurIntensity](AnimatedGIFSprite* anim) {
-                     if (this->m_level && this->m_level->m_levelID == levelID) {
+                 Ref<LevelCell> gradSafeRef = this;
+                 AnimatedGIFSprite::createAsync(path.generic_string(), [gradSafeRef, levelID, blurIntensity](AnimatedGIFSprite* anim) {
+                     auto* self = static_cast<PaimonLevelCell*>(gradSafeRef.data());
+                     if (!self->getParent()) return;
+                     if (self->m_level && self->m_level->m_levelID == levelID) {
                          if (anim) {
-                             if (auto bg = this->m_mainLayer) {
+                             if (auto bg = self->m_mainLayer) {
                                  if (auto clipper = bg->getChildByID("paimon-bg-clipper"_spr)) {
                                      clipper->removeAllChildren();
                                      
@@ -693,7 +463,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                              }
                          }
                      }
-                     this->release();
                  });
              }
 
@@ -756,8 +525,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                  
                  clipper->addChild(bgSprite);
 
-                 float darkness = 0.6f;
-                 try { darkness = Mod::get()->getSettingValue<float>("levelcell-background-darkness"); } catch (...) {}
+                 float darkness = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-darkness"));
                  GLubyte opacity = static_cast<GLubyte>(std::clamp(darkness, 0.0f, 1.0f) * 255.0f);
 
                  auto overlay = CCLayerColor::create({0, 0, 0, opacity});
@@ -780,9 +548,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             colorB = pair->b;
         }
 
-        bool animatedGradient = true;
-        try { animatedGradient = Mod::get()->getSettingValue<bool>("levelcell-animated-gradient"); } catch (...) {}
-        if (androidSafe) animatedGradient = false;
+        bool animatedGradient = Mod::get()->getSettingValue<bool>("levelcell-animated-gradient");
 
         auto grad = PaimonShaderGradient::create(
             ccc4(colorA.r, colorA.g, colorA.b, 255),
@@ -824,14 +590,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
-    void setupMythicParticles(CCNode* bg, int levelID, bool androidSafe) {
+    void setupMythicParticles(CCNode* bg, int levelID) {
         auto fields = m_fields.self();
-        bool enableMythic = true; 
-        try { enableMythic = Mod::get()->getSettingValue<bool>("levelcell-mythic-particles"); } catch (...) {}
-        if (androidSafe) enableMythic = false;
-        
-        if (enableMythic && m_level->m_isEpic >= 3) {
-             try {
+        bool enableMythic = Mod::get()->getSettingValue<bool>("levelcell-mythic-particles");
+
+        if (enableMythic && m_level && m_level->m_isEpic >= 3) {
                 auto brighten = [](ccColor3B c) {
                     auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
                     int add = 35;
@@ -906,12 +669,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                 this->addChild(ps, bg->getZOrder() + 1); // Above bg
                 
                 ps->resetSystem();
-            } catch (...) {}
         }
     }
 
-    void setupViewButton(bool androidSafe) {
-        if (androidSafe) return;
+    void setupViewButton() {
         auto fields = m_fields.self();
         auto children = this->getChildren();
         if (!children) return;
@@ -931,16 +692,8 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
         
-        try {
-            bool androidSafe = false;
-#ifdef GEODE_IS_ANDROID
-            try { androidSafe = Mod::get()->getSettingValue<bool>("android-safe-mode"); } catch (...) {}
-#endif
-            // Re-added parent check because adding children to 'this' when 'this' is detached might be unsafe
-            // if we rely on parent for layout. But for now, let's keep it removed as per persistence fix.
-            // However, if 'this' is not in scene, actions might not run.
-            
-            auto fields = m_fields.self();
+        // Re-added parent check because adding children to 'this' when 'this' is detached might be unsafe
+        auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed) {
                 log::warn("[LevelCell] Fields null or destroyed in addOrUpdateThumb");
                 return;
@@ -959,7 +712,6 @@ class $modify(PaimonLevelCell, LevelCell) {
 
             bg->setZOrder(-2);
 
-            setupDarkMode(bg);
 
             CCSprite* sprite = createThumbnailSprite(texture);
             if (!sprite) {
@@ -967,18 +719,18 @@ class $modify(PaimonLevelCell, LevelCell) {
                 return;
             }
 
-            setupClippingAndSeparator(bg, sprite, androidSafe);
+            setupClippingAndSeparator(bg, sprite);
 
             if (m_level) {
                 int32_t levelID = m_level->m_levelID.value();
-                setupGradient(bg, levelID, androidSafe, texture);
-                setupMythicParticles(bg, levelID, androidSafe);
+                setupGradient(bg, levelID, texture);
+                setupMythicParticles(bg, levelID);
             }
             
-            log::info("[LevelCell] Thumbnail applied successfully for level {}", m_level ? m_level->m_levelID.value() : 0);
+            log::debug("[LevelCell] Thumbnail applied successfully for level {}", m_level ? m_level->m_levelID.value() : 0);
 
             // View button logic (Original logic preserved for safety)
-            if (!androidSafe) {
+            {
                 auto children = this->getChildren();
                 if (children) {
                     // Expand the "view" button to the full size of the LevelCell
@@ -1023,8 +775,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
                             if (isViewButton) {
                                 log::debug("[LevelCell] Found view button (ID: {})", menuItem->getID());
-                                bool showButton = false;
-                                try { showButton = Mod::get()->getSettingValue<bool>("levelcell-show-view-button"); } catch (...) { showButton = false; }
+                                bool showButton = Mod::get()->getSettingValue<bool>("levelcell-show-view-button");
                                 if (showButton) break;
 
                                 if (isDailyCell()) break;
@@ -1044,7 +795,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                                 };
                                 
                                 if (menuItem->getID() == "paimon-view-button") {
-                                    try { menuItem->setID("view-button"); } catch (...) {}
+                                    menuItem->setID("view-button");
                                 }
                                 fields->m_viewOverlay = menuItem;
                                 menuItem->m_baseScale = menuItem->getScale();
@@ -1128,15 +879,14 @@ class $modify(PaimonLevelCell, LevelCell) {
                                 }
 
                                 if (isViewButton) {
-                                    bool showButton = false;
-                                    try { showButton = Mod::get()->getSettingValue<bool>("levelcell-show-view-button"); } catch (...) { showButton = false; }
+                                    bool showButton = Mod::get()->getSettingValue<bool>("levelcell-show-view-button");
                                     if (showButton) break;
                                     
                                     // Allow view button setup for Daily cells too
                                     // if (isDailyCell()) break;
 
                                     if (menuItem->getID() == "paimon-view-button") {
-                                        try { menuItem->setID("view-button"); } catch (...) {}
+                                        menuItem->setID("view-button");
                                     }
                                     fields->m_viewOverlay = menuItem;
                                     menuItem->m_baseScale = menuItem->getScale();
@@ -1224,14 +974,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                     if (auto pair = LevelColors::get().getPair(levelID)) {
                         fields->m_gradientColorA = pair->a;
                         fields->m_gradientColorB = pair->b;
-                        if (auto grad = typeinfo_cast<PaimonShaderGradient*>(fields->m_gradientLayer)) {
-                            try {
-                                grad->setStartColor(pair->a);
-                                grad->setEndColor(pair->b);
-                            } catch (...) {
-                                fields->m_gradientLayer = nullptr;
-                            }
-                        }
+                        if (auto grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer))) {
+                        grad->setStartColor(pair->a);
+                        grad->setEndColor(pair->b);
+                    }
                     }
                 }
             }
@@ -1247,11 +993,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             // auto sequence = CCSequence::create(delayAction, flashAction, nullptr);
             // this->runAction(sequence);
 
-        } catch (std::exception& e) {
-            log::error("[addOrUpdateThumb] Exception: {}", e.what());
-        } catch (...) {
-            log::error("[addOrUpdateThumb] Unknown exception");
-        }
     }
 
     bool checkMenuCollision(CCNode* node, CCPoint worldPoint, CCNode* ignoreNode) {
@@ -1329,9 +1070,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (m_level) {
             ThumbnailLoader::get().cancelLoad(m_level->m_levelID.value());
         }
-        try {
-            CCDirector::sharedDirector()->getTouchDispatcher()->removeDelegate(this);
-        } catch (...) {}
+        CCDirector::sharedDirector()->getTouchDispatcher()->removeDelegate(this);
         auto fields = m_fields.self();
         if (fields) fields->m_touchRegistered = false;
         LevelCell::onExit();
@@ -1407,7 +1146,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         flash->setPosition(centerInParent);
 
         flash->setZOrder(99999);
-        try { flash->setID("paimon-tap-flash"_spr); } catch (...) {}
+        flash->setID("paimon-tap-flash"_spr);
         flashParent->addChild(flash);
         flashParent->reorderChild(flash, 99999);
         log::debug("[LevelCell][Flash] Layer added parent={} (ptr={}, z={})", (void*)flashParent, (void*)flash, flash->getZOrder());
@@ -1474,7 +1213,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     */
     
     // Helper: brighten color by amount [0..255]
-    static inline ccColor3B brightenColor(const ccColor3B& c, int add) {
+    static inline ccColor3B brightenColor(ccColor3B const& c, int add) {
         auto clamp = [](int v){ return std::max(0, std::min(255, v)); };
         return ccColor3B{
             (GLubyte)clamp(c.r + add),
@@ -1484,11 +1223,11 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     void updateGradientAnim(float dt) {
-        PAIMON_GUARD_BEGIN
+        {
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed || !fields->m_gradientLayer) return;
             
-            auto grad = typeinfo_cast<PaimonShaderGradient*>(fields->m_gradientLayer);
+            auto grad = typeinfo_cast<PaimonShaderGradient*>(static_cast<CCSprite*>(fields->m_gradientLayer));
             if (!grad) return;
 
             // Dynamic GIF gradient support
@@ -1525,21 +1264,31 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             grad->setStartColor(left);
             grad->setEndColor(right);
-        PAIMON_GUARD_END
+        }
+    }
+
+    void cacheSettings() {
+        auto fields = m_fields.self();
+        if (fields->m_settingsCached) return;
+        fields->m_settingsCached = true;
+        // Geode 5 getSettingValue does not throw â€” safe to call directly
+        fields->m_cachedAnimType = Mod::get()->getSettingValue<std::string>("levelcell-anim-type");
+        fields->m_cachedAnimSpeed = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-anim-speed"));
+        fields->m_cachedAnimEffect = Mod::get()->getSettingValue<std::string>("levelcell-anim-effect");
+        fields->m_cachedHoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
+        fields->m_cachedCompactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
+        fields->m_cachedEffectOnGradient = Mod::get()->getSettingValue<bool>("levelcell-effect-on-gradient");
+        fields->m_cachedBgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
     }
 
     void checkCenterPosition(float dt) {
-        PAIMON_GUARD_BEGIN
+        {
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed) return;
             
-            // Check whether hover effects are enabled
-            bool hoverEnabled = true;
-            try {
-                hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
-            } catch (...) {}
-            
-            if (!hoverEnabled) {
+            cacheSettings();
+
+            if (!fields->m_cachedHoverEnabled) {
                 if (fields->m_centerLerp > 0.0f) {
                     fields->m_centerLerp = 0.0f;
                 }
@@ -1559,14 +1308,11 @@ class $modify(PaimonLevelCell, LevelCell) {
             float cellCenterY = worldPos.y + this->getContentSize().height / 2.0f;
             float screenCenterY = winSize.height / 2.0f;
             
-            // Smaller center zone (±45px around the screen center)
+            // Smaller center zone (Â±45px around the screen center)
             float centerZone = 45.0f;
 
             // Check compact mode
-            bool compactMode = false;
-            try { compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode"); } catch(...) {}
-            
-            if (compactMode) {
+            if (fields->m_cachedCompactMode) {
                 centerZone *= 0.55f; // Reduce by 45% (45px -> 24.75px)
             }
 
@@ -1583,25 +1329,22 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             // Update state flag
             fields->m_wasInCenter = isInCenter;
-        PAIMON_GUARD_END
+        }
     }
 
     void updateCenterAnimation(float dt) {
-        PAIMON_GUARD_BEGIN
+        {
             auto fields = m_fields.self();
             if (!fields || fields->m_isBeingDestroyed) return;
             
             fields->m_animTime += dt;
 
-            // Read settings
-            std::string animType = "zoom-slide";
-            float speedMult = 1.0f;
-            std::string animEffect = "none";
-            try {
-                animType = Mod::get()->getSettingValue<std::string>("levelcell-anim-type");
-                speedMult = Mod::get()->getSettingValue<float>("levelcell-anim-speed");
-                animEffect = Mod::get()->getSettingValue<std::string>("levelcell-anim-effect");
-            } catch (...) {}
+            cacheSettings();
+
+            // usar settings cacheados en vez de leer cada frame
+            std::string const& animType = fields->m_cachedAnimType;
+            float speedMult = fields->m_cachedAnimSpeed;
+            std::string const& animEffect = fields->m_cachedAnimEffect;
 
             if (animType == "none") {
                  fields->m_centerLerp = 0.0f;
@@ -1660,10 +1403,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
 
             // Apply compact mode reduction
-            bool compactMode = false;
-            try { compactMode = Mod::get()->getSettingValue<bool>("compact-list-mode"); } catch(...) {}
-            
-            if (compactMode) {
+            if (fields->m_cachedCompactMode) {
                 // Reduce intensity of all transformations by 45%
                 float excessZoom = zoomFactor - 1.0f;
                 zoomFactor = 1.0f + (excessZoom * 0.55f);
@@ -1708,11 +1448,9 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
 
             // Apply Effects to Thumbnail and Gradient
-            bool effectOnGradient = false;
-            try { effectOnGradient = Mod::get()->getSettingValue<bool>("levelcell-effect-on-gradient"); } catch (...) {}
-
-            std::string bgType = "gradient";
-            try { bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type"); } catch (...) {}
+            // Use cached settings instead of reading every frame
+            bool effectOnGradient = fields->m_cachedEffectOnGradient;
+            std::string const& bgType = fields->m_cachedBgType;
 
             std::vector<CCSprite*> targets;
             if (fields->m_thumbSprite) targets.push_back(fields->m_thumbSprite);
@@ -1946,16 +1684,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                 adjustState(fields->m_viewOverlay->getSelectedImage());
                 adjustState(fields->m_viewOverlay->getDisabledImage());
             }
-        PAIMON_GUARD_END
+        }
     }
 
-    void animateToCenter() {
-        // Deprecated - now using lerp system
-    }
-
-    void animateFromCenter() {
-        // Deprecated - now using lerp system
-    }
+    // animateToCenter/animateFromCenter removed â€” deprecated (now uses lerp system)
 
     // Detect whether this cell is inside a DailyLevelNode/DailyLevelPage
     bool isDailyCell() {
@@ -1963,7 +1695,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         int depth = 0;
         while (parent && depth < 10) {
             // Check by class name or node ID
-            const char* className = typeid(*parent).name();
+            char const* className = typeid(*parent).name();
             std::string classStr(className);
             
             // Look for DailyLevelNode / DailyLevelPage / CCScale9Sprite (used in dailies)
@@ -1985,17 +1717,13 @@ class $modify(PaimonLevelCell, LevelCell) {
         return false;
     }
     
-    // Adjust thumbnail for daily cells (larger scale and adjusted position)
-    void fixDailyCell() {
-        // Logic moved to DailyLevelNode hook
-    }
+    // fixDailyCell removed â€” was empty (logic moved to DailyLevelNode)
 
     // Removed onPaimonDailyPlay as per user request to remove animation
     
     // Removed onLevelInfo hook as it's not available in binding
     
     void tryLoadThumbnail() {
-        try {
             configureThumbnailLoader();
 
             if (!m_level) return;
@@ -2009,6 +1737,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             auto fields = m_fields.self();
             
+            // comprobar si el level cambio
             if (fields->m_lastRequestedLevelID != levelID) {
                 fields->m_thumbnailRequested = false;
                 fields->m_thumbnailApplied = false;
@@ -2016,8 +1745,23 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_hasGif = false;
                 fields->m_gifTexture = nullptr;
                 fields->m_staticTexture = nullptr;
+                fields->m_loadedInvalidationVersion = 0;
             }
-            
+
+            // comprobar si la miniatura fue invalidada (usuario subiÃ³ una nueva)
+            int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
+            if (fields->m_thumbnailApplied && currentVersion != fields->m_loadedInvalidationVersion) {
+                // la miniatura cambio, forzar recarga
+                log::debug("[LevelCell] Thumbnail invalidated for level {}, reloading (v{} -> v{})",
+                    levelID, fields->m_loadedInvalidationVersion, currentVersion);
+                fields->m_thumbnailRequested = false;
+                fields->m_thumbnailApplied = false;
+                fields->m_hasGif = false;
+                fields->m_gifTexture = nullptr;
+                fields->m_staticTexture = nullptr;
+            }
+            fields->m_loadedInvalidationVersion = currentVersion;
+
             if (fields->m_thumbnailRequested) return;
             
             fields->m_requestId++;
@@ -2032,29 +1776,25 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             if (enableSpinners) showLoadingSpinner();
             
-            this->retain();
-            LevelCell* cellPtr = this;
-            
+            Ref<LevelCell> safeRef = this;
+
             // 1. Request Static Thumbnail
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [cellPtr, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool fromServer) {
-                if (!cellPtr) return;
-                auto* cell = static_cast<PaimonLevelCell*>(cellPtr);
+            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool fromServer) {
+                auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
+                if (!cell->getParent()) return; // cell removed from scene
                 auto fields = cell->m_fields.self();
                 
                 // Robustness check: Ensure cell is still valid and pointing to the same level
                 if (!fields || fields->m_isBeingDestroyed || fields->m_requestId != currentRequestId) {
-                    cellPtr->release();
                     return;
                 }
 
                 // Extra check: Ensure the level object in the cell matches the requested ID
                 if (!cell->m_level || cell->m_level->m_levelID != levelID) {
-                    cellPtr->release();
                     return;
                 }
                 
                 if (fields->m_thumbnailApplied) {
-                    cellPtr->release();
                     return;
                 }
                 
@@ -2086,30 +1826,25 @@ class $modify(PaimonLevelCell, LevelCell) {
                                 blackTex->autorelease();
                                 cell->addOrUpdateThumb(blackTex);
                             }
-                            // blackTex is autoreleased, do not release manually
                         }
                         blackImage->release();
                     }
                 }
-                cellPtr->release();
             });
 
             // 2. Request GIF thumbnail (hover animation). Background blur uses the static thumbnail.
             
-            this->retain(); // Retain for GIF callback
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [cellPtr, levelID, currentRequestId](CCTexture2D* tex, bool fromServer) {
-                if (!cellPtr) return;
-                auto* cell = static_cast<PaimonLevelCell*>(cellPtr);
+            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, currentRequestId](CCTexture2D* tex, bool fromServer) {
+                auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
+                if (!cell->getParent()) return;
                 auto fields = cell->m_fields.self();
                 
                 if (!fields || fields->m_isBeingDestroyed || fields->m_requestId != currentRequestId) {
-                    cellPtr->release();
                     return;
                 }
 
                 // Extra check: Ensure the level object in the cell matches the requested ID
                 if (!cell->m_level || cell->m_level->m_levelID != levelID) {
-                    cellPtr->release();
                     return;
                 }
                 
@@ -2117,10 +1852,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                     fields->m_hasGif = true;
                     fields->m_gifTexture = tex;
                 }
-                cellPtr->release();
             }, 0, true); // isGif = true
-
-        } catch (...) {}
     }
 
     $override void update(float dt) {
@@ -2128,7 +1860,33 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         auto fields = m_fields.self();
         if (!fields) return;
-        
+
+        // comprobar si los settings del popup cambiaron (live reload)
+        int globalSettingsVer = LevelCellSettingsPopup::s_settingsVersion;
+        if (globalSettingsVer != fields->m_loadedSettingsVersion) {
+            fields->m_loadedSettingsVersion = globalSettingsVer;
+            // invalidar cache de settings pa que se re-lean
+            fields->m_settingsCached = false;
+            // forzar re-aplicar la miniatura con los nuevos settings
+            if (fields->m_thumbnailApplied && m_level) {
+                fields->m_thumbnailRequested = false;
+                fields->m_thumbnailApplied = false;
+                tryLoadThumbnail();
+            }
+        }
+
+        // comprobar si la miniatura fue invalidada mientras la celda estÃ¡ visible
+        if (fields->m_thumbnailApplied && m_level) {
+            int32_t levelID = m_level->m_levelID.value();
+            if (levelID > 0) {
+                int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
+                if (currentVersion != fields->m_loadedInvalidationVersion) {
+                    // miniatura actualizada, recargar
+                    tryLoadThumbnail();
+                }
+            }
+        }
+
         if (fields->m_hasGif && fields->m_gifTexture && fields->m_thumbSprite) {
             // Check hover
             auto winSize = CCDirector::sharedDirector()->getWinSize();
@@ -2164,6 +1922,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         LevelCell::loadFromLevel(level);
         tryLoadThumbnail();
     }
+
 };
 
 

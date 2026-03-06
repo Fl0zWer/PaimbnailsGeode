@@ -1,7 +1,7 @@
 #pragma once
 #include <Geode/DefaultInclude.hpp>
+#include <Geode/utils/function.hpp>
 #include <cocos2d.h>
-#include <functional>
 #include <memory>
 
 class CapturePreviewPopup : public geode::Popup {
@@ -12,8 +12,8 @@ public:
         std::shared_ptr<uint8_t> buffer,
         int width,
         int height,
-        std::function<void(bool accepted, int levelID, std::shared_ptr<uint8_t> buffer, int width, int height, std::string mode, std::string replaceId)> callback,
-        std::function<void(bool hidePlayer, CapturePreviewPopup* popup)> recaptureCallback = nullptr,
+        geode::CopyableFunction<void(bool accepted, int levelID, std::shared_ptr<uint8_t> buffer, int width, int height, std::string mode, std::string replaceId)> callback,
+        geode::CopyableFunction<void(bool hidePlayer, CapturePreviewPopup* popup)> recaptureCallback = nullptr,
         bool isPlayerHidden = false,
         bool isModerator = false
     );
@@ -46,8 +46,8 @@ protected:
 
 private:
     geode::Ref<cocos2d::CCTexture2D> m_texture;
-    std::function<void(bool, int, std::shared_ptr<uint8_t>, int, int, std::string, std::string)> m_callback;
-    std::function<void(bool, CapturePreviewPopup*)> m_recaptureCallback;
+    geode::CopyableFunction<void(bool, int, std::shared_ptr<uint8_t>, int, int, std::string, std::string)> m_callback;
+    geode::CopyableFunction<void(bool, CapturePreviewPopup*)> m_recaptureCallback;
     std::shared_ptr<uint8_t> m_buffer;
     int m_levelID;
     int m_width = 0;

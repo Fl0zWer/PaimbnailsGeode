@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Geode/Geode.hpp>
+#include <Geode/utils/function.hpp>
 #include "GIFDecoder.hpp"
 #include <vector>
 #include <string>
@@ -15,12 +16,12 @@
 // Animated sprite that plays GIF frames with caching and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
 public:
-    static AnimatedGIFSprite* create(const std::string& filename);
+    static AnimatedGIFSprite* create(std::string const& filename);
     static AnimatedGIFSprite* create(const void* data, size_t size);
 
-    static void pinGIF(const std::string& key);
-    static void unpinGIF(const std::string& key);
-    static bool isPinned(const std::string& key);
+    static void pinGIF(std::string const& key);
+    static void unpinGIF(std::string const& key);
+    static bool isPinned(std::string const& key);
 
     struct SharedGIFData {
         std::vector<cocos2d::CCTexture2D*> textures;
@@ -78,14 +79,14 @@ public:
     cocos2d::CCSize m_texSize = {0, 0};
 
     static void clearCache();
-    static void remove(const std::string& filename);
-    static bool isCached(const std::string& filename);
+    static void remove(std::string const& filename);
+    static bool isCached(std::string const& filename);
     
-    using AsyncCallback = std::function<void(AnimatedGIFSprite*)>;
-    static void createAsync(const std::string& path, AsyncCallback callback);
-    static void createAsync(const std::vector<uint8_t>& data, const std::string& key, AsyncCallback callback);
+    using AsyncCallback = geode::CopyableFunction<void(AnimatedGIFSprite*)>;
+    static void createAsync(std::string const& path, AsyncCallback callback);
+    static void createAsync(std::vector<uint8_t> const& data, std::string const& key, AsyncCallback callback);
     
-    static AnimatedGIFSprite* createFromCache(const std::string& key);
+    static AnimatedGIFSprite* createFromCache(std::string const& key);
 
     // Disk cache
     struct DiskCacheEntry {
@@ -100,9 +101,9 @@ public:
         std::vector<Frame> frames;
     };
     
-    static bool loadFromDiskCache(const std::string& path, DiskCacheEntry& outEntry);
-    static void saveToDiskCache(const std::string& path, const DiskCacheEntry& entry);
-    static std::string getCachePath(const std::string& path);
+    static bool loadFromDiskCache(std::string const& path, DiskCacheEntry& outEntry);
+    static void saveToDiskCache(std::string const& path, DiskCacheEntry const& entry);
+    static std::string getCachePath(std::string const& path);
 
 private:
     // Worker queue
@@ -154,9 +155,9 @@ public:
     }
 
 private:
-    bool initFromCache(const std::string& cacheKey);
+    bool initFromCache(std::string const& cacheKey);
     
-    const std::string& getFilename() const { return m_filename; }
+    std::string const& getFilename() const { return m_filename; }
     
     void update(float dt) override;
 

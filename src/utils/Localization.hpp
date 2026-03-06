@@ -25,7 +25,7 @@ public:
         return m_currentLanguage;
     }
 
-    std::string getString(const std::string& key) const {
+    std::string getString(std::string const& key) const {
         auto& translations = (m_currentLanguage == Language::SPANISH) ? m_spanish : m_english;
         auto it = translations.find(key);
         if (it != translations.end()) {
@@ -88,6 +88,10 @@ private:
             {"layers.recapture_error", "Error al recapturar"},
             {"layers.no_playlayer", "PlayLayer no disponible"},
 
+            // Keybinds
+            {"keybind.capture_triggered", "Captura activada"},
+            {"keybind.capture_paused", "No se puede capturar en pausa"},
+
             // PlayLayer & PauseLayer
             {"capture.action_name", "Capturar Miniatura"},
             {"capture.action_desc", "Toma una captura del nivel actual"},
@@ -107,7 +111,7 @@ private:
             {"pause.only_moderators", "Solo moderadores pueden subir miniaturas"},
             {"pause.access_error", "Error al acceder a miniatura local"},
             {"pause.read_error", "Error al leer miniatura local"},
-            {"pause.gif_disabled", "Grabación GIF deshabilitada temporalmente"},
+            {"pause.gif_disabled", "Grabacion GIF deshabilitada temporalmente"},
             {"pause.playlayer_error", "Error: PlayLayer no disponible"},
             {"pause.capture_error", "Error al iniciar captura"},
             {"pause.gif_open_error", "Error: No se pudo abrir el GIF"},
@@ -157,6 +161,7 @@ private:
             {"queue.update_tab", "actualizacion"},
             {"queue.report_tab", "reportes"},
             {"queue.no_items", "No hay elementos"},
+            {"queue.select_item", "Selecciona un elemento"},
             {"queue.open_button", "Abrir"},
             {"queue.accept_button", "Aceptar"},
             {"queue.reject_button", "Rechazar"},
@@ -199,7 +204,7 @@ private:
             {"bulk.title", "Subida Masiva"},
             {"bulk.select_folder_label", "Selecciona una carpeta con thumbnails"},
             {"bulk.progress_label", "0 / 0 thumbnails"},
-            {"bulk.info_text", "Los archivos deben tener el formato:\nlevelID.png (ej: 12345.png)\n\nSolo se subirán thumbnails de\nniveles que no tengan ya uno."},
+            {"bulk.info_text", "Los archivos deben tener el formato:\nlevelID.png (ej: 12345.png)\n\nSolo se subiran thumbnails de\nniveles que no tengan ya uno."},
             {"bulk.scanning", "Escaneando carpeta..."},
 
             // GIFUploadPopup
@@ -253,14 +258,14 @@ private:
             {"leaderboard.load_error", "Error al cargar leaderboard: {}"},
             {"leaderboard.parse_error", "Error al procesar JSON"},
             {"leaderboard.server_error", "Error del servidor"},
-            {"leaderboard.invalid_format", "Formato de datos inválido"},
+            {"leaderboard.invalid_format", "Formato de datos invalido"},
             {"leaderboard.loading", "Cargando..."},
             {"leaderboard.unknown", "Desconocido"},
             {"mods.title", "Moderadores de Paimbnails"},
             {"leaderboard.no_refreshes", "No more refreshes available today!"},
             {"leaderboard.no_gamemanager", "No se pudo obtener GameManager"},
-            {"leaderboard.empty_username", "Nombre de usuario vacío"},
-            {"leaderboard.no_image", "No se seleccionó imagen"},
+            {"leaderboard.empty_username", "Nombre de usuario vacio"},
+            {"leaderboard.no_image", "No se selecciono imagen"},
             {"leaderboard.png_open_error", "No se pudo abrir PNG"},
             {"leaderboard.profile_saved_local", "Profile saved locally (server upload disabled)"},
             {"leaderboard.uploading_profile", "Subiendo perfil..."},
@@ -291,6 +296,12 @@ private:
             {"level.no_local_thumb", "No hay miniatura local"},
             {"level.png_error", "Error al generar PNG"},
             {"level.saved_local_server_disabled", "Miniatura guardada localmente (servidor deshabilitado)"},
+            {"level.account_required", "Tienes que tener cuenta para subir"},
+            {"level.no_permissions", "No tienes permisos"},
+            {"level.admin_only_high_votes", "Solo administradores pueden borrar miniaturas con +100 votos"},
+            {"level.confirm_delete_title", "Borrar Miniatura"},
+            {"level.confirm_delete_msg", "Estas seguro de que quieres borrar esta miniatura? Esto tambien eliminara los puntos de rating del creador."},
+            {"level.thumbnail_deleted", "Miniatura borrada"},
 
             // Report Popup
             {"report.title", "Reportar Miniatura"},
@@ -299,7 +310,7 @@ private:
             {"report.placeholder", "Escribe aqui..."},
             {"report.empty_reason", "Debes especificar una razon"},
             {"report.sent_synced", "Reporte enviado y sincronizado: "},
-            {"report.saved_local", "Reporte guardado localmente (sin conexión)"},
+            {"report.saved_local", "Reporte guardado localmente (sin conexion)"},
 
             // PauseLayer
             {"pause.gif_not_supported", "Archivos GIF no soportados en esta plataforma"},
@@ -307,7 +318,7 @@ private:
             {"pause.create_texture_error", "Error: No se pudo crear textura"},
             {"pause.init_texture_error", "Error: No se pudo inicializar textura"},
             {"pause.username_error", "Error: No se pudo obtener nombre de usuario"},
-            {"pause.gif_recording_started", "Grabación GIF iniciada"},
+            {"pause.gif_recording_started", "Grabacion GIF iniciada"},
 
             // Ban System
             {"ban.list.title", "Baneados"},
@@ -332,7 +343,34 @@ private:
             {"ban.popup.error", "Error al banear"},
             {"ban.profile.mod_only", "Solo moderadores/admins"},
             {"ban.profile.self_ban", "No puedes banearte"},
-            {"ban.profile.read_error", "No se pudo leer el usuario"}
+            {"ban.profile.read_error", "No se pudo leer el usuario"},
+
+            // Profile Music
+            {"music.title", "Musica de Perfil"},
+            {"music.load_song", "Cargar"},
+            {"music.play_preview", "Reproducir"},
+            {"music.stop_preview", "Detener"},
+            {"music.save", "Guardar"},
+            {"music.delete", "Eliminar"},
+            {"music.song_id_placeholder", "ID de cancion..."},
+            {"music.no_song_loaded", "Sin cancion cargada"},
+            {"music.loading", "Cargando..."},
+            {"music.download_song", "Descargar cancion"},
+            {"music.song_downloaded", "¡Cancion descargada!"},
+            {"music.enter_song_id", "Ingresa un ID de cancion"},
+            {"music.invalid_song_id", "ID de cancion invalido"},
+            {"music.load_error", "No se pudo cargar info. Verifica el ID."},
+            {"music.waveform_error", "No se pudo analizar la forma de onda"},
+            {"music.download_error", "Error al descargar cancion"},
+            {"music.fragment_too_long", "El fragmento no puede exceder 20 segundos"},
+            {"music.fragment_too_short", "El fragmento debe ser al menos 5 segundos"},
+            {"music.save_error", "Error al guardar: {}"},
+            {"music.saved", "¡Musica de perfil guardada!"},
+            {"music.delete_confirm", "¿Eliminar musica de perfil?"},
+            {"music.deleted", "Musica de perfil eliminada"},
+            {"music.own_profile_only", "Solo puedes configurar musica en tu propio perfil"},
+            {"music.volume", "Volumen:"},
+            {"music.selection", "Seleccion:"}
         };
 
         // English translations
@@ -371,6 +409,10 @@ private:
             {"layers.recapturing", "Recapturing..."},
             {"layers.recapture_error", "Failed to recapture"},
             {"layers.no_playlayer", "PlayLayer not available"},
+
+            // Keybinds
+            {"keybind.capture_triggered", "Capture triggered"},
+            {"keybind.capture_paused", "Cannot capture while paused"},
 
             // PlayLayer & PauseLayer
             {"capture.action_name", "Capture Thumbnail"},
@@ -441,6 +483,7 @@ private:
             {"queue.update_tab", "update"},
             {"queue.report_tab", "reports"},
             {"queue.no_items", "No items"},
+            {"queue.select_item", "Select an item"},
             {"queue.open_button", "Open"},
             {"queue.accept_button", "Accept"},
             {"queue.reject_button", "Reject"},
@@ -575,6 +618,12 @@ private:
             {"level.no_local_thumb", "No local thumbnail"},
             {"level.png_error", "Error generating PNG"},
             {"level.saved_local_server_disabled", "Thumbnail saved locally (server disabled)"},
+            {"level.account_required", "You need an account to upload"},
+            {"level.no_permissions", "You don't have permissions"},
+            {"level.admin_only_high_votes", "Only admins can delete thumbnails with 100+ votes"},
+            {"level.confirm_delete_title", "Delete Thumbnail"},
+            {"level.confirm_delete_msg", "Are you sure you want to delete this thumbnail? This will also remove the creator's rating points."},
+            {"level.thumbnail_deleted", "Thumbnail deleted"},
 
             // Report Popup
             {"report.title", "Report Thumbnail"},
@@ -616,7 +665,34 @@ private:
             {"ban.popup.error", "Error banning"},
             {"ban.profile.mod_only", "Moderators/Admins only"},
             {"ban.profile.self_ban", "You cannot ban yourself"},
-            {"ban.profile.read_error", "Could not read username"}
+            {"ban.profile.read_error", "Could not read username"},
+
+            // Profile Music
+            {"music.title", "Profile Music"},
+            {"music.load_song", "Load"},
+            {"music.play_preview", "Play"},
+            {"music.stop_preview", "Stop"},
+            {"music.save", "Save"},
+            {"music.delete", "Delete"},
+            {"music.song_id_placeholder", "Song ID..."},
+            {"music.no_song_loaded", "No song loaded"},
+            {"music.loading", "Loading..."},
+            {"music.download_song", "Download song"},
+            {"music.song_downloaded", "Song downloaded!"},
+            {"music.enter_song_id", "Please enter a song ID"},
+            {"music.invalid_song_id", "Invalid song ID"},
+            {"music.load_error", "Could not load song info. Check the ID."},
+            {"music.waveform_error", "Could not analyze song waveform"},
+            {"music.download_error", "Failed to download song"},
+            {"music.fragment_too_long", "Fragment cannot exceed 20 seconds"},
+            {"music.fragment_too_short", "Fragment must be at least 5 seconds"},
+            {"music.save_error", "Failed to save: {}"},
+            {"music.saved", "Profile music saved!"},
+            {"music.delete_confirm", "Delete profile music?"},
+            {"music.deleted", "Profile music deleted"},
+            {"music.own_profile_only", "You can only configure music on your own profile"},
+            {"music.volume", "Volume:"},
+            {"music.selection", "Selection:"}
         };
     }
 

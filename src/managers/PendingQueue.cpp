@@ -15,12 +15,14 @@ std::filesystem::path PendingQueue::jsonPath() const {
     return Mod::get()->getSaveDir() / "thumbnails" / "pending_queue.json";
 }
 
-const char* PendingQueue::catToStr(PendingCategory c) {
+char const* PendingQueue::catToStr(PendingCategory c) {
     switch (c) {
         case PendingCategory::Verify: return "verify";
         case PendingCategory::Update: return "update";
         case PendingCategory::Report: return "report";
         case PendingCategory::Banner: return "banner";
+        case PendingCategory::ProfileImg: return "profileimg";
+        case PendingCategory::Profile: return "profile";
     }
     return "verify";
 }
@@ -29,10 +31,12 @@ PendingCategory PendingQueue::strToCat(std::string const& s) {
     if (s == "update") return PendingCategory::Update;
     if (s == "report") return PendingCategory::Report;
     if (s == "banner") return PendingCategory::Banner;
+    if (s == "profileimg") return PendingCategory::ProfileImg;
+    if (s == "profile") return PendingCategory::Profile;
     return PendingCategory::Verify;
 }
 
-const char* PendingQueue::statusToStr(PendingStatus s) {
+char const* PendingQueue::statusToStr(PendingStatus s) {
     switch (s) {
         case PendingStatus::Open: return "open";
         case PendingStatus::Accepted: return "accepted";
@@ -47,7 +51,7 @@ PendingStatus PendingQueue::strToStatus(std::string const& s) {
     return PendingStatus::Open;
 }
 
-std::string PendingQueue::escape(const std::string& s) {
+std::string PendingQueue::escape(std::string const& s) {
     std::string out; out.reserve(s.size()+8);
     for (char c : s) {
         if (c == '"' || c == '\\') out.push_back('\\');
@@ -56,18 +60,18 @@ std::string PendingQueue::escape(const std::string& s) {
     return out;
 }
 
-bool PendingQueue::isLevelCreator(GJGameLevel* level, const std::string& username) {
+bool PendingQueue::isLevelCreator(GJGameLevel* level, std::string const& username) {
     if (!level || username.empty()) return false;
-    
+
     // comparar con m_creatorName de GJGameLevel
     std::string creatorName = level->m_creatorName;
-    
+
     // comparacion case-insensitive
     auto toLower = [](std::string s) {
         for (auto& c : s) c = (char)tolower(c);
         return s;
     };
-    
+
     return toLower(creatorName) == toLower(username);
 }
 
@@ -76,26 +80,26 @@ void PendingQueue::load() {
     m_loaded = true;
     m_items.clear();
     auto p = jsonPath();
-    if (!std::filesystem::exists(p)) return;
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec) || ec) return;
     auto data = file::readString(p).unwrapOr("");
     if (data.empty()) return;
     // parse manual pequeno y tolerante: espera array objetos en campo items
     // buscaremos ocurrencias de {"levelID":, "category":, ...}
-    try {
-        size_t pos = data.find("\"items\"");
-        if (pos == std::string::npos) return;
-        pos = data.find('[', pos);
-        if (pos == std::string::npos) return;
-        size_t end = data.find(']', pos);
-        if (end == std::string::npos) return;
-        std::string arr = data.substr(pos+1, end-pos-1);
-        // split por '},{' ingenuo
-        size_t start = 0;
-        while (start < arr.size()) {
-            size_t objEnd = arr.find("},{", start);
-            std::string obj = arr.substr(start, (objEnd==std::string::npos?arr.size():objEnd) - start);
+    size_t pos = data.find("\"items\"");
+    if (pos == std::string::npos) return;
+    pos = data.find('[', pos);
+    if (pos == std::string::npos) return;
+    size_t end = data.find(']', pos);
+    if (end == std::string::npos) return;
+    std::string arr = data.substr(pos+1, end-pos-1);
+    // split por '},{' ingenuo
+    size_t start = 0;
+    while (start < arr.size()) {
+        size_t objEnd = arr.find("},{", start);
+        std::string obj = arr.substr(start, (objEnd==std::string::npos?arr.size():objEnd) - start);
             // extraer campos
-            auto getStr = [&](const char* key)->std::string{
+            auto getStr = [&](char const* key)->std::string{
                 std::string k = std::string("\"") + key + "\":";
                 size_t p = obj.find(k);
                 if (p==std::string::npos) return {};
@@ -112,21 +116,17 @@ void PendingQueue::load() {
                 return {};
             };
             PendingItem it{};
-            it.levelID = std::atoi(getStr("levelID").c_str());
+            it.levelID = geode::utils::numFromString<int>(getStr("levelID")).unwrapOr(0);
             it.category = strToCat(getStr("category"));
-            it.timestamp = std::atoll(getStr("timestamp").c_str());
+            it.timestamp = geode::utils::numFromString<int64_t>(getStr("timestamp")).unwrapOr(0);
             it.submittedBy = getStr("submittedBy");
             it.note = getStr("note");
             it.status = strToStatus(getStr("status"));
             std::string creatorStr = getStr("isCreator");
             it.isCreator = (creatorStr == "true" || creatorStr == "1");
-            if (it.levelID != 0) m_items.push_back(it);
-            if (objEnd == std::string::npos) break;
-            start = objEnd + 3;
-        }
-    } catch (...) {
-        log::warn("[PendingQueue] Failed to load pending_queue.json; starting empty");
-        m_items.clear();
+        if (it.levelID != 0) m_items.push_back(it);
+        if (objEnd == std::string::npos) break;
+        start = objEnd + 3;
     }
 }
 

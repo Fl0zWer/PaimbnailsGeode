@@ -1,28 +1,27 @@
 #include <Geode/modify/LevelAreaInnerLayer.hpp>
-#include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/utils/cocos.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/ui/BasedButtonSprite.hpp>
-#include <Geode/binding/BoomScrollLayer.hpp>
-#include <Geode/binding/LoadingCircle.hpp>
+#include <Geode/ui/LoadingSpinner.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include "../managers/ThumbnailLoader.hpp"
 
 using namespace geode::prelude;
 
 class SimpleThumbnailPopup : public geode::Popup {
 protected:
-    void setup(std::pair<CCTexture2D*, std::string> const& params) { // not override
-        auto tex = params.first;
-        auto title = params.second;
+    bool init(CCTexture2D* tex, std::string const& title) {
+        if (!Popup::init(400.f, 280.f)) return false;
+
         this->setTitle(title.c_str());
         
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-        auto m_size = this->m_mainLayer->getContentSize();
-        
+        auto contentSize = this->m_mainLayer->getContentSize();
+
         auto spr = CCSprite::createWithTexture(tex);
         if (spr) {
             float maxWidth = 340.f;
-            float maxHeight = 220.f; // espacio pa título y botones
+            float maxHeight = 220.f; // espacio pa titulo y botones
             
             float scaleX = maxWidth / spr->getContentWidth();
             float scaleY = maxHeight / spr->getContentHeight();
@@ -30,19 +29,19 @@ protected:
             if (scale > 1.0f) scale = 1.0f; 
             
             spr->setScale(scale);
-            spr->setPosition(m_size / 2);
+            spr->setPosition(contentSize / 2);
             this->m_mainLayer->addChild(spr);
         }
         
         this->setZOrder(10500);
         this->setID("SimpleThumbnailPopup"_spr);
+        return true;
     }
     
 public:
     static SimpleThumbnailPopup* create(CCTexture2D* tex, std::string const& title) {
         auto ret = new SimpleThumbnailPopup();
-        if (ret && ret->init(400.f, 280.f)) {
-            ret->setup({tex, title});
+        if (ret && ret->init(tex, title)) {
             ret->autorelease();
             return ret;
         }
@@ -52,20 +51,25 @@ public:
 };
 
 class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("LevelAreaInnerLayer::init", geode::Priority::Late);
+    }
+
     struct Fields {
         std::unordered_map<int, CCSprite*> m_doorThumbnails;
         bool m_thumbnailsAdded = false;
     };
 
+    $override
     bool init(bool returning) {
-        log::info("[LevelAreaInnerLayer] init() called with returning={}", returning);
-        
+        log::debug("[LevelAreaInnerLayer] init() called with returning={}", returning);
+
         if (!LevelAreaInnerLayer::init(returning)) {
             return false;
         }
 
-        log::info("[LevelAreaInnerLayer] Init successful, scheduling thumbnail addition");
-        
+        log::debug("[LevelAreaInnerLayer] Init successful, scheduling thumbnail addition");
+
         // mini delay pa que ya existan las puertas
         this->scheduleOnce(schedule_selector(PaimonLevelAreaInnerLayer::addThumbnailsToDoors), 0.1f);
 
@@ -77,8 +81,8 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
         if (fields->m_thumbnailsAdded) return;
         fields->m_thumbnailsAdded = true;
 
-        log::info("[LevelAreaInnerLayer] Adding thumbnails to main level doors");
-        
+        log::debug("[LevelAreaInnerLayer] Adding thumbnails to main level doors");
+
         // niveles main del 1 al 21
         std::vector<int> mainLevelIDs;
         for (int i = 1; i <= 21; i++) {
@@ -129,7 +133,6 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
         log::info("[LevelAreaInnerLayer] Adding thumbnail for level {}", levelID);
 
-        auto doorSize = doorNode->getContentSize();
         std::string fileName = fmt::format("{}.png", levelID);
         ThumbnailLoader::get().requestLoad(
             levelID,
@@ -180,7 +183,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     }
     
     void checkAndAddButton(float) {
-        // no metas el botón en mi propio popup
+        // no metas el boton en mi propio popup
         if (this->getID() == "SimpleThumbnailPopup") return;
         
         int foundLevelID = 0;
@@ -199,9 +202,6 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                            
                            if (foundLevelID > 0) break;
                       }
-                      // a veces el título viene en un textarea
-                      if (auto txtArea = typeinfo_cast<TextArea*>(child)) {
-                      }
                  }
             }
         }
@@ -213,8 +213,9 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
             
             // cargo el icono como sea
             auto resPath = Mod::get()->getResourcesDir() / "paim_BotonMostrarThumbnails.png";
-            if (std::filesystem::exists(resPath)) {
-                iconSpr = CCSprite::create(resPath.generic_string().c_str());
+            std::error_code ecRes;
+            if (std::filesystem::exists(resPath, ecRes)) {
+                iconSpr = CCSprite::create(geode::utils::string::pathToString(resPath).c_str());
             }
 
             if (!iconSpr) {
@@ -240,7 +241,7 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
                 // bajo el icono un 20%
                 iconSpr->setScale(0.8f);
                 
-                // botón circular verde
+                // boton circular verde
                 auto btnSprite = CircleButtonSprite::create(
                     iconSpr,
                     CircleBaseColor::Green,
@@ -282,19 +283,21 @@ class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
          else if (levelID == 5003) levelName = "The Cellar";
          else if (levelID == 5004) levelName = "The Secret Hollow";
          
-         auto loading = LoadingCircle::create();
-         loading->setParentLayer(this);
-         loading->setFade(true);
-         loading->show();
+         auto winSz = CCDirector::sharedDirector()->getWinSize();
+         auto spinner = geode::LoadingSpinner::create(30.f);
+         spinner->setPosition(winSz / 2);
+         spinner->setID("paimon-loading-spinner"_spr);
+         this->addChild(spinner, 100);
+         Ref<geode::LoadingSpinner> loading = spinner;
          
          ThumbnailLoader::get().requestLoad(levelID, "", [this, loading, levelName](CCTexture2D* tex, bool success){
-             if (loading) loading->fadeAndRemove();
+             if (loading) loading->removeFromParent();
              
              if (success && tex) {
                   auto popup = SimpleThumbnailPopup::create(tex, levelName);
                   popup->show();
              } else {
-                  Notification::create("Thumbnail not found for this level", NotificationIcon::Error)->show();
+                  PaimonNotify::create("Thumbnail not found for this level", NotificationIcon::Error)->show();
              }
          });
     }

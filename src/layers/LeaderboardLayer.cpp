@@ -1,8 +1,15 @@
 #include "LeaderboardLayer.hpp"
-#include <Geode/modify/CreatorLayer.hpp>
+#include "LeaderboardHistoryLayer.hpp"
+#include "../utils/PaimonNotification.hpp"
+#include "../managers/TransitionManager.hpp"
+#include <Geode/binding/CreatorLayer.hpp>
+#include <Geode/binding/LevelSearchLayer.hpp>
+#include <Geode/binding/MusicDownloadManager.hpp>
+#include <Geode/binding/LevelTools.hpp>
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/ThumbnailLoader.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../managers/LevelColors.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/HttpClient.hpp"
 #include <Geode/utils/web.hpp>
@@ -11,12 +18,13 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../utils/Shaders.hpp"
+#include <random>
 #include <thread>
+#include <chrono>
+#include <cmath>
 
 using namespace geode::prelude;
 using namespace Shaders;
-
-// shaders viven en Shaders.hpp
 
 namespace {
     class LeaderboardPaimonSprite : public CCSprite {
@@ -83,23 +91,10 @@ static LeaderboardPaimonSprite* createLeaderboardBlurredSprite(CCTexture2D* text
     return finalSprite;
 }
 
-static void calculateLevelCellThumbScale(CCSprite* sprite, float bgWidth, float bgHeight, float widthFactor, float& outScaleX, float& outScaleY) {
-    if (!sprite) return;
-    
-    const float contentWidth = sprite->getContentSize().width;
-    const float contentHeight = sprite->getContentSize().height;
-    const float desiredWidth = bgWidth * widthFactor;
-    
-    outScaleY = bgHeight / contentHeight;
-    
-    float minScaleX = outScaleY; 
-    float desiredScaleX = desiredWidth / contentWidth;
-    outScaleX = std::max(minScaleX, desiredScaleX);
-}
-
-LeaderboardLayer* LeaderboardLayer::create() {
+LeaderboardLayer* LeaderboardLayer::create(BackTarget backTarget) {
     auto ret = new LeaderboardLayer();
     if (ret && ret->init()) {
+        ret->m_backTarget = backTarget;
         ret->autorelease();
         return ret;
     }
@@ -107,9 +102,9 @@ LeaderboardLayer* LeaderboardLayer::create() {
     return nullptr;
 }
 
-CCScene* LeaderboardLayer::scene() {
+CCScene* LeaderboardLayer::scene(BackTarget backTarget) {
     auto scene = CCScene::create();
-    auto layer = LeaderboardLayer::create();
+    auto layer = LeaderboardLayer::create(backTarget);
     scene->addChild(layer);
     return scene;
 }
@@ -117,39 +112,61 @@ CCScene* LeaderboardLayer::scene() {
 bool LeaderboardLayer::init() {
     if (!CCLayer::init()) return false;
     
-    m_page = 0;
-    m_allItems = nullptr;
-    
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // fondo base
+    // fondo base oscuro
     auto bg = CCSprite::create("GJ_gradientBG.png");
     bg->setID("background");
     bg->setPosition(winSize / 2);
     bg->setScaleX(winSize.width / bg->getContentSize().width);
     bg->setScaleY(winSize.height / bg->getContentSize().height);
-    bg->setColor({20, 20, 20}); // fondo oscurito
-    bg->setZOrder(-10); // bien atrás
+    bg->setColor({12, 10, 20});
+    bg->setZOrder(-10);
     this->addChild(bg);
 
-    // fondo dinámico encima
+    // fondo dinamico encima
     m_bgSprite = LeaderboardPaimonSprite::create(); 
     m_bgSprite->setPosition(winSize / 2);
     m_bgSprite->setVisible(false);
-    m_bgSprite->setZOrder(-5); // encima del gradient
+    m_bgSprite->setZOrder(-5);
     this->addChild(m_bgSprite);
 
     // capa negra para transiciones
     m_bgOverlay = CCLayerColor::create({0, 0, 0, 0});
     m_bgOverlay->setContentSize(winSize);
-    m_bgOverlay->setZOrder(-4); // encima del fondo blur
+    m_bgOverlay->setZOrder(-4);
     this->addChild(m_bgOverlay);
+
+    // contenedor de particulas
+    m_particleContainer = CCNode::create();
+    m_particleContainer->setPosition({0, 0});
+    m_particleContainer->setZOrder(-3);
+    this->addChild(m_particleContainer);
+
+    // vignette oscura en los bordes
+    auto vignette = CCLayerColor::create({0, 0, 0, 50});
+    vignette->setContentSize(winSize);
+    vignette->setZOrder(-2);
+    this->addChild(vignette);
+
+    // glow overlay (pulsa con la musica — color tematico suave)
+    m_glowOverlay = CCLayerColor::create({255, 180, 50, 0});
+    m_glowOverlay->setContentSize(winSize);
+    m_glowOverlay->setZOrder(-1);
+    this->addChild(m_glowOverlay);
+
+    // beat flash (destello blanco en beats fuertes)
+    m_beatFlash = CCLayerColor::create({255, 255, 255, 0});
+    m_beatFlash->setContentSize(winSize);
+    m_beatFlash->setZOrder(-1);
+    this->addChild(m_beatFlash);
 
     this->scheduleUpdate();
 
-    // botón de volver
+    // boton de volver
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
+    menu->setZOrder(20);
     this->addChild(menu);
 
     auto backBtn = CCMenuItemSpriteExtra::create(
@@ -160,23 +177,20 @@ bool LeaderboardLayer::init() {
     backBtn->setPosition(25, winSize.height - 25);
     menu->addChild(backBtn);
 
-    // sin título, que quede limpio
-
-    // pestañas de arriba
+    // pestanas de arriba
     auto tabMenu = CCMenu::create();
-    tabMenu->setPosition(0, 0); // pos manual
+    tabMenu->setPosition(0, 0);
     tabMenu->setZOrder(10);
     this->addChild(tabMenu);
     m_tabsMenu = tabMenu;
 
-    auto createTab = [&](const char* text, const char* id, CCPoint pos) -> CCMenuItemToggler* {
-        // manual pa no pelearse con ButtonSprite
-        auto createBtn = [&](const char* frameName) -> CCNode* {
+    auto createTab = [&](char const* text, char const* id, CCPoint pos) -> CCMenuItemToggler* {
+        auto createBtn = [&](char const* frameName) -> CCNode* {
             auto sprite = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName(frameName);
-            sprite->setContentSize({100.f, 30.f});
+            sprite->setContentSize({110.f, 32.f});
             
             auto label = CCLabelBMFont::create(text, "goldFont.fnt");
-            label->setScale(0.6f);
+            label->setScale(0.55f);
             label->setPosition({sprite->getContentSize().width / 2, sprite->getContentSize().height / 2 + 2.f});
             sprite->addChild(label);
             
@@ -193,56 +207,113 @@ bool LeaderboardLayer::init() {
         return tab;
     };
 
-    // layout general
-    float topY = winSize.height - 40.f;
+    float topY = winSize.height - 22.f;
     float centerX = winSize.width / 2;
-    float btnSpacing = 105.f;
-    // botones arriba: diario | semanal | siempre | creadores
+    float btnSpacing = 115.f;
     
-    auto dailyBtn = createTab(Localization::get().getString("leaderboard.daily").c_str(), "daily", {centerX - btnSpacing * 1.5f, topY});
+    auto dailyBtn = createTab(Localization::get().getString("leaderboard.daily").c_str(), "daily", {centerX - btnSpacing * 0.5f, topY});
     dailyBtn->toggle(true); 
     tabMenu->addChild(dailyBtn);
 
-    auto weeklyBtn = createTab(Localization::get().getString("leaderboard.weekly").c_str(), "weekly", {centerX - btnSpacing * 0.5f, topY});
+    auto weeklyBtn = createTab(Localization::get().getString("leaderboard.weekly").c_str(), "weekly", {centerX + btnSpacing * 0.5f, topY});
     tabMenu->addChild(weeklyBtn);
 
-    auto allTimeBtn = createTab(Localization::get().getString("leaderboard.all_time").c_str(), "alltime", {centerX + btnSpacing * 0.5f, topY});
-    tabMenu->addChild(allTimeBtn);
+    // boton historial (icono de lista)
+    auto historySpr = CCSprite::createWithSpriteFrameName("GJ_menuBtn_001.png");
+    if (!historySpr) historySpr = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
+    if (historySpr) {
+        historySpr->setScale(0.45f);
+        auto historyBtn = CCMenuItemSpriteExtra::create(
+            historySpr, this, menu_selector(LeaderboardLayer::onHistory));
+        historyBtn->setPosition({winSize.width - 30.f, winSize.height - 25.f});
+        menu->addChild(historyBtn);
 
-    auto creatorsBtn = createTab(Localization::get().getString("leaderboard.creators").c_str(), "creators", {centerX + btnSpacing * 1.5f, topY});
-    tabMenu->addChild(creatorsBtn);
-
-    // spinner
-    m_loadingSpinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-    if (!m_loadingSpinner) {
-        m_loadingSpinner = CCSprite::create("loadingCircle.png");
+        auto histLabel = CCLabelBMFont::create("H", "bigFont.fnt");
+        histLabel->setScale(0.9f);
+        histLabel->setPosition(historySpr->getContentSize() / 2);
+        historySpr->addChild(histLabel, 10);
     }
+
+    // spinner centrado
+    m_loadingSpinner = geode::LoadingSpinner::create(50.f);
     if (m_loadingSpinner) {
         m_loadingSpinner->setPosition(winSize / 2);
-        m_loadingSpinner->setScale(1.0f);
-        m_loadingSpinner->setVisible(false);
+        m_loadingSpinner->setVisible(true);
         this->addChild(m_loadingSpinner, 100);
     }
 
     this->setKeypadEnabled(true);
 
-    // carga inicial de la daily
-    if (m_loadingSpinner) {
-        m_loadingSpinner->setVisible(true);
-        m_loadingSpinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.f)));
-    }
+    // fade-out suave de la musica de menu al entrar
+    fadeOutMenuMusic();
+
+    // reset flags
+    m_dataLoaded = false;
+    m_thumbLoaded = false;
+    m_listCreated = false;
 
     loadLeaderboard("daily");
 
     return true;
 }
 
+void LeaderboardLayer::onEnterTransitionDidFinish() {
+    CCLayer::onEnterTransitionDidFinish();
+    // si volvemos de un push (ej: LevelInfoLayer o HistoryLayer)
+    // y la musica cueva ya estaba lista, reanudarla con fade-in
+    if (m_levelMusicChannel && !m_musicPlaying && !m_leavingForGood) {
+        // canal existe pero esta pausado — fade-in
+        bool isPaused = false;
+        m_levelMusicChannel->getPaused(&isPaused);
+        if (isPaused) {
+            m_levelMusicChannel->setPaused(false);
+            m_musicPlaying = true;
+            auto engine = FMODAudioEngine::sharedEngine();
+            float target = engine ? engine->m_musicVolume * 0.55f : 0.4f;
+            m_levelMusicChannel->setVolume(0.f);
+            m_isFadingCaveIn = true;
+            m_isFadingCaveOut = false;
+            executeCaveFade(0, AUDIO_FADE_STEPS, 0.f, target, false);
+        }
+    }
+    m_goingToHistory = false;
+    // silenciar BG inmediatamente
+    ensureBgSilenced();
+    // DynamicSongManager::stopSong() restaura BG en un thread con delay,
+    // asi que re-silenciamos varias veces para ganarle
+    this->scheduleOnce(schedule_selector(LeaderboardLayer::delaySilenceBg), 0.3f);
+    this->scheduleOnce(schedule_selector(LeaderboardLayer::delaySilenceBg2), 0.7f);
+}
+
+void LeaderboardLayer::onExitTransitionDidStart() {
+    CCLayer::onExitTransitionDidStart();
+    // si es un push a nivel, pausar la cueva. Si es historial, dejarla sonando.
+    if (!m_leavingForGood && !m_goingToHistory && m_musicPlaying && m_levelMusicChannel) {
+        // fade-out rapido y pausar
+        m_isFadingCaveIn = false;
+        m_isFadingCaveOut = false;
+        float currentVol = 0.f;
+        m_levelMusicChannel->getVolume(&currentVol);
+        m_levelMusicChannel->setVolume(0.f);
+        m_levelMusicChannel->setPaused(true);
+        m_musicPlaying = false;
+    }
+}
+
 void LeaderboardLayer::onBack(CCObject*) {
-    CC_SAFE_RELEASE_NULL(m_allItems);
+    m_leavingForGood = true;
+    killCaveMusic();
+    fadeInMenuMusic();
     if (GameLevelManager::get()->m_levelManagerDelegate == this) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
-    CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, CreatorLayer::scene()));
+    CCScene* backScene = nullptr;
+    if (m_backTarget == BackTarget::LevelSearchLayer) {
+        backScene = LevelSearchLayer::scene(0);
+    } else {
+        backScene = CreatorLayer::scene();
+    }
+    TransitionManager::get().replaceScene(backScene);
 }
 
 void LeaderboardLayer::keyBackClicked() {
@@ -250,20 +321,18 @@ void LeaderboardLayer::keyBackClicked() {
 }
 
 void LeaderboardLayer::onTab(CCObject* sender) {
-    auto toggler = static_cast<CCMenuItemToggler*>(sender);
-    auto type = static_cast<CCString*>(toggler->getUserObject())->getCString();
+    auto toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
+    if (!toggler) return;
+    auto typeObj = typeinfo_cast<CCString*>(toggler->getUserObject());
+    if (!typeObj) return;
+    auto type = typeObj->getCString();
     
     if (m_currentType == type) {
-        toggler->toggle(true); // on
+        toggler->toggle(true);
         return;
     }
     m_currentType = type;
-    
-    // reinicia la paginación
-    m_page = 0;
-    CC_SAFE_RELEASE_NULL(m_allItems);
 
-    // marca las otras pestañas bien
     for (auto tab : m_tabs) {
         tab->toggle(tab == toggler);
     }
@@ -275,12 +344,19 @@ void LeaderboardLayer::onTab(CCObject* sender) {
     m_scroll = nullptr;
     m_listMenu = nullptr;
 
+    // reset flags
+    m_dataLoaded = false;
+    m_thumbLoaded = false;
+    m_listCreated = false;
+
     // muestra el spinner
     if (m_loadingSpinner) {
         m_loadingSpinner->setVisible(true);
-        m_loadingSpinner->stopAllActions();
-        m_loadingSpinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.f)));
     }
+
+    // limpiar particulas y musica del tab anterior
+    clearParticles();
+    killCaveMusic();
     
     loadLeaderboard(type);
 }
@@ -292,641 +368,342 @@ void LeaderboardLayer::loadLeaderboard(std::string type) {
     }
     m_featuredExpiresAt = 0;
 
-    if (type == "daily" || type == "weekly") {
-        this->retain();
-        HttpClient::get().get("/api/" + type + "/current", [this, type](bool success, const std::string& json) {
-            if (success) {
-                auto dataRes = matjson::parse(json);
-                if (dataRes.isOk()) {
-                    auto data = dataRes.unwrap();
-                    if (data["success"].asBool().unwrapOr(false)) {
-                        auto levelData = data["data"];
-                        int levelID = levelData["levelID"].asInt().unwrapOr(0);
-                        m_featuredExpiresAt = (long long)levelData["expiresAt"].asDouble().unwrapOr(0);
+    WeakRef<LeaderboardLayer> self = this;
+    HttpClient::get().get("/api/" + type + "/current", [self, type](bool success, std::string const& json) {
+        auto layer = self.lock();
+        if (!layer) return;
 
-                        if (levelID > 0) {
-                            auto level = GJGameLevel::create();
-                            level->m_levelID = levelID;
-                            level->m_levelName = Localization::get().getString("leaderboard.loading");
-                            level->m_creatorName = "";
+        if (success) {
+            auto dataRes = matjson::parse(json);
+            if (dataRes.isOk()) {
+                auto data = dataRes.unwrap();
+                if (data["success"].asBool().unwrapOr(false)) {
+                    auto levelData = data["data"];
+                    int levelID = levelData["levelID"].asInt().unwrapOr(0);
+                    layer->m_featuredExpiresAt = (long long)levelData["expiresAt"].asDouble().unwrapOr(0);
 
-                            // niveles guardados primero
-                            auto saved = GameLevelManager::get()->getSavedLevel(levelID);
-                            if (saved) {
-                                level->m_levelName = saved->m_levelName;
-                                level->m_creatorName = saved->m_creatorName;
-                                level->m_stars = saved->m_stars;
-                                level->m_difficulty = saved->m_difficulty;
-                                level->m_demon = saved->m_demon;
-                                level->m_demonDifficulty = saved->m_demonDifficulty;
-                                level->m_songID = saved->m_songID;
-                                level->m_audioTrack = saved->m_audioTrack;
-                                level->m_levelString = saved->m_levelString;
-                            }
+                    if (levelID > 0) {
+                        auto level = GJGameLevel::create();
+                        level->m_levelID = levelID;
+                        level->m_levelName = Localization::get().getString("leaderboard.loading");
+                        level->m_creatorName = "";
 
-                            level->retain();
-                            if (m_featuredLevel) m_featuredLevel->release();
-                            m_featuredLevel = level;
-
-                            // info completa server gd
-                            auto searchObj = GJSearchObject::create(SearchType::MapPackOnClick, std::to_string(levelID));
-                            auto glm = GameLevelManager::get();
-                            glm->m_levelManagerDelegate = this;
-                            glm->getOnlineLevels(searchObj);
+                        auto saved = GameLevelManager::get()->getSavedLevel(levelID);
+                        if (saved) {
+                            level->m_levelName = saved->m_levelName;
+                            level->m_creatorName = saved->m_creatorName;
+                            level->m_stars = saved->m_stars;
+                            level->m_difficulty = saved->m_difficulty;
+                            level->m_demon = saved->m_demon;
+                            level->m_demonDifficulty = saved->m_demonDifficulty;
+                            level->m_songID = saved->m_songID;
+                            level->m_audioTrack = saved->m_audioTrack;
+                            level->m_levelString = saved->m_levelString;
                         }
+
+                        level->retain();
+                        if (layer->m_featuredLevel) layer->m_featuredLevel->release();
+                        layer->m_featuredLevel = level;
+
+                        // pedir info completa al server GD
+                        auto searchObj = GJSearchObject::create(SearchType::MapPackOnClick, std::to_string(levelID));
+                        auto glm = GameLevelManager::get();
+                        glm->m_levelManagerDelegate = layer.data();
+                        glm->getOnlineLevels(searchObj);
                     }
                 }
             }
-
-            if (m_loadingSpinner) {
-                m_loadingSpinner->setVisible(false);
-                m_loadingSpinner->stopAllActions();
-            }
-
-            if (m_featuredLevel) {
-                this->updateBackground(m_featuredLevel->m_levelID);
-            } else {
-                this->updateBackground(0);
-            }
-
-            this->createList(nullptr, type);
-            this->release();
-        });
-    } else {
-        fetchLeaderboardList(type);
-    }
-}
-
-void LeaderboardLayer::fetchLeaderboardList(std::string type) {
-    // uso HttpClient en hilo aparte
-    this->retain();
-    HttpClient::get().get("/api/leaderboard?type=" + type, [this, type](bool success, const std::string& response) {
-        if (success) {
-            onLeaderboardLoaded(type, response);
-        } else {
-            if (m_loadingSpinner) {
-                m_loadingSpinner->setVisible(false);
-                m_loadingSpinner->stopAllActions();
-            }
-            std::string msg = Localization::get().getString("leaderboard.load_error");
-            FLAlertLayer::create(Localization::get().getString("leaderboard.error").c_str(), msg.c_str(), "OK")->show();
         }
-        this->release();
+
+        // marcar datos como cargados
+        layer->m_dataLoaded = true;
+
+        if (layer->m_featuredLevel) {
+            layer->updateBackground(layer->m_featuredLevel->m_levelID);
+        } else {
+            layer->updateBackground(0);
+            // si no hay nivel, thumb tambien esta "listo"
+            layer->m_thumbLoaded = true;
+        }
+
+        // crear lista (solo una vez)
+        if (!layer->m_listCreated) {
+            layer->m_listCreated = true;
+            layer->createList(type);
+        }
+
+        layer->checkLoadingComplete();
     });
 }
 
-void LeaderboardLayer::onLeaderboardLoaded(std::string type, std::string json) {
-    if (m_loadingSpinner) {
-        m_loadingSpinner->setVisible(false);
-        m_loadingSpinner->stopAllActions();
-    }
-    
-    try {
-        auto dataRes = matjson::parse(json);
-        if (!dataRes) {
-            FLAlertLayer::create(Localization::get().getString("leaderboard.error").c_str(), Localization::get().getString("leaderboard.parse_error").c_str(), "OK")->show();
-            return;
-        }
-        auto data = dataRes.unwrap();
-
-        if (!data.contains("success") || !data["success"].asBool().unwrapOr(false)) {
-            FLAlertLayer::create(Localization::get().getString("leaderboard.error").c_str(), Localization::get().getString("leaderboard.server_error").c_str(), "OK")->show();
-            return;
-        }
-
-        if (!data["data"].isArray()) {
-             FLAlertLayer::create(Localization::get().getString("leaderboard.error").c_str(), Localization::get().getString("leaderboard.invalid_format").c_str(), "OK")->show();
-             return;
-        }
-
-        auto items = data["data"].asArray().unwrap();
-        auto ccArray = CCArray::create();
-
-        std::vector<int> levelIDs;
-        std::string searchIDs = "";
-        bool needsSearch = false;
-
-        for (auto& item : items) {
-            if (type == "creators") {
-                auto score = GJUserScore::create();
-                score->m_userName = item["username"].asString().unwrapOr(std::string(Localization::get().getString("leaderboard.unknown")));
-                score->m_stars = item["totalStars"].asInt().unwrapOr(0); 
-                score->m_globalRank = item["totalVotes"].asInt().unwrapOr(0); 
-                score->m_iconID = 1; // icono default
-                score->m_color1 = 10;
-                score->m_color2 = 11;
-                score->m_iconType = IconType::Cube;
-                ccArray->addObject(score);
-            } else {
-                int levelID = item["levelId"].asInt().unwrapOr(0);
-                if (levelID > 0) levelIDs.push_back(levelID);
-
-                auto level = GJGameLevel::create();
-                level->m_levelID = levelID;
-                level->m_levelName = Localization::get().getString("leaderboard.loading");
-                level->m_creatorName = item["uploadedBy"].asString().unwrapOr(std::string(Localization::get().getString("leaderboard.unknown")));
-                
-                // el rating lo meto en userObject
-                double rating = item["rating"].asDouble().unwrapOr(0.0);
-                int count = item["count"].asInt().unwrapOr(0);
-                auto ratingStr = CCString::createWithFormat("%.1f/5 (%d)", rating, count);
-                level->setUserObject(ratingStr);
-
-                // nivel guardado en caché
-                auto savedLevel = GameLevelManager::get()->getSavedLevel(levelID);
-                if (savedLevel && savedLevel->m_levelName.length() > 0) {
-                    level->m_levelName = savedLevel->m_levelName;
-                    level->m_creatorName = savedLevel->m_creatorName;
-                    level->m_stars = savedLevel->m_stars;
-                    level->m_difficulty = savedLevel->m_difficulty;
-                    level->m_demon = savedLevel->m_demon;
-                    level->m_demonDifficulty = savedLevel->m_demonDifficulty;
-                    level->m_userID = savedLevel->m_userID;
-                    level->m_accountID = savedLevel->m_accountID;
-                } else {
-                    if (!searchIDs.empty()) searchIDs += ",";
-                    searchIDs += std::to_string(levelID);
-                    needsSearch = true;
-                }
-
-                ccArray->addObject(level);
-            }
-        }
-
-        if (m_allItems) m_allItems->release();
-        m_allItems = ccArray;
-        m_allItems->retain();
-
-        if (needsSearch) {
-            auto searchObj = GJSearchObject::create(SearchType::MapPackOnClick, searchIDs);
-            auto glm = GameLevelManager::get();
-            glm->m_levelManagerDelegate = this;
-            glm->getOnlineLevels(searchObj);
-        }
-
-        // elijo un nivel random pa el fondo
-        if (!levelIDs.empty()) {
-            // random puro
-            int idx = rand() % levelIDs.size();
-            this->updateBackground(levelIDs[idx]);
-        }
-
-        refreshList();
-
-    } catch (std::exception& e) {
-        FLAlertLayer::create(Localization::get().getString("leaderboard.error").c_str(), Localization::get().getString("leaderboard.parse_error").c_str(), "OK")->show();
-    }
-}
-
-void LeaderboardLayer::refreshList() {
-    if (!m_allItems) {
-        createList(nullptr, m_currentType);
-        return;
-    }
-
-    // si no hay datos, tiro de todo; daily/weekly van aparte
-    if (m_currentType == "daily" || m_currentType == "weekly") {
-        createList(m_allItems, m_currentType);
-        return;
-    }
-
-    int totalItems = m_allItems->count();
-    int start = m_page * ITEMS_PER_PAGE;
-    int end = std::min(start + ITEMS_PER_PAGE, totalItems);
-    
-    auto pageItems = CCArray::create();
-    for (int i = start; i < end; i++) {
-        pageItems->addObject(m_allItems->objectAtIndex(i));
-    }
-    
-    createList(pageItems, m_currentType);
-}
-
-void LeaderboardLayer::onNextPage(CCObject*) {
-    if (!m_allItems) return;
-    int totalPages = (m_allItems->count() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-    if (m_page < totalPages - 1) {
-        m_page++;
-        refreshList();
-    }
-}
-
-void LeaderboardLayer::onPrevPage(CCObject*) {
-    if (m_page > 0) {
-        m_page--;
-        refreshList();
-    }
-}
-
-void LeaderboardLayer::createList(CCArray* items, std::string type) {
+void LeaderboardLayer::createList(std::string type) {
     static int LIST_CONTAINER_TAG = 999;
 
     this->removeChildByTag(LIST_CONTAINER_TAG);
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
-    
-    // layout ancho centrado
-    float width = 400.f;
-    float height = 220.f;
-    float xPos = winSize.width / 2 - width / 2;
-    float yPos = winSize.height / 2 - height / 2 - 15.f;
 
     auto container = CCNode::create();
     container->setTag(LIST_CONTAINER_TAG);
     this->addChild(container);
 
-    // panel redondeado de fondo
-    auto panel = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-    if (!panel) {
-        CCSpriteFrameCache::sharedSpriteFrameCache()->addSpriteFramesWithFile("GJ_GameSheet03.plist");
-        panel = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-        if (!panel) panel = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
-    }
-    
-    if (panel) {
-        panel->setColor({0, 0, 0});
-        panel->setOpacity(80);
-        panel->setContentSize({width + 10, height + 10});
-        panel->setPosition({winSize.width / 2, winSize.height / 2 - 15.f});
-        container->addChild(panel, -1);
-    }
-
-    m_listMenu = CCLayer::create();
-    m_listMenu->setPosition({0, 0});
-
-    m_scroll = cocos2d::extension::CCScrollView::create();
-    m_scroll->setViewSize({width, height});
-    m_scroll->setPosition({xPos, yPos});
-    m_scroll->setDirection(cocos2d::extension::kCCScrollViewDirectionVertical);
-    m_scroll->setContainer(m_listMenu);
-    container->addChild(m_scroll);
-
-    // controles de paginación
-    if (m_allItems && m_allItems->count() > ITEMS_PER_PAGE && type != "daily" && type != "weekly") {
-        auto menu = CCMenu::create();
-        menu->setPosition({winSize.width / 2, winSize.height / 2 - 15.f});
-        container->addChild(menu, 10);
-
-        auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-        prevSpr->setScale(0.6f);
-        prevSpr->setOpacity(m_page == 0 ? 100 : 255);
-        auto prevBtn = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(LeaderboardLayer::onPrevPage));
-        prevBtn->setPosition({-220.f, 0.f});
-        if (m_page == 0) prevBtn->setEnabled(false);
-        menu->addChild(prevBtn);
-        
-        auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
-        nextSpr->setFlipX(true);
-        nextSpr->setScale(0.6f);
-        auto nextBtn = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(LeaderboardLayer::onNextPage));
-        nextBtn->setPosition({220.f, 0.f});
-
-        int totalPages = (m_allItems->count() + ITEMS_PER_PAGE - 1) / ITEMS_PER_PAGE;
-        if (m_page >= totalPages - 1) {
-            nextBtn->setEnabled(false);
-            nextSpr->setOpacity(100);
-        }
-        menu->addChild(nextBtn);
-        
-        // texto "página X/Y"
-        auto pageLbl = CCLabelBMFont::create(fmt::format("{}/{}", m_page + 1, totalPages).c_str(), "chatFont.fnt");
-        pageLbl->setScale(0.6f);
-        pageLbl->setOpacity(180);
-        pageLbl->setPosition({0.f, -125.f});
-        menu->addChild(pageLbl);
-    }
-
-    // helper para crear celdas
-    // guardo self para callbacks
-    LeaderboardLayer* self = this;
-    auto createMinimalCell = [&, self](CCObject* obj, float w, float h, float y, bool isFeatured, int rank) {
-        auto cell = CCNode::create();
-        cell->setContentSize({w, h});
-        cell->setAnchorPoint({0.5f, 0.5f});
-        cell->setPosition({width / 2, y});
-        m_listMenu->addChild(cell);
-
-        // animación de entrada suave
-        float delay = rank > 0 ? (rank - 1) * 0.02f : 0.f;
-        cell->setScale(0.85f);
-        cell->runAction(CCSequence::create(
-            CCDelayTime::create(delay),
-            CCEaseBackOut::create(CCScaleTo::create(0.25f, 1.0f)),
-            nullptr
-        ));
-
-        // fondo de la celda, redondeado
-        auto rowBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-        if (!rowBg) rowBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
-
-        if (rowBg) {
-            rowBg->setColor({18, 18, 24}); // oscuro
-            rowBg->setOpacity(isFeatured ? 255 : 240); // opaco
-            rowBg->setContentSize(cell->getContentSize());
-            rowBg->setPosition(cell->getContentSize() / 2);
-            rowBg->setZOrder(0);
-            cell->addChild(rowBg);
-        }
-
-        // menú para que la celda sea clickeable
-        auto cellMenu = CCMenu::create();
-        cellMenu->setPosition({0, 0});
-        cellMenu->setContentSize(cell->getContentSize());
-        cell->addChild(cellMenu, 50);
-
-        // datos de nivel o creador
-        std::string nameStr = "Unknown";
-        std::string creatorStr = "";
-        std::string ratingStr = "";
-        int levelID = 0;
-        
-        if (type == "creators") {
-            auto score = static_cast<GJUserScore*>(obj);
-            nameStr = score->m_userName;
-            creatorStr = fmt::format("{} uploads", score->m_stars);
-        } else {
-            auto level = static_cast<GJGameLevel*>(obj);
-            nameStr = level->m_levelName;
-            creatorStr = "by " + std::string(level->m_creatorName);
-            levelID = level->m_levelID;
-            auto ratingObj = static_cast<CCString*>(level->getUserObject());
-            if (ratingObj) ratingStr = ratingObj->getCString();
-        }
-
-        // ===== miniatura =====
-        float thumbW = 0.f;
-        GJGameLevel* levelPtr = nullptr;
-
-        if (type != "creators") {
-            levelPtr = static_cast<GJGameLevel*>(obj);
-            levelID = levelPtr->m_levelID;
-            log::debug("[LeaderboardLayer] createMinimalCell: levelID={}, isFeatured={}", levelID, isFeatured);
-        }
-
-        if (levelID > 0) {
-            float aspectRatio = 16.f / 9.f;
-            float targetW = h * aspectRatio;
-
-            // ancho maximo
-            if (isFeatured) {
-                targetW = std::min(targetW, w * 0.45f);
-            } else {
-                targetW = std::min(targetW, w * 0.35f);
-            }
-
-            thumbW = targetW;
-
-            // crear thumb
-            auto createThumb = [](CCNode* targetCell, CCTexture2D* tex, float tW, float tH) {
-                if (!tex || !targetCell) return;
-
-                // quitar thumb anterior
-                targetCell->removeChildByTag(101);
-
-                // contenedor thumb
-                auto thumbContainer = CCNode::create();
-                thumbContainer->setContentSize({tW, tH});
-                thumbContainer->setAnchorPoint({0, 0});
-                thumbContainer->setPosition({0, 0});
-                thumbContainer->setTag(101);
-
-                // sprite img
-                auto sprite = CCSprite::createWithTexture(tex);
-                if (sprite) {
-                    float imgW = sprite->getContentSize().width;
-                    float imgH = sprite->getContentSize().height;
-
-                    // escala cubrir, ref altura
-                    float scale = tH / imgH;
-
-                    // si ancho menor, usar ancho
-                    if (imgW * scale < tW) {
-                        scale = tW / imgW;
-                    }
-
-                    sprite->setScale(scale);
-                    float scaledW = imgW * scale;
-                    float xPos = std::min(tW / 2, scaledW / 2); // no salir derecha
-                    sprite->setPosition({xPos, tH / 2});
-                    thumbContainer->addChild(sprite);
-                }
-
-                // gradiente borde derecho
-                auto gradient = CCLayerGradient::create({0, 0, 0, 0}, {0, 0, 0, 100}, {1, 0});
-                gradient->setContentSize({tW * 0.4f, tH});
-                gradient->setPosition({tW * 0.6f, 0});
-                thumbContainer->addChild(gradient, 5);
-
-                targetCell->addChild(thumbContainer, 1);
-
-                log::debug("[LeaderboardLayer] Thumbnail created: {}x{}", tW, tH);
-            };
-
-            // textura local primero
-            auto texture = LocalThumbs::get().loadTexture(levelID);
-            log::debug("[LeaderboardLayer] loadTexture result for {}: {}", levelID, texture ? "OK" : "NULL");
-            if (texture) {
-                createThumb(cell, texture, thumbW, h);
-            } else {
-                // placeholder carga
-                auto placeholder = CCLayerColor::create({30, 30, 40, 255});
-                placeholder->setContentSize({thumbW, h});
-                placeholder->setTag(101);
-                cell->addChild(placeholder, 1);
-
-                auto spinner = CCSprite::createWithSpriteFrameName("loadingCircle.png");
-                if (spinner) {
-                    spinner->setScale(0.35f);
-                    spinner->setPosition({thumbW / 2, h / 2});
-                    spinner->setColor({70, 70, 80});
-                    spinner->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.f)));
-                    placeholder->addChild(spinner);
-                }
-
-                // carga asincrona
-                std::string fileName = fmt::format("{}.png", levelID);
-                cell->retain();
-
-                float capW = thumbW;
-                float capH = h;
-
-                log::debug("[LeaderboardLayer] Requesting async load for level {}", levelID);
-
-                ThumbnailLoader::get().requestLoad(levelID, fileName, [cell, capW, capH, createThumb, levelID](CCTexture2D* tex, bool success) {
-                    log::debug("[LeaderboardLayer] Async load callback for {}: tex={}, success={}", levelID, tex ? "OK" : "NULL", success);
-                    geode::Loader::get()->queueInMainThread([cell, tex, capW, capH, createThumb] {
-                        if (cell->getParent()) {
-                            if (tex) {
-                                createThumb(cell, tex, capW, capH);
-                            }
-                        }
-                        cell->release();
-                    });
-                });
-            }
-        }
-
-        // btn sobre thumb
-        if (type != "creators" && levelPtr && thumbW > 0) {
-            levelPtr->retain();
-
-            // ccmenuitemspriteextra semi-transparente
-            // opacidad 1 = casi invisible, clickeable
-            auto hitArea = CCSprite::createWithSpriteFrameName("GJ_square01.png");
-            if (!hitArea) {
-                hitArea = CCSprite::create("square.png");
-            }
-            if (!hitArea) {
-                // fallback sprite vacio
-                hitArea = CCSprite::create();
-                if (hitArea) {
-                    hitArea->setTextureRect(CCRect(0, 0, 1, 1));
-                }
-            }
-
-            if (hitArea) {
-                // escala cubrir thumb
-                float sprW = hitArea->getContentSize().width;
-                float sprH = hitArea->getContentSize().height;
-                if (sprW > 0 && sprH > 0) {
-                    hitArea->setScaleX(thumbW / sprW);
-                    hitArea->setScaleY(h / sprH);
-                }
-                hitArea->setOpacity(1); // invisible, clickeable
-                hitArea->setColor({0, 0, 0}); // negro
-
-                auto thumbBtn = CCMenuItemSpriteExtra::create(hitArea, self, menu_selector(LeaderboardLayer::onViewLevel));
-                thumbBtn->setUserObject(levelPtr);
-                thumbBtn->setPosition({thumbW / 2, h / 2});
-                cellMenu->addChild(thumbBtn, 100);
-            }
-        }
-
-        // ===== indicador de rango =====
-        if (rank > 0 && !isFeatured) {
-            ccColor3B rankColor = {200, 200, 200};
-            float rankScale = 0.45f;
-
-            if (rank == 1) { rankColor = {255, 215, 0}; rankScale = 0.55f; }
-            else if (rank == 2) { rankColor = {220, 220, 230}; rankScale = 0.5f; }
-            else if (rank == 3) { rankColor = {205, 127, 50}; rankScale = 0.5f; }
-
-            // fondo rango sobre thumb
-            auto rankBg = CCLayerColor::create({0, 0, 0, 150});
-            rankBg->setContentSize({22.f, 14.f});
-            if (rank >= 10) rankBg->setContentSize({28.f, 14.f});
-            if (rank >= 100) rankBg->setContentSize({34.f, 14.f});
-
-            rankBg->setPosition({4.f, h - 18.f});
-            cell->addChild(rankBg, 20);
-
-            auto rankLbl = CCLabelBMFont::create(fmt::format("#{}", rank).c_str(), "chatFont.fnt");
-            rankLbl->setScale(rankScale);
-            rankLbl->setColor(rankColor);
-            rankLbl->setPosition(rankBg->getContentSize() / 2);
-            rankBg->addChild(rankLbl);
-        }
-
-        // ===== textos =====
-        float textPadding = 12.f;
-        float textX = (levelID > 0) ? (thumbW + textPadding) : 15.f;
-        float availableWidth = w - textX - 15.f; // margen derecho
-
-        float scaleMult = isFeatured ? 1.3f : 1.0f;
-
-        auto nameLbl = CCLabelBMFont::create(nameStr.c_str(), "bigFont.fnt");
-        nameLbl->setScale(0.5f * scaleMult);
-        nameLbl->setAnchorPoint({0.f, 0.5f});
-        nameLbl->setPosition({textX, h / 2 + (isFeatured ? 15.f : 8.f)});
-        if (nameLbl->getScaledContentSize().width > availableWidth) {
-            nameLbl->setScale(nameLbl->getScale() * (availableWidth / nameLbl->getScaledContentSize().width));
-        }
-        cell->addChild(nameLbl, 10);
-
-        auto creatorLbl = CCLabelBMFont::create(creatorStr.c_str(), "chatFont.fnt");
-        creatorLbl->setScale(0.55f * scaleMult);
-        creatorLbl->setColor({170, 170, 180});
-        creatorLbl->setAnchorPoint({0.f, 0.5f});
-        creatorLbl->setPosition({textX, h / 2 - (isFeatured ? 8.f : 6.f)});
-        cell->addChild(creatorLbl, 10);
-
-        // rating
-        if (!ratingStr.empty() && !isFeatured) {
-            auto ratingLbl = CCLabelBMFont::create(ratingStr.c_str(), "chatFont.fnt");
-            ratingLbl->setScale(0.4f);
-            ratingLbl->setColor({255, 200, 100});
-            ratingLbl->setAnchorPoint({0.f, 0.5f});
-            ratingLbl->setPosition({textX, h / 2 - 20.f});
-            cell->addChild(ratingLbl, 10);
-        }
-
-
-        // ===== cuenta regresiva para destacado =====
-        if (isFeatured && m_featuredExpiresAt > 0) {
-            long long now = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            long long diff = m_featuredExpiresAt - now;
-
-            if (diff > 0) {
-                int hours = diff / (1000 * 60 * 60);
-                int mins = (diff % (1000 * 60 * 60)) / (1000 * 60);
-
-                auto timeLbl = CCLabelBMFont::create(fmt::format("Ends in {}h {}m", hours, mins).c_str(), "chatFont.fnt");
-                timeLbl->setScale(0.45f);
-                timeLbl->setColor({255, 180, 100});
-                timeLbl->setAnchorPoint({1.f, 0.5f});
-                timeLbl->setPosition({w - 15.f, h - 20.f});
-                cell->addChild(timeLbl, 10);
-            }
-        }
-    };
-
-    // vista daily/weekly
-    if (type == "daily" || type == "weekly") {
-        if (m_featuredLevel) {
-            float cardH = 150.f;
-            float cardW = width - 20.f;
-            m_listMenu->setContentSize({width, height});
-
-            float y = height / 2;
-            createMinimalCell(m_featuredLevel, cardW, cardH, y, true, 0);
-        } else {
-            auto lbl = CCLabelBMFont::create("No Featured Level", "chatFont.fnt");
-            lbl->setScale(0.7f);
-            lbl->setOpacity(150);
-            lbl->setPosition({winSize.width / 2, winSize.height / 2 - 15.f});
-            container->addChild(lbl);
-        }
-        return;
-    }
-
-    // lista normal
-    if (!items || items->count() == 0) {
-        auto lbl = CCLabelBMFont::create("No items found", "chatFont.fnt");
+    if (!m_featuredLevel) {
+        auto lbl = CCLabelBMFont::create("No Featured Level", "chatFont.fnt");
         lbl->setScale(0.7f);
         lbl->setOpacity(150);
-        lbl->setPosition({winSize.width / 2, winSize.height / 2 - 15.f});
+        lbl->setPosition(winSize / 2);
         container->addChild(lbl);
+        m_thumbLoaded = true;
+        checkLoadingComplete();
         return;
     }
 
-    float rowH = 55.f;
-    float rowSpacing = 4.f;
-    float totalH = std::max(height, items->count() * (rowH + rowSpacing));
-    m_listMenu->setContentSize({width, totalH});
+    GJGameLevel* level = m_featuredLevel;
+    int levelID = level->m_levelID;
 
-    for (int i = 0; i < items->count(); ++i) {
-        CCObject* obj = items->objectAtIndex(i);
-        float y = totalH - (i + 1) * (rowH + rowSpacing) + rowH / 2 + rowSpacing / 2;
-        createMinimalCell(obj, width - 15.f, rowH, y, false, i + 1 + (m_page * ITEMS_PER_PAGE));
+    // ── dimensiones de la tarjeta ────────────────────────
+    float cardW = 420.f;
+    float cardH = 190.f;
+    float cardY = winSize.height / 2 - 10.f;
+
+    auto card = CCNode::create();
+    card->setContentSize({cardW, cardH});
+    card->setAnchorPoint({0.5f, 0.5f});
+    card->setPosition({winSize.width / 2, cardY});
+    container->addChild(card, 5);
+
+    // animacion de entrada (solo una vez, no se repite)
+    card->setScale(0.9f);
+    card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.4f, 1.0f)));
+
+    // ── fondo de la tarjeta ──────────────────────────────
+    auto cardBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
+    if (!cardBg) cardBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    if (cardBg) {
+        cardBg->setColor({14, 14, 22});
+        cardBg->setOpacity(230);
+        cardBg->setContentSize({cardW, cardH});
+        cardBg->setPosition(CCSize{cardW, cardH} / 2);
+        card->addChild(cardBg, 0);
     }
 
-    m_scroll->setContentOffset({0, height - totalH});
+    // ── borde sutil ──────────────────────────────────────
+    auto border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
+    if (!border) border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    if (border) {
+        border->setColor({60, 60, 80});
+        border->setOpacity(100);
+        border->setContentSize({cardW + 4, cardH + 4});
+        border->setPosition(CCSize{cardW, cardH} / 2);
+        card->addChild(border, -1);
+    }
+
+    // ── badge DAILY / WEEKLY ─────────────────────────────
+    bool isDaily = (type == "daily");
+    auto badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
+    if (!badgeBg) badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    if (badgeBg) {
+        badgeBg->setContentSize({80, 22});
+        badgeBg->setColor(isDaily ? ccColor3B{200, 150, 30} : ccColor3B{100, 80, 200});
+        badgeBg->setOpacity(220);
+        badgeBg->setPosition({cardW - 50, cardH - 5});
+        card->addChild(badgeBg, 10);
+
+        auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "goldFont.fnt");
+        badgeLbl->setScale(0.35f);
+        badgeLbl->setPosition(badgeBg->getContentSize() / 2);
+        badgeBg->addChild(badgeLbl);
+        badgeLbl->setTag(TAG_BADGE_LABEL);
+    }
+
+    // ── thumbnail (lado izquierdo ~55%) ──────────────────
+    float thumbW = cardW * 0.52f;
+    float thumbH = cardH;
+    float thumbPad = 4.f;
+
+    // clipping para bordes redondeados del thumb
+    auto clipper = CCClippingNode::create();
+    clipper->setContentSize({thumbW - thumbPad, thumbH - thumbPad * 2});
+    clipper->setAnchorPoint({0, 0});
+    clipper->setPosition({thumbPad, thumbPad});
+    clipper->setAlphaThreshold(0.05f);
+
+    auto stencil = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
+    stencil->setContentSize(clipper->getContentSize());
+    stencil->setAnchorPoint({0, 0});
+    stencil->setPosition({0, 0});
+    clipper->setStencil(stencil);
+    card->addChild(clipper, 2);
+
+    // placeholder oscuro + spinner dentro del clipper
+    auto thumbPlaceholder = CCLayerColor::create({20, 18, 28, 255});
+    thumbPlaceholder->setContentSize(clipper->getContentSize());
+    thumbPlaceholder->setTag(101);
+    clipper->addChild(thumbPlaceholder, 0);
+
+    auto thumbSpinner = geode::LoadingSpinner::create(20.f);
+    thumbSpinner->setPosition(clipper->getContentSize() / 2);
+    thumbSpinner->setTag(102);
+    clipper->addChild(thumbSpinner, 5);
+
+    // gradiente derecho sobre el thumb
+    auto thumbGrad = CCLayerGradient::create({0, 0, 0, 0}, {14, 14, 22, 230}, {1, 0});
+    thumbGrad->setContentSize({thumbW * 0.35f, thumbH - thumbPad * 2});
+    thumbGrad->setPosition({thumbW - thumbPad - thumbW * 0.35f, 0});
+    clipper->addChild(thumbGrad, 10);
+
+    // cargar thumbnail
+    Ref<LeaderboardLayer> self = this;
+    auto createThumbSprite = [clipper](CCTexture2D* tex) {
+        if (!tex || !clipper) return;
+
+        // quitar placeholder y spinner
+        clipper->removeChildByTag(101);
+        clipper->removeChildByTag(102);
+
+        auto sprite = CCSprite::createWithTexture(tex);
+        if (!sprite) return;
+
+        CCSize cs = clipper->getContentSize();
+        float sx = cs.width / sprite->getContentSize().width;
+        float sy = cs.height / sprite->getContentSize().height;
+        float scale = std::max(sx, sy);
+        sprite->setScale(scale);
+        sprite->setPosition(cs / 2);
+        sprite->setOpacity(0);
+        sprite->runAction(CCFadeIn::create(0.5f));
+        clipper->addChild(sprite, 1);
+    };
+
+    auto localTex = LocalThumbs::get().loadTexture(levelID);
+    if (localTex) {
+        createThumbSprite(localTex);
+        m_thumbLoaded = true;
+        checkLoadingComplete();
+    } else if (levelID > 0) {
+        std::string fileName = fmt::format("{}.png", levelID);
+        Ref<CCClippingNode> safeClipper = clipper;
+
+        ThumbnailLoader::get().requestLoad(levelID, fileName, [self, safeClipper, createThumbSprite](CCTexture2D* tex, bool success) {
+            geode::Loader::get()->queueInMainThread([self, safeClipper, tex, createThumbSprite] {
+                if (safeClipper->getParent()) {
+                    if (tex) createThumbSprite(tex);
+                }
+                self->m_thumbLoaded = true;
+                self->checkLoadingComplete();
+            });
+        });
+    } else {
+        m_thumbLoaded = true;
+        checkLoadingComplete();
+    }
+
+    // ── menu para click en la tarjeta ────────────────────
+    auto cellMenu = CCMenu::create();
+    cellMenu->setPosition({0, 0});
+    cellMenu->setContentSize({cardW, cardH});
+    card->addChild(cellMenu, 50);
+
+    // boton invisible sobre toda la tarjeta
+    if (level) {
+        level->retain();
+        auto hitArea = CCSprite::create();
+        if (hitArea) {
+            hitArea->setTextureRect(CCRect(0, 0, 1, 1));
+            hitArea->setScaleX(cardW);
+            hitArea->setScaleY(cardH);
+            hitArea->setOpacity(0);
+
+            auto playBtn = CCMenuItemSpriteExtra::create(hitArea, self, menu_selector(LeaderboardLayer::onViewLevel));
+            playBtn->setUserObject(level);
+            playBtn->setPosition({cardW / 2, cardH / 2});
+            cellMenu->addChild(playBtn, 100);
+        }
+    }
+
+    // ── textos lado derecho ──────────────────────────────
+    float textX = thumbW + 12.f;
+    float textMaxW = cardW - textX - 15.f;
+
+    // nombre del nivel
+    std::string nameStr = level->m_levelName;
+    auto nameLbl = CCLabelBMFont::create(nameStr.c_str(), "bigFont.fnt");
+    nameLbl->setScale(0.6f);
+    nameLbl->setAnchorPoint({0.f, 0.5f});
+    nameLbl->setPosition({textX, cardH - 35.f});
+    nameLbl->setTag(TAG_NAME_LABEL);
+    if (nameLbl->getScaledContentSize().width > textMaxW) {
+        nameLbl->setScale(nameLbl->getScale() * (textMaxW / nameLbl->getScaledContentSize().width));
+    }
+    card->addChild(nameLbl, 10);
+
+    // creador
+    std::string creatorStr = level->m_creatorName.size() > 0 
+        ? "by " + std::string(level->m_creatorName) 
+        : "";
+    auto creatorLbl = CCLabelBMFont::create(creatorStr.c_str(), "chatFont.fnt");
+    creatorLbl->setScale(0.6f);
+    creatorLbl->setColor({120, 200, 255});
+    creatorLbl->setAnchorPoint({0.f, 0.5f});
+    creatorLbl->setPosition({textX, cardH - 55.f});
+    creatorLbl->setTag(TAG_CREATOR_LABEL);
+    card->addChild(creatorLbl, 10);
+
+    // linea separadora sutil
+    auto separator = CCLayerColor::create({255, 255, 255, 20});
+    separator->setContentSize({textMaxW, 1.f});
+    separator->setPosition({textX, cardH - 70.f});
+    card->addChild(separator, 10);
+
+    // cuenta regresiva
+    if (m_featuredExpiresAt > 0) {
+        long long now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        long long diff = m_featuredExpiresAt - now;
+
+        if (diff > 0) {
+            int hours = (int)(diff / (1000LL * 60 * 60));
+            int mins = (int)((diff % (1000LL * 60 * 60)) / (1000LL * 60));
+
+            auto clockIcon = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
+            if (clockIcon) {
+                clockIcon->setScale(0.5f);
+                clockIcon->setPosition({textX + 8.f, cardH - 90.f});
+                clockIcon->setColor({255, 200, 100});
+                card->addChild(clockIcon, 10);
+            }
+
+            auto timeLbl = CCLabelBMFont::create(
+                fmt::format("Ends in {}h {}m", hours, mins).c_str(), "chatFont.fnt");
+            timeLbl->setScale(0.5f);
+            timeLbl->setColor({255, 200, 100});
+            timeLbl->setAnchorPoint({0.f, 0.5f});
+            timeLbl->setPosition({textX + 20.f, cardH - 90.f});
+            timeLbl->setTag(TAG_TIME_LABEL);
+            card->addChild(timeLbl, 10);
+        }
+    }
+
+    // boton "Play" estilizado
+    auto playMenu = CCMenu::create();
+    playMenu->setPosition({0, 0});
+    card->addChild(playMenu, 15);
+
+    auto playSpr = ButtonSprite::create("Play", 80, true, "bigFont.fnt", "GJ_button_01.png", 30.f, 0.7f);
+    playSpr->setScale(0.75f);
+    if (level) {
+        level->retain();
+        auto playBtnVis = CCMenuItemSpriteExtra::create(playSpr, self, menu_selector(LeaderboardLayer::onViewLevel));
+        playBtnVis->setUserObject(level);
+        playBtnVis->setPosition({textX + textMaxW / 2, 30.f});
+        playMenu->addChild(playBtnVis);
+    }
 }
 
 void LeaderboardLayer::onViewLevel(CCObject* sender) {
-    auto btn = static_cast<CCMenuItemSpriteExtra*>(sender);
-    auto level = static_cast<GJGameLevel*>(btn->getUserObject());
+    auto btn = typeinfo_cast<CCMenuItemSpriteExtra*>(sender);
+    if (!btn) return;
+    auto level = typeinfo_cast<GJGameLevel*>(btn->getUserObject());
     if (level) {
         // nivel + musica desde cache
         auto savedLevel = GameLevelManager::get()->getSavedLevel(level->m_levelID);
@@ -940,22 +717,147 @@ void LeaderboardLayer::onViewLevel(CCObject* sender) {
             // levelinfolayer descarga resto
         }
 
+        // la musica cueva se pausara automaticamente en onExitTransitionDidStart
         auto layer = LevelInfoLayer::create(levelToUse, false);
-        auto scene = CCScene::create();
-        scene->addChild(layer);
-        CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.5f, scene));
+        auto infoScene = CCScene::create();
+        infoScene->addChild(layer);
+        TransitionManager::get().pushScene(infoScene);
+    }
+}
+
+float LeaderboardLayer::getAudioBassLevel() {
+    if (!m_fftDSP || !m_musicPlaying) return 0.f;
+
+    FMOD_DSP_PARAMETER_FFT* fftData = nullptr;
+    FMOD_RESULT result = m_fftDSP->getParameterData(
+        FMOD_DSP_FFT_SPECTRUMDATA, (void**)&fftData, nullptr, nullptr, 0);
+    
+    if (result != FMOD_OK || !fftData || fftData->numchannels < 1) return 0.f;
+
+    // promediar bins de bajos (0-8 de 256 bins = ~0-350 Hz)
+    float bassSum = 0.f;
+    int bassBins = std::min(8, fftData->length);
+    for (int i = 0; i < bassBins; i++) {
+        bassSum += fftData->spectrum[0][i];
+    }
+    float bassAvg = (bassBins > 0) ? bassSum / bassBins : 0.f;
+
+    // promediar mids (8-32 = ~350-1400 Hz)
+    float midSum = 0.f;
+    int midStart = std::min(8, fftData->length);
+    int midEnd = std::min(32, fftData->length);
+    for (int i = midStart; i < midEnd; i++) {
+        midSum += fftData->spectrum[0][i];
+    }
+    float midAvg = (midEnd > midStart) ? midSum / (midEnd - midStart) : 0.f;
+
+    // combinar: bajos pesan mas para el beat
+    return bassAvg * 0.7f + midAvg * 0.3f;
+}
+
+void LeaderboardLayer::updateAudioReactive(float dt) {
+    m_audioReactTime += dt;
+
+    float rawBass = getAudioBassLevel();
+    
+    // normalizar (las FFT values son tipicamente 0-0.1)
+    float normalizedBass = std::min(1.f, rawBass * 12.f);
+    
+    // deteccion de beat: si hay un salto repentino de energia
+    float delta = normalizedBass - m_prevBassLevel;
+    m_prevBassLevel = normalizedBass;
+    
+    float beatThreshold = 0.15f;
+    if (delta > beatThreshold) {
+        // beat detectado — pulso fuerte
+        m_beatPulse = std::min(1.f, m_beatPulse + delta * 2.5f);
+    }
+    
+    // decay suave del beat
+    m_beatPulse = std::max(0.f, m_beatPulse - dt * 3.5f);
+    
+    // glow suave sigue la energia general
+    float targetGlow = normalizedBass * 0.6f;
+    m_glowPulse += (targetGlow - m_glowPulse) * std::min(1.f, dt * 8.f);
+    
+    // bg brightness pulse
+    m_bgPulse += (normalizedBass * 0.4f - m_bgPulse) * std::min(1.f, dt * 6.f);
+    
+    // particle boost en beats
+    m_particleBoost = std::max(0.f, m_particleBoost - dt * 2.f);
+    if (delta > beatThreshold * 1.2f) {
+        m_particleBoost = std::min(1.f, m_particleBoost + 0.5f);
+    }
+    
+    // ── aplicar efectos visuales ──
+    
+    // 1. glow overlay — pulsa con color tematico
+    if (m_glowOverlay) {
+        // mezclar color tematico
+        float t = (std::sin(m_audioReactTime * 0.5f) + 1.f) * 0.5f;
+        GLubyte r = (GLubyte)(m_themeColorA.r + (m_themeColorB.r - m_themeColorA.r) * t);
+        GLubyte g = (GLubyte)(m_themeColorA.g + (m_themeColorB.g - m_themeColorA.g) * t);
+        GLubyte b = (GLubyte)(m_themeColorA.b + (m_themeColorB.b - m_themeColorA.b) * t);
+        m_glowOverlay->setColor({r, g, b});
+        
+        // opacidad basada en glow + beat
+        float glowAlpha = m_glowPulse * 18.f + m_beatPulse * 25.f;
+        m_glowOverlay->setOpacity((GLubyte)std::min(45.f, glowAlpha));
+    }
+    
+    // 2. beat flash — destello blanco en beats fuertes
+    if (m_beatFlash) {
+        float flashAlpha = m_beatPulse * 35.f;
+        m_beatFlash->setOpacity((GLubyte)std::min(30.f, flashAlpha));
+    }
+    
+    // 3. bg sprite brightness pulses
+    if (m_bgSprite) {
+        if (auto paimonSprite = typeinfo_cast<LeaderboardPaimonSprite*>(m_bgSprite)) {
+            float baseBrightness = 1.0f + m_bgPulse * 0.3f + m_beatPulse * 0.15f;
+            paimonSprite->m_brightness = baseBrightness;
+        }
+    }
+    
+    // 4. bg overlay pulsa (oscurece menos en beats)
+    if (m_bgOverlay) {
+        float baseOverlay = 100.f;
+        float overlayReduction = m_beatPulse * 30.f + m_glowPulse * 15.f;
+        m_bgOverlay->setOpacity((GLubyte)std::max(40.f, baseOverlay - overlayReduction));
+    }
+    
+    // 5. particulas extra en beats
+    if (m_particleBoost > 0.3f && m_particleContainer) {
+        spawnThemeParticle(0.f);
     }
 }
 
 void LeaderboardLayer::update(float dt) {
     m_blurTime += dt;
+    
+    // forzar BG del menu silenciado CADA FRAME — ningun thread puede restaurarlo
+    if (!m_leavingForGood) {
+        ensureBgSilenced();
+    }
+    
     if (m_bgSprite) {
-        // nuestro sprite?
         if (auto paimonSprite = typeinfo_cast<LeaderboardPaimonSprite*>(m_bgSprite)) {
-             // desenfoque 0-1.5
              float intensity = 0.75f + std::sin(m_blurTime * 1.0f) * 0.75f;
              paimonSprite->m_intensity = intensity;
         }
+    }
+    
+    // efectos reactivos a la musica
+    if (m_musicPlaying && m_levelMusicChannel) {
+        updateAudioReactive(dt);
+    } else {
+        // sin musica: decay los efectos
+        if (m_glowOverlay) m_glowOverlay->setOpacity(0);
+        if (m_beatFlash) m_beatFlash->setOpacity(0);
+        m_beatPulse = 0.f;
+        m_glowPulse = 0.f;
+        m_bgPulse = 0.f;
+        m_particleBoost = 0.f;
     }
 }
 
@@ -1059,13 +961,12 @@ void LeaderboardLayer::updateBackground(int levelID) {
     }
 }
 
-void LeaderboardLayer::loadLevelsFinished(CCArray* levels, const char* key) {
+void LeaderboardLayer::loadLevelsFinished(CCArray* levels, char const* key) {
     if (!levels) return;
 
-    for (int i = 0; i < levels->count(); ++i) {
-        auto downloadedLevel = static_cast<GJGameLevel*>(levels->objectAtIndex(i));
+    for (auto* downloadedLevel : CCArrayExt<GJGameLevel*>(levels)) {
+        if (!downloadedLevel) continue;
         
-        // actualiza destacado si coincide
         if (m_featuredLevel && m_featuredLevel->m_levelID == downloadedLevel->m_levelID) {
             m_featuredLevel->m_levelName = downloadedLevel->m_levelName;
             m_featuredLevel->m_creatorName = downloadedLevel->m_creatorName;
@@ -1076,154 +977,474 @@ void LeaderboardLayer::loadLevelsFinished(CCArray* levels, const char* key) {
             m_featuredLevel->m_userID = downloadedLevel->m_userID;
             m_featuredLevel->m_accountID = downloadedLevel->m_accountID;
             m_featuredLevel->m_levelString = downloadedLevel->m_levelString;
-            // info cancion
             m_featuredLevel->m_songID = downloadedLevel->m_songID;
             m_featuredLevel->m_audioTrack = downloadedLevel->m_audioTrack;
             m_featuredLevel->m_songIDs = downloadedLevel->m_songIDs;
             m_featuredLevel->m_sfxIDs = downloadedLevel->m_sfxIDs;
         }
-
-        if (m_allItems) {
-            // busca en m_allItems y actualiza
-            for (int j = 0; j < m_allItems->count(); ++j) {
-                auto item = m_allItems->objectAtIndex(j);
-                // gjgamelevel? no gjuserscore
-                if (auto level = typeinfo_cast<GJGameLevel*>(item)) {
-                    if (level->m_levelID == downloadedLevel->m_levelID) {
-                        level->m_levelName = downloadedLevel->m_levelName;
-                        level->m_creatorName = downloadedLevel->m_creatorName;
-                        level->m_stars = downloadedLevel->m_stars;
-                        level->m_difficulty = downloadedLevel->m_difficulty;
-                        level->m_demon = downloadedLevel->m_demon;
-                        level->m_demonDifficulty = downloadedLevel->m_demonDifficulty;
-                        level->m_userID = downloadedLevel->m_userID;
-                        level->m_accountID = downloadedLevel->m_accountID;
-                        // info cancion
-                        level->m_songID = downloadedLevel->m_songID;
-                        level->m_audioTrack = downloadedLevel->m_audioTrack;
-                        level->m_songIDs = downloadedLevel->m_songIDs;
-                        level->m_sfxIDs = downloadedLevel->m_sfxIDs;
-                        break;
-                    }
-                }
-            }
-        }
     }
     
-    refreshList();
+    // solo actualizar labels, NO recrear la lista (fix doble animacion)
+    updateLevelInfo();
 }
 
-void LeaderboardLayer::loadLevelsFailed(const char* key) {
+void LeaderboardLayer::loadLevelsFailed(char const* key) {
     // ignorar fallos
 }
 
-void LeaderboardLayer::setupPageInfo(std::string, const char*) {
+void LeaderboardLayer::setupPageInfo(std::string, char const*) {
     // no necesario
 }
 
-void LeaderboardLayer::onReloadAllTime() {
-    this->loadLeaderboard("alltime");
-}
+// ── actualizar labels sin recrear la lista ──────────────
+void LeaderboardLayer::updateLevelInfo() {
+    if (!m_featuredLevel) return;
 
-void LeaderboardLayer::onRecalculate(CCObject* sender) {
-    WeakRef<LeaderboardLayer> self = this;
-    createQuickPopup(
-        "Confirm",
-        "Recalculate <cy>All Time</c> Leaderboard?",
-        "Cancel", "Yes",
-        [self](FLAlertLayer*, bool btn2) {
-            if (auto layer = self.lock()) {
-                if (btn2) {
-                    Notification::create("Recalculating...", NotificationIcon::Info)->show();
-                    
-                    HttpClient::get().post("/api/admin/recalculate-alltime", "{}", [self](bool success, const std::string& msg) {
-                        if (auto l = self.lock()) {
-                            if (success) {
-                                Notification::create("Recalculation started", NotificationIcon::Success)->show();
-                                
-                                // recarga lista tras breve retraso para permitir proceso servidor
-                                l->runAction(CCSequence::create(
-                                    CCDelayTime::create(3.0f),
-                                    CCCallFunc::create(l, callfunc_selector(LeaderboardLayer::onReloadAllTime)), 
-                                    nullptr
-                                ));
-                                
-                            } else {
-                                Notification::create("Failed: " + msg, NotificationIcon::Error)->show();
-                            }
-                        }
-                    });
-                }
-            }
+    auto container = this->getChildByTag(999);
+    if (!container) return;
+
+    // buscar recursivamente los labels por tag
+    auto findByTag = [&](auto const& self, CCNode* parent, int tag) -> CCNode* {
+        if (!parent) return nullptr;
+        auto children = parent->getChildren();
+        if (!children) return nullptr;
+        for (auto* child : CCArrayExt<CCNode*>(children)) {
+            if (!child) continue;
+            if (child->getTag() == tag) return child;
+            auto found = self(self, child, tag);
+            if (found) return found;
         }
-    );
+        return nullptr;
+    };
+
+    // actualizar nombre
+    if (auto nameLbl = typeinfo_cast<CCLabelBMFont*>(findByTag(findByTag, container, TAG_NAME_LABEL))) {
+        nameLbl->setString(m_featuredLevel->m_levelName.c_str());
+    }
+
+    // actualizar creador
+    if (auto creatorLbl = typeinfo_cast<CCLabelBMFont*>(findByTag(findByTag, container, TAG_CREATOR_LABEL))) {
+        std::string creatorStr = m_featuredLevel->m_creatorName.size() > 0
+            ? "by " + std::string(m_featuredLevel->m_creatorName) 
+            : "";
+        creatorLbl->setString(creatorStr.c_str());
+    }
 }
 
-void LeaderboardLayer::fetchGDBrowserLevel(int levelID) {
-    std::string url = "https://gdbrowser.com/api/level/" + std::to_string(levelID);
-    
-    this->retain();
-    std::thread([this, levelID, url]() {
-        auto req = web::WebRequest();
-        auto res = req.getSync(url);
+// ── chequear si toda la carga termino ───────────────────
+void LeaderboardLayer::checkLoadingComplete() {
+    if (m_dataLoaded && m_thumbLoaded) {
+        if (m_loadingSpinner) {
+            m_loadingSpinner->setVisible(false);
+        }
 
-        queueInMainThread([this, levelID, res = std::move(res)]() {
-            if (res.ok()) {
-                auto json = res.string().unwrapOr("{}");
-                auto dataRes = matjson::parse(json);
-                if (dataRes.isOk()) {
-                    auto data = dataRes.unwrap();
-                    if (m_featuredLevel && m_featuredLevel->m_levelID == levelID) {
-                        m_featuredLevel->m_levelName = data["name"].asString().unwrapOr(m_featuredLevel->m_levelName);
-                        m_featuredLevel->m_creatorName = data["author"].asString().unwrapOr(m_featuredLevel->m_creatorName);
-                        m_featuredLevel->m_stars = data["stars"].asInt().unwrapOr(0);
-                        m_featuredLevel->m_downloads = data["downloads"].asInt().unwrapOr(0);
-                        m_featuredLevel->m_likes = data["likes"].asInt().unwrapOr(0);
-
-                        std::string diffStr = data["difficulty"].asString().unwrapOr("NA");
-                        bool isDemon = diffStr.find("Demon") != std::string::npos;
-                        bool isAuto = diffStr == "Auto";
-
-                        m_featuredLevel->m_demon = isDemon;
-                        m_featuredLevel->m_autoLevel = isAuto;
-
-                        if (isDemon) {
-                            m_featuredLevel->m_difficulty = (GJDifficulty)50;
-                            if (diffStr == "Easy Demon") m_featuredLevel->m_demonDifficulty = 3;
-                            else if (diffStr == "Medium Demon") m_featuredLevel->m_demonDifficulty = 4;
-                            else if (diffStr == "Hard Demon") m_featuredLevel->m_demonDifficulty = 5;
-                            else if (diffStr == "Insane Demon") m_featuredLevel->m_demonDifficulty = 6;
-                            else if (diffStr == "Extreme Demon") m_featuredLevel->m_demonDifficulty = 7;
-                        } else if (isAuto) {
-                            m_featuredLevel->m_difficulty = GJDifficulty::Auto;
-                        } else {
-                            if (diffStr == "Easy") m_featuredLevel->m_difficulty = GJDifficulty::Easy;
-                            else if (diffStr == "Normal") m_featuredLevel->m_difficulty = GJDifficulty::Normal;
-                            else if (diffStr == "Hard") m_featuredLevel->m_difficulty = GJDifficulty::Hard;
-                            else if (diffStr == "Harder") m_featuredLevel->m_difficulty = GJDifficulty::Harder;
-                            else if (diffStr == "Insane") m_featuredLevel->m_difficulty = GJDifficulty::Insane;
-                            else m_featuredLevel->m_difficulty = GJDifficulty::NA;
-                        }
-
-                        this->refreshList();
-                    }
+        // iniciar musica y particulas tematicas
+        if (m_featuredLevel) {
+            startCaveMusic();
+            // obtener colores del nivel
+            auto colors = LevelColors::get().getPair(m_featuredLevel->m_levelID);
+            if (colors.has_value()) {
+                m_themeColorA = colors->a;
+                m_themeColorB = colors->b;
+            } else {
+                // colores default segun tipo
+                if (m_currentType == "daily") {
+                    m_themeColorA = {255, 200, 50};
+                    m_themeColorB = {255, 130, 30};
+                } else {
+                    m_themeColorA = {130, 100, 255};
+                    m_themeColorB = {80, 60, 200};
                 }
             }
-            this->release();
+            createThemeParticles();
+        }
+    }
+}
+
+// ── particulas tematicas ────────────────────────────────
+void LeaderboardLayer::clearParticles() {
+    this->unschedule(schedule_selector(LeaderboardLayer::spawnThemeParticle));
+    if (m_particleContainer) {
+        m_particleContainer->removeAllChildren();
+    }
+}
+
+void LeaderboardLayer::createThemeParticles() {
+    clearParticles();
+    
+    // spawnear particulas periodicamente
+    this->schedule(schedule_selector(LeaderboardLayer::spawnThemeParticle), 0.4f);
+    
+    // algunas particulas iniciales
+    for (int i = 0; i < 8; i++) {
+        spawnThemeParticle(0.f);
+    }
+}
+
+void LeaderboardLayer::spawnThemeParticle(float dt) {
+    if (!m_particleContainer) return;
+    
+    // limitar cantidad
+    if (m_particleContainer->getChildrenCount() > 25) return;
+
+    auto winSize = CCDirector::sharedDirector()->getWinSize();
+
+    // elegir color aleatorio entre los dos tematicos
+    float t = (rand() % 100) / 100.f;
+    ccColor3B color = {
+        (GLubyte)(m_themeColorA.r + (m_themeColorB.r - m_themeColorA.r) * t),
+        (GLubyte)(m_themeColorA.g + (m_themeColorB.g - m_themeColorA.g) * t),
+        (GLubyte)(m_themeColorA.b + (m_themeColorB.b - m_themeColorA.b) * t),
+    };
+
+    // estrella/destello usando sprites GD
+    char const* spriteNames[] = {
+        "GJ_starsIcon_001.png",
+        "GJ_bigStar_001.png",
+        "particle_01.png",
+    };
+    int idx = rand() % 3;
+    
+    CCSprite* particle = nullptr;
+    particle = CCSprite::createWithSpriteFrameName(spriteNames[idx]);
+    if (!particle) {
+        particle = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
+    }
+    if (!particle) return;
+
+    particle->setColor(color);
+    
+    // tamano aleatorio
+    float baseScale = 0.08f + (rand() % 15) / 100.f;
+    particle->setScale(baseScale);
+    
+    // posicion aleatoria en X, abajo de la pantalla
+    float startX = (rand() % (int)winSize.width);
+    float startY = -10.f;
+    particle->setPosition({startX, startY});
+    particle->setOpacity(0);
+
+    m_particleContainer->addChild(particle);
+
+    // movimiento: sube suavemente con drift horizontal
+    float duration = 6.f + (rand() % 40) / 10.f;
+    float driftX = ((rand() % 100) - 50) * 0.8f;
+    float endY = winSize.height + 20.f;
+
+    // fade in -> hold -> fade out
+    float fadeIn = 0.8f;
+    float fadeOut = 1.5f;
+    float holdOpacity = 80 + rand() % 100;
+
+    particle->runAction(CCSpawn::create(
+        CCMoveBy::create(duration, {driftX, endY + 10.f}),
+        CCSequence::create(
+            CCFadeTo::create(fadeIn, (GLubyte)holdOpacity),
+            CCDelayTime::create(duration - fadeIn - fadeOut),
+            CCFadeTo::create(fadeOut, 0),
+            CCCallFunc::create(particle, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ),
+        CCRotateBy::create(duration, (rand() % 2 == 0 ? 1.f : -1.f) * (30.f + rand() % 60)),
+        nullptr
+    ));
+}
+
+// ── historial ───────────────────────────────────────────
+void LeaderboardLayer::onHistory(CCObject*) {
+    // la musica cueva NO se pausa al ir al historial — sigue sonando
+    m_goingToHistory = true;
+    auto scene = LeaderboardHistoryLayer::scene();
+    TransitionManager::get().pushScene(scene);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SISTEMA DE AUDIO ROBUSTO — musica cueva + control de menu
+// ═══════════════════════════════════════════════════════════
+
+void LeaderboardLayer::startCaveMusic() {
+    if (!m_featuredLevel) return;
+    if (m_musicPlaying) return;
+    if (m_leavingForGood) return;
+
+    // buscar path de la cancion
+    std::string songPath;
+    if (m_featuredLevel->m_songID > 0) {
+        if (MusicDownloadManager::sharedState()->isSongDownloaded(m_featuredLevel->m_songID)) {
+            songPath = MusicDownloadManager::sharedState()->pathForSong(m_featuredLevel->m_songID);
+        }
+    } else {
+        std::string filename = LevelTools::getAudioFileName(m_featuredLevel->m_audioTrack);
+        songPath = CCFileUtils::sharedFileUtils()->fullPathForFilename(filename.c_str(), false);
+        if (songPath.empty()) songPath = filename;
+    }
+
+    if (songPath.empty()) return;
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_system) return;
+
+    // asegurar BG silenciado
+    if (engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(0.f);
+    }
+
+    // crear sonido
+    FMOD::Sound* sound = nullptr;
+    FMOD_RESULT result = engine->m_system->createSound(
+        songPath.c_str(), FMOD_CREATESTREAM | FMOD_LOOP_NORMAL, nullptr, &sound);
+    if (result != FMOD_OK || !sound) return;
+    m_levelMusicSound = sound;
+
+    // reproducir (pausado para configurar)
+    FMOD::Channel* channel = nullptr;
+    result = engine->m_system->playSound(m_levelMusicSound, nullptr, true, &channel);
+    if (result != FMOD_OK || !channel) {
+        m_levelMusicSound->release();
+        m_levelMusicSound = nullptr;
+        return;
+    }
+    m_levelMusicChannel = channel;
+
+    // seek aleatorio
+    unsigned int lengthMs = 0;
+    m_levelMusicSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
+    if (lengthMs > 10000) {
+        static std::mt19937 gen(std::random_device{}());
+        std::uniform_int_distribution<unsigned int> dist(
+            (unsigned int)(lengthMs * 0.1f), (unsigned int)(lengthMs * 0.8f));
+        m_levelMusicChannel->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
+    }
+
+    // aplicar DSPs de cueva ANTES de despausar
+    applyCaveEffect();
+
+    // FFT DSP para analisis de audio (visuales reactivos)
+    if (!m_fftDSP) {
+        engine->m_system->createDSPByType(FMOD_DSP_TYPE_FFT, &m_fftDSP);
+        if (m_fftDSP) {
+            m_fftDSP->setParameterInt(FMOD_DSP_FFT_WINDOWSIZE, 512);
+        }
+    }
+    if (m_fftDSP) {
+        m_levelMusicChannel->addDSP(2, m_fftDSP);
+    }
+
+    // fade-in desde 0
+    float gameVol = engine->m_musicVolume;
+    float targetVol = gameVol * 0.55f;
+    m_levelMusicChannel->setVolume(0.f);
+    m_levelMusicChannel->setPaused(false);
+    m_musicPlaying = true;
+
+    m_isFadingCaveIn = true;
+    m_isFadingCaveOut = false;
+    executeCaveFade(0, AUDIO_FADE_STEPS, 0.f, targetVol, false);
+}
+
+void LeaderboardLayer::fadeOutCaveMusic() {
+    if (!m_musicPlaying || !m_levelMusicChannel) return;
+
+    m_isFadingCaveIn = false;
+
+    float currentVol = 0.f;
+    m_levelMusicChannel->getVolume(&currentVol);
+    if (currentVol <= 0.001f) {
+        killCaveMusic();
+        return;
+    }
+
+    m_isFadingCaveOut = true;
+    executeCaveFade(0, AUDIO_FADE_STEPS, currentVol, 0.f, true);
+}
+
+void LeaderboardLayer::killCaveMusic() {
+    m_isFadingCaveIn = false;
+    m_isFadingCaveOut = false;
+
+    removeCaveEffect();
+
+    if (m_levelMusicChannel) {
+        m_levelMusicChannel->stop();
+        m_levelMusicChannel = nullptr;
+    }
+    if (m_levelMusicSound) {
+        m_levelMusicSound->release();
+        m_levelMusicSound = nullptr;
+    }
+    m_musicPlaying = false;
+}
+
+void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, float to, bool fadeOut) {
+    if (step > totalSteps) {
+        if (fadeOut) {
+            // fade-out terminado: limpiar todo
+            killCaveMusic();
+        } else {
+            // fade-in terminado: fijar volumen final
+            if (m_levelMusicChannel) m_levelMusicChannel->setVolume(to);
+            m_isFadingCaveIn = false;
+        }
+        return;
+    }
+
+    float t = static_cast<float>(step) / static_cast<float>(totalSteps);
+    float eT = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
+    float vol = from + (to - from) * eT;
+
+    if (m_levelMusicChannel) {
+        m_levelMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
+    }
+
+    float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
+    int next = step + 1;
+
+    // Ref<> en vez de retain/release manual pa seguridad de memoria
+    Ref<LeaderboardLayer> safeRef = this;
+    std::thread([safeRef, next, totalSteps, from, to, fadeOut, stepMs]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
+        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, fadeOut]() {
+            // verificar que el fade no fue cancelado
+            if (fadeOut && !safeRef->m_isFadingCaveOut) return;
+            if (!fadeOut && !safeRef->m_isFadingCaveIn) return;
+            safeRef->executeCaveFade(next, totalSteps, from, to, fadeOut);
         });
     }).detach();
 }
 
+void LeaderboardLayer::applyCaveEffect() {
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_system || !m_levelMusicChannel) return;
+
+    // lowpass filter — simula paredes de cueva
+    if (!m_lowpassDSP) {
+        engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
+        if (m_lowpassDSP) {
+            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, 1200.f);
+            m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 2.0f);
+        }
+    }
+
+    // reverb sutil — eco de cueva
+    if (!m_reverbDSP) {
+        engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
+        if (m_reverbDSP) {
+            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DECAYTIME, 2500.f);
+            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_EARLYDELAY, 20.f);
+            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_LATEDELAY, 40.f);
+            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_HFREFERENCE, 3000.f);
+            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_DRYLEVEL, -4.f);
+            m_reverbDSP->setParameterFloat(FMOD_DSP_SFXREVERB_WETLEVEL, -8.f);
+        }
+    }
+
+    if (m_lowpassDSP) m_levelMusicChannel->addDSP(0, m_lowpassDSP);
+    if (m_reverbDSP) m_levelMusicChannel->addDSP(1, m_reverbDSP);
+}
+
+void LeaderboardLayer::removeCaveEffect() {
+    if (m_levelMusicChannel) {
+        if (m_lowpassDSP) m_levelMusicChannel->removeDSP(m_lowpassDSP);
+        if (m_reverbDSP) m_levelMusicChannel->removeDSP(m_reverbDSP);
+        if (m_fftDSP) m_levelMusicChannel->removeDSP(m_fftDSP);
+    }
+    if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
+    if (m_reverbDSP) { m_reverbDSP->release(); m_reverbDSP = nullptr; }
+    if (m_fftDSP) { m_fftDSP->release(); m_fftDSP = nullptr; }
+}
+
+// ── control de musica de menu (fade suave) ──────────────
+void LeaderboardLayer::fadeOutMenuMusic() {
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_backgroundMusicChannel) return;
+
+    float currentVol = 0.f;
+    engine->m_backgroundMusicChannel->getVolume(&currentVol);
+    if (currentVol <= 0.001f) return;
+
+    executeMenuFade(0, AUDIO_FADE_STEPS, currentVol, 0.f);
+}
+
+void LeaderboardLayer::fadeInMenuMusic() {
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_backgroundMusicChannel) return;
+
+    float targetVol = engine->m_musicVolume;
+    float currentVol = 0.f;
+    engine->m_backgroundMusicChannel->getVolume(&currentVol);
+
+    // despausar si estaba pausado
+    bool isPaused = false;
+    engine->m_backgroundMusicChannel->getPaused(&isPaused);
+    if (isPaused) {
+        engine->m_backgroundMusicChannel->setPaused(false);
+    }
+
+    executeMenuFade(0, AUDIO_FADE_STEPS, currentVol, targetVol);
+}
+
+void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, float to) {
+    if (step > totalSteps) {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->setVolume(to);
+        }
+        return;
+    }
+
+    float t = static_cast<float>(step) / static_cast<float>(totalSteps);
+    float eT = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
+    float vol = from + (to - from) * eT;
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
+    }
+
+    float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
+    int next = step + 1;
+
+    Ref<LeaderboardLayer> safeRef = this;
+    std::thread([safeRef, next, totalSteps, from, to, stepMs]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
+        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to]() {
+            safeRef->executeMenuFade(next, totalSteps, from, to);
+        });
+    }).detach();
+}
+
+void LeaderboardLayer::ensureBgSilenced() {
+    if (m_leavingForGood) return;
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(0.f);
+    }
+}
+
+void LeaderboardLayer::delaySilenceBg(float dt) {
+    ensureBgSilenced();
+}
+
+void LeaderboardLayer::delaySilenceBg2(float dt) {
+    ensureBgSilenced();
+}
+
 LeaderboardLayer::~LeaderboardLayer() {
+    m_leavingForGood = true;
+    killCaveMusic();
+    // restaurar BG inmediatamente en destructor (safety net)
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
+        bool isPaused = false;
+        engine->m_backgroundMusicChannel->getPaused(&isPaused);
+        if (isPaused) engine->m_backgroundMusicChannel->setPaused(false);
+    }
     if (GameLevelManager::get()->m_levelManagerDelegate == this) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
     if (m_featuredLevel) {
         m_featuredLevel->release();
         m_featuredLevel = nullptr;
-    }
-    if (m_allItems) {
-        m_allItems->release();
-        m_allItems = nullptr;
     }
 }

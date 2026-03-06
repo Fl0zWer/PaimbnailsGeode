@@ -21,7 +21,7 @@ struct RGBHeader {
 }
 
 LocalThumbs::LocalThumbs() {
-    // cache en otro hilo
+    // hilo de I/O de disco para escanear cache — no migrable a WebTask
     std::thread([this]() {
         initCache();
     }).detach();
@@ -31,24 +31,24 @@ void LocalThumbs::initCache() {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_availableLevels.clear();
     
-    try {
-        auto d = dir();
-        if (!std::filesystem::exists(d)) {
-            m_cacheInitialized = true;
-            return;
-        }
-        
-        // que niveles tienen capturas
-        for (const auto& entry : std::filesystem::directory_iterator(d)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".rgb") {
-                auto stemStr = geode::utils::string::pathToString(entry.path().stem());
-                if (auto res = geode::utils::numFromString<int32_t>(stemStr); res.isOk()) {
-                    m_availableLevels.insert(res.unwrap());
-                }
+    auto d = dir();
+    std::error_code ec;
+    if (!std::filesystem::exists(d, ec)) {
+        m_cacheInitialized = true;
+        return;
+    }
+
+    // que niveles tienen capturas
+    for (auto const& entry : std::filesystem::directory_iterator(d, ec)) {
+        if (ec) break;
+        if (entry.is_regular_file() && entry.path().extension() == ".rgb") {
+            auto stemStr = geode::utils::string::pathToString(entry.path().stem());
+            if (auto res = geode::utils::numFromString<int32_t>(stemStr); res.isOk()) {
+                m_availableLevels.insert(res.unwrap());
             }
         }
-    } catch(...) {}
-    
+    }
+
     m_cacheInitialized = true;
 }
 
@@ -107,14 +107,14 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
     // buscar en thumbnails
     auto thumbDir = std::filesystem::path(dir());
     std::vector<std::string> exts = {".png", ".jpg", ".jpeg", ".webp"};
-    for (const auto& ext : exts) {
+    for (auto const& ext : exts) {
         auto p = thumbDir / (std::to_string(levelID) + ext);
         if (std::filesystem::exists(p)) return geode::utils::string::pathToString(p);
     }
 
     // 3. buscar en carpeta cache (descargadas)
     auto cacheDir = Mod::get()->getSaveDir() / "cache";
-    for (const auto& ext : exts) {
+    for (auto const& ext : exts) {
         auto p = cacheDir / (std::to_string(levelID) + ext);
         if (std::filesystem::exists(p)) return geode::utils::string::pathToString(p);
     }
@@ -126,21 +126,21 @@ std::vector<int32_t> LocalThumbs::getAllLevelIDs() const {
     std::vector<int32_t> ids;
     std::unordered_set<int32_t> uniqueIds;
 
-    auto scanDir = [&](const std::filesystem::path& path) {
-        try {
-            if (!std::filesystem::exists(path)) return;
-            for (const auto& entry : std::filesystem::directory_iterator(path)) {
-                if (entry.is_regular_file()) {
-                    auto ext = entry.path().extension().string();
-                    if (ext == ".rgb" || ext == ".png" || ext == ".webp" || ext == ".jpg") {
-                        std::string stem = entry.path().stem().string();
-                        if (auto res = geode::utils::numFromString<int32_t>(stem)) {
-                             uniqueIds.insert(res.unwrap());
-                        }
+    auto scanDir = [&](std::filesystem::path const& path) {
+        std::error_code ec;
+        if (!std::filesystem::exists(path, ec)) return;
+        for (auto const& entry : std::filesystem::directory_iterator(path, ec)) {
+            if (ec) break;
+            if (entry.is_regular_file()) {
+                auto ext = geode::utils::string::pathToString(entry.path().extension());
+                if (ext == ".rgb" || ext == ".png" || ext == ".webp" || ext == ".jpg") {
+                    std::string stem = geode::utils::string::pathToString(entry.path().stem());
+                    if (auto res = geode::utils::numFromString<int32_t>(stem); res.isOk()) {
+                         uniqueIds.insert(res.unwrap());
                     }
                 }
             }
-        } catch (...) {}
+        }
     };
 
     scanDir(dir());
@@ -154,10 +154,11 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
     log::debug("cargando miniatura pal nivel: {}", levelID);
     
     // try load desde carpeta
-    auto tryLoadFromDir = [&](const std::filesystem::path& baseDir) -> CCTexture2D* {
+    auto tryLoadFromDir = [&](std::filesystem::path const& baseDir) -> CCTexture2D* {
         // rgb primero (viejo/local)
         auto rgbPath = baseDir / (std::to_string(levelID) + ".rgb");
-        if (std::filesystem::exists(rgbPath)) {
+        std::error_code fsEc;
+        if (std::filesystem::exists(rgbPath, fsEc) && !fsEc) {
             log::debug("cargando desde rgb: {}", geode::utils::string::pathToString(rgbPath));
             std::ifstream in(rgbPath, std::ios::binary);
             if (in) {
@@ -193,9 +194,10 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
 
         // formatos std
         std::vector<std::string> extensions = {".png", ".webp", ".jpg"};
-        for (const auto& ext : extensions) {
+        for (auto const& ext : extensions) {
             auto p = baseDir / (std::to_string(levelID) + ext);
-            if (std::filesystem::exists(p)) {
+            std::error_code extEc;
+            if (std::filesystem::exists(p, extEc) && !extEc) {
                 std::string pathStr = geode::utils::string::pathToString(p);
                 log::debug("cargando imagen: {}", pathStr);
                 auto tex = CCTextureCache::sharedTextureCache()->addImage(pathStr.c_str(), false);
@@ -213,7 +215,7 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
     // buscar en carpeta cache
     if (auto tex = tryLoadFromDir(Mod::get()->getSaveDir() / "cache")) return tex;
     
-    log::debug("no se halló miniatura pal nivel: {}", levelID);
+    log::debug("no se hallo miniatura pal nivel: {}", levelID);
     return nullptr;
 }
 
@@ -240,11 +242,11 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
     }
     
     RGBHeader head{ width, height };
-    out.write(reinterpret_cast<const char*>(&head), sizeof(head));
+    out.write(reinterpret_cast<char const*>(&head), sizeof(head));
     
     const size_t size = static_cast<size_t>(width) * height * 3;
     log::debug("escribiendo {} bytes", size);
-    out.write(reinterpret_cast<const char*>(data), size);
+    out.write(reinterpret_cast<char const*>(data), size);
     
     bool success = static_cast<bool>(out);
     if (success) {
@@ -253,7 +255,7 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
         std::lock_guard<std::mutex> lock(m_mutex);
         m_availableLevels.insert(levelID);
     } else {
-        log::error("falló la escritura de datos");
+        log::error("fallo la escritura de datos");
     }
     
     return success;
@@ -261,18 +263,18 @@ bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, 
 
 bool LocalThumbs::saveFromRGBA(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height) {
     if (!data || width == 0 || height == 0) return false;
-    
+
     // rgba -> rgb
     size_t pixelCount = static_cast<size_t>(width) * height;
     std::vector<uint8_t> rgbData(pixelCount * 3);
-    
+
     for (size_t i = 0; i < pixelCount; ++i) {
         rgbData[i * 3 + 0] = data[i * 4 + 0]; // R
         rgbData[i * 3 + 1] = data[i * 4 + 1]; // G
         rgbData[i * 3 + 2] = data[i * 4 + 2]; // B
         // ignoramos alpha
     }
-    
+
     return saveRGB(levelID, rgbData.data(), width, height);
 }
 
@@ -282,7 +284,7 @@ std::string LocalThumbs::mappingFile() const {
     return geode::utils::string::pathToString(std::filesystem::path(dir()) / "filename_mapping.txt");
 }
 
-void LocalThumbs::storeFileMapping(int32_t levelID, const std::string& fileName) {
+void LocalThumbs::storeFileMapping(int32_t levelID, std::string const& fileName) {
     m_fileMapping[levelID] = fileName;
     saveMappings();
     log::info("mapping guardado: {} -> {}", levelID, fileName);
@@ -301,7 +303,7 @@ void LocalThumbs::loadMappings() {
     m_fileMapping.clear();
     std::ifstream in(mappingFile());
     if (!in) {
-        log::debug("no se halló archivo de mapping, empezamos de cero");
+        log::debug("no se hallo archivo de mapping, empezamos de cero");
         return;
     }
     
@@ -329,7 +331,7 @@ void LocalThumbs::saveMappings() {
         return;
     }
     
-    for (const auto& [levelID, fileName] : m_fileMapping) {
+    for (auto const& [levelID, fileName] : m_fileMapping) {
         out << levelID << " " << fileName << "\n";
     }
     log::debug("se guardaron {} mappings", m_fileMapping.size());

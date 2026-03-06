@@ -8,8 +8,8 @@ using namespace geode::prelude;
 
 class $modify(PaimonLevelPage, LevelPage) {
     struct Fields {
-        CCNode* m_thumbClipper = nullptr;
-        CCSprite* m_thumbSprite = nullptr;
+        Ref<CCNode> m_thumbClipper = nullptr;
+        Ref<CCSprite> m_thumbSprite = nullptr;
         int m_levelID = 0;
     };
 
@@ -25,14 +25,15 @@ class $modify(PaimonLevelPage, LevelPage) {
         
         if (this->m_levelDisplay) {
             std::string fileName = fmt::format("{}.png", level->m_levelID);
-            auto selfPtr = this;
-            this->retain();
-            ThumbnailLoader::get().requestLoad(level->m_levelID, fileName, [selfPtr, level](CCTexture2D* tex, bool success) {
-            if (success && tex && selfPtr->m_fields->m_levelID == level->m_levelID) {
-                selfPtr->applyThumbnail(tex);
-            }
-            selfPtr->release();
-        }, 5);
+            Ref<LevelPage> safeRef = this;
+            int capturedLevelID = level->m_levelID;
+            ThumbnailLoader::get().requestLoad(level->m_levelID, fileName, [safeRef, capturedLevelID](CCTexture2D* tex, bool success) {
+                auto* self = static_cast<PaimonLevelPage*>(safeRef.data());
+                if (!self->getParent()) return;
+                if (success && tex && self->m_fields->m_levelID == capturedLevelID) {
+                    self->applyThumbnail(tex);
+                }
+            }, 5);
         }
     }
     

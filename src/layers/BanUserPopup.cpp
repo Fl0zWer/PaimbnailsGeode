@@ -1,4 +1,6 @@
 #include "BanUserPopup.hpp"
+#include <Geode/ui/LoadingSpinner.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/Localization.hpp"
 
@@ -25,16 +27,20 @@ bool BanUserPopup::init(std::string const& username) {
     auto lbl = CCLabelBMFont::create(fmt::format(fmt::runtime(Localization::get().getString("ban.popup.user")), username).c_str(), "goldFont.fnt");
     lbl->setScale(0.6f);
     lbl->setPosition({content.width / 2, content.height - 60.f});
+    lbl->setID("username-label"_spr);
     m_mainLayer->addChild(lbl);
 
     m_input = TextInput::create(240.f, Localization::get().getString("ban.popup.placeholder"));
+    m_input->setID("reason-input"_spr);
     m_input->setPosition({content.width / 2, content.height / 2});
     m_mainLayer->addChild(m_input);
 
     auto btnSpr = ButtonSprite::create(Localization::get().getString("ban.popup.ban_btn").c_str(), "goldFont.fnt", "GJ_button_01.png", .8f);
     auto btn = CCMenuItemSpriteExtra::create(btnSpr, this, menu_selector(BanUserPopup::onBan));
     
+    btn->setID("ban-btn"_spr);
     auto menu = CCMenu::create();
+    menu->setID("ban-menu"_spr);
     menu->addChild(btn);
     menu->setPosition({content.width / 2, 40.f});
     m_mainLayer->addChild(menu);
@@ -45,24 +51,25 @@ bool BanUserPopup::init(std::string const& username) {
 void BanUserPopup::onBan(CCObject*) {
     std::string reason = m_input->getString();
     if (reason.empty()) {
-        Notification::create(Localization::get().getString("ban.popup.enter_reason"), NotificationIcon::Error)->show();
+        PaimonNotify::create(Localization::get().getString("ban.popup.enter_reason"), NotificationIcon::Error)->show();
         return;
     }
 
-    auto loading = LoadingCircle::create();
-    loading->setParentLayer(this);
-    loading->setFade(true);
-    loading->show();
+    auto spinner = geode::LoadingSpinner::create(30.f);
+    spinner->setPosition(m_mainLayer->getContentSize() / 2);
+    spinner->setID("paimon-loading-spinner"_spr);
+    m_mainLayer->addChild(spinner, 100);
+    Ref<geode::LoadingSpinner> loading = spinner;
 
     WeakRef<BanUserPopup> self = this;
     HttpClient::get().banUser(m_username, reason, [self, loading](bool success, std::string msg) {
         if (auto popup = self.lock()) {
-            if (loading) loading->fadeAndRemove();
+            if (loading) loading->removeFromParent();
             if (success) {
-                Notification::create(Localization::get().getString("ban.popup.success"), NotificationIcon::Success)->show();
+                PaimonNotify::create(Localization::get().getString("ban.popup.success"), NotificationIcon::Success)->show();
                 popup->onClose(nullptr);
             } else {
-                Notification::create(Localization::get().getString("ban.popup.error"), NotificationIcon::Error)->show();
+                PaimonNotify::create(Localization::get().getString("ban.popup.error"), NotificationIcon::Error)->show();
             }
         }
     });

@@ -12,8 +12,8 @@ using namespace cocos2d;
 
 CaptureEditPopup* CaptureEditPopup::create(CapturePreviewPopup* previewPopup) {
     auto ret = new CaptureEditPopup();
-    ret->m_previewPopup = previewPopup;
-    if (ret->init()) {
+    if (ret && ret->init()) {
+        ret->m_previewPopup = previewPopup;
         ret->autorelease();
         return ret;
     }
@@ -31,7 +31,7 @@ bool CaptureEditPopup::init() {
     auto menu = CCMenu::create();
     menu->setPosition({content.width * 0.5f, content.height * 0.5f - 5.f});
 
-    auto makeButton = [&](const char* labelKey, const char* icon,
+    auto makeButton = [&](char const* labelKey, char const* icon,
                           SEL_MenuHandler handler) -> CCMenuItemSpriteExtra* {
         auto spr = ButtonSprite::create(
             Localization::get().getString(labelKey).c_str(),

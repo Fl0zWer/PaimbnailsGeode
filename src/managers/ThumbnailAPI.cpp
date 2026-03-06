@@ -3,14 +3,17 @@
 #include "ProfileThumbs.hpp"
 #include "../utils/ImageConverter.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
+#include "../utils/WebHelper.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/utils/string.hpp>
+#include <Geode/utils/web.hpp>
+#include <Geode/utils/function.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <fstream>
 #include <chrono>
-#include <thread>
 
 using namespace geode::prelude;
+
 
 ThumbnailAPI::ThumbnailAPI() {
     m_serverEnabled = true;
@@ -22,7 +25,7 @@ void ThumbnailAPI::setServerEnabled(bool enabled) {
     log::info("[ThumbnailAPI] modo servidor cambiado a: {}", enabled);
 }
 
-void ThumbnailAPI::uploadThumbnail(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback) {
+void ThumbnailAPI::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -36,7 +39,7 @@ void ThumbnailAPI::uploadThumbnail(int levelId, const std::vector<uint8_t>& pngD
     
     log::info("[ThumbnailAPI] subiendo miniatura pal nivel {} ({} bytes)", levelId, pngData.size());
     
-    HttpClient::get().uploadThumbnail(levelId, pngData, username, [this, callback, levelId](bool success, const std::string& message) {
+    HttpClient::get().uploadThumbnail(levelId, pngData, username, [this, callback, levelId](bool success, std::string const& message) {
         if (success) {
             m_uploadCount++;
             log::info("[ThumbnailAPI] subida exitosa - total subidas: {}", m_uploadCount);
@@ -46,7 +49,7 @@ void ThumbnailAPI::uploadThumbnail(int levelId, const std::vector<uint8_t>& pngD
     });
 }
 
-void ThumbnailAPI::uploadGIF(int levelId, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback) {
+void ThumbnailAPI::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -60,7 +63,7 @@ void ThumbnailAPI::uploadGIF(int levelId, const std::vector<uint8_t>& gifData, c
     
     log::info("[ThumbnailAPI] subiendo gif pal nivel {} ({} bytes)", levelId, gifData.size());
     
-    HttpClient::get().uploadGIF(levelId, gifData, username, [this, callback, levelId](bool success, const std::string& message) {
+    HttpClient::get().uploadGIF(levelId, gifData, username, [this, callback, levelId](bool success, std::string const& message) {
         if (success) {
             m_uploadCount++;
             log::info("[ThumbnailAPI] subida de gif exitosa - total subidas: {}", m_uploadCount);
@@ -79,23 +82,24 @@ void ThumbnailAPI::getThumbnails(int levelId, ThumbnailListCallback callback) {
         return;
     }
     
-    HttpClient::get().getThumbnails(levelId, [callback](bool success, const std::string& response) {
+    HttpClient::get().getThumbnails(levelId, [callback](bool success, std::string const& response) {
         if (!success) {
             callback(false, {});
             return;
         }
         
-        try {
-            auto res = matjson::parse(response);
-            if (!res.isOk()) {
-                callback(false, {});
-                return;
-            }
-            auto json = res.unwrap();
-            std::vector<ThumbnailInfo> thumbnails;
-            
-            if (json.contains("thumbnails") && json["thumbnails"].isArray()) {
-                for (const auto& item : json["thumbnails"].asArray().unwrap()) {
+        auto res = matjson::parse(response);
+        if (!res.isOk()) {
+            callback(false, {});
+            return;
+        }
+        auto json = res.unwrap();
+        std::vector<ThumbnailInfo> thumbnails;
+
+        if (json.contains("thumbnails") && json["thumbnails"].isArray()) {
+                auto arrRes = json["thumbnails"].asArray();
+                if (!arrRes.isOk()) { callback(false, {}); return; }
+                for (auto const& item : arrRes.unwrap()) {
                     ThumbnailInfo info;
                     info.id = item["id"].asString().unwrapOr("");
                     info.url = item["url"].asString().unwrapOr("");
@@ -120,11 +124,8 @@ void ThumbnailAPI::getThumbnails(int levelId, ThumbnailListCallback callback) {
 
                     thumbnails.push_back(info);
                 }
-            }
-            callback(true, thumbnails);
-        } catch (...) {
-            callback(false, {});
         }
+        callback(true, thumbnails);
     });
 }
 
@@ -134,7 +135,7 @@ void ThumbnailAPI::getThumbnailInfo(int levelId, ActionCallback callback) {
         return;
     }
     
-    HttpClient::get().getThumbnailInfo(levelId, [callback](bool success, const std::string& response) {
+    HttpClient::get().getThumbnailInfo(levelId, [callback](bool success, std::string const& response) {
         callback(success, response);
     });
 }
@@ -143,7 +144,7 @@ std::string ThumbnailAPI::getThumbnailURL(int levelId) {
     return HttpClient::get().getServerURL() + "/thumbnails/" + std::to_string(levelId) + ".png";
 }
 
-void ThumbnailAPI::uploadSuggestion(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback) {
+void ThumbnailAPI::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -157,7 +158,7 @@ void ThumbnailAPI::uploadSuggestion(int levelId, const std::vector<uint8_t>& png
     
     log::info("[ThumbnailAPI] subiendo sugerencia pal nivel {} ({} bytes)", levelId, pngData.size());
     
-    HttpClient::get().uploadSuggestion(levelId, pngData, username, [this, callback](bool success, const std::string& message) {
+    HttpClient::get().uploadSuggestion(levelId, pngData, username, [this, callback](bool success, std::string const& message) {
         if (success) {
             m_uploadCount++;
             log::info("[ThumbnailAPI] subida de sugerencia exitosa - total subidas: {}", m_uploadCount);
@@ -166,7 +167,7 @@ void ThumbnailAPI::uploadSuggestion(int levelId, const std::vector<uint8_t>& png
     });
 }
 
-void ThumbnailAPI::uploadUpdate(int levelId, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback) {
+void ThumbnailAPI::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -180,7 +181,7 @@ void ThumbnailAPI::uploadUpdate(int levelId, const std::vector<uint8_t>& pngData
     
     log::info("[ThumbnailAPI] subiendo update pal nivel {} ({} bytes)", levelId, pngData.size());
     
-    HttpClient::get().uploadUpdate(levelId, pngData, username, [this, callback, levelId](bool success, const std::string& message) {
+    HttpClient::get().uploadUpdate(levelId, pngData, username, [this, callback, levelId](bool success, std::string const& message) {
         if (success) {
             m_uploadCount++;
             log::info("[ThumbnailAPI] subida de update exitosa - total subidas: {}", m_uploadCount);
@@ -190,7 +191,7 @@ void ThumbnailAPI::uploadUpdate(int levelId, const std::vector<uint8_t>& pngData
     });
 }
 
-void ThumbnailAPI::uploadProfile(int accountID, const std::vector<uint8_t>& pngData, const std::string& username, UploadCallback callback) {
+void ThumbnailAPI::uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -202,7 +203,7 @@ void ThumbnailAPI::uploadProfile(int accountID, const std::vector<uint8_t>& pngD
         return;
     }
     log::info("[ThumbnailAPI] subiendo perfil pal account {} ({} bytes)", accountID, pngData.size());
-    HttpClient::get().uploadProfile(accountID, pngData, username, [this, callback, accountID](bool success, const std::string& message){
+    HttpClient::get().uploadProfile(accountID, pngData, username, [this, callback, accountID](bool success, std::string const& message){
         if (success) {
             m_uploadCount++;
             log::info("[ThumbnailAPI] subida de perfil exitosa - total subidas: {}", m_uploadCount);
@@ -212,7 +213,7 @@ void ThumbnailAPI::uploadProfile(int accountID, const std::vector<uint8_t>& pngD
     });
 }
 
-void ThumbnailAPI::uploadProfileGIF(int accountID, const std::vector<uint8_t>& gifData, const std::string& username, UploadCallback callback) {
+void ThumbnailAPI::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
         log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
         callback(false, "Debes estar logueado para subir miniaturas.");
@@ -224,7 +225,7 @@ void ThumbnailAPI::uploadProfileGIF(int accountID, const std::vector<uint8_t>& g
         return;
     }
     log::info("[ThumbnailAPI] subiendo gif perfil pal account {} ({} bytes)", accountID, gifData.size());
-    HttpClient::get().uploadProfileGIF(accountID, gifData, username, [this, callback, accountID](bool success, const std::string& message){
+    HttpClient::get().uploadProfileGIF(accountID, gifData, username, [this, callback, accountID](bool success, std::string const& message){
         if (success) {
             m_uploadCount++;
             log::info("[ThumbnailAPI] subida de gif perfil exitosa - total subidas: {}", m_uploadCount);
@@ -234,7 +235,86 @@ void ThumbnailAPI::uploadProfileGIF(int accountID, const std::vector<uint8_t>& g
     });
 }
 
-void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, DownloadCallback callback) {
+void ThumbnailAPI::uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback) {
+    if (GJAccountManager::get()->m_accountID <= 0) {
+        log::warn("[ThumbnailAPI] usuario no logueado, subida denegada.");
+        callback(false, "Debes estar logueado para subir imagen de perfil.");
+        return;
+    }
+    if (!m_serverEnabled) {
+        log::warn("[ThumbnailAPI] servidor desactivado, saltando subida de profileimg pal account {}", accountID);
+        callback(false, "Funcionalidad de servidor desactivada");
+        return;
+    }
+    log::info("[ThumbnailAPI] subiendo profileimg pal account {} ({} bytes, type: {})", accountID, imgData.size(), contentType);
+    HttpClient::get().uploadProfileImg(accountID, imgData, username, contentType, [this, callback, accountID](bool success, std::string const& message){
+        if (success) {
+            m_uploadCount++;
+            log::info("[ThumbnailAPI] subida de profileimg exitosa - total subidas: {}", m_uploadCount);
+        }
+        callback(success, message);
+    });
+}
+
+void ThumbnailAPI::uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
+    uploadProfileImg(accountID, gifData, username, "image/gif", callback);
+}
+
+void ThumbnailAPI::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
+    if (!m_serverEnabled) {
+        log::warn("[ThumbnailAPI] servidor desactivado, saltando descarga de profileimg pal account {}", accountID);
+        callback(false, nullptr);
+        return;
+    }
+
+    log::info("[ThumbnailAPI] descargando profileimg pal account {} (self={})", accountID, isSelf);
+
+    HttpClient::get().downloadProfileImg(accountID, [this, accountID, callback](bool success, std::vector<uint8_t> const& data, int width, int height) {
+        if (!success || data.empty()) {
+            log::warn("[ThumbnailAPI] fallo descarga de profileimg pal account {}", accountID);
+            callback(false, nullptr);
+            return;
+        }
+
+        // guardar datos en cachÃ© de disco
+        {
+            auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
+            std::error_code ec;
+            std::filesystem::create_directories(cacheDir, ec);
+            auto cachePath = cacheDir / fmt::format("{}.dat", accountID);
+            std::ofstream cacheFile(cachePath, std::ios::binary);
+            if (cacheFile) {
+                cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
+                cacheFile.close();
+                log::info("[ThumbnailAPI] profileimg guardada en cachÃ© de disco: {}", geode::utils::string::pathToString(cachePath));
+            } else {
+                log::warn("[ThumbnailAPI] no se pudo guardar profileimg en cachÃ© de disco");
+            }
+        }
+
+        // guardar datos para crear textura en main thread
+        auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
+
+        queueInMainThread([this, accountID, callback, dataCopy]() {
+            CCImage img;
+            if (img.initWithImageData(const_cast<uint8_t*>(dataCopy->data()), dataCopy->size())) {
+                auto* tex = new CCTexture2D();
+                if (tex->initWithImage(&img)) {
+                    tex->autorelease();
+                    log::info("[ThumbnailAPI] profileimg descargada exitosamente pal account {}", accountID);
+                    callback(true, tex);
+                    return;
+                }
+                tex->release();
+            }
+
+            log::warn("[ThumbnailAPI] no se pudo crear textura de profileimg pal account {}", accountID);
+            callback(false, nullptr);
+        });
+    }, isSelf);
+}
+
+void ThumbnailAPI::downloadProfile(int accountID, std::string const& username, DownloadCallback callback) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, saltando descarga de perfil pal account {}", accountID);
         callback(false, nullptr);
@@ -243,9 +323,9 @@ void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, D
     
     log::info("[ThumbnailAPI] descargando perfil pal account {} (user: {})", accountID, username);
     
-    HttpClient::get().downloadProfile(accountID, username, [this, accountID, callback](bool success, const std::vector<uint8_t>& data, int width, int height) {
+    HttpClient::get().downloadProfile(accountID, username, [this, accountID, callback](bool success, std::vector<uint8_t> const& data, int width, int height) {
         if (!success || data.empty()) {
-            log::warn("[ThumbnailAPI] falló descarga de perfil pal account {}", accountID);
+            log::warn("[ThumbnailAPI] fallÃ³ descarga de perfil pal account {}", accountID);
             callback(false, nullptr);
             return;
         }
@@ -264,7 +344,6 @@ void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, D
             // cargar gif en cache con AnimatedGIFSprite::createAsync
             AnimatedGIFSprite::createAsync(data, gifKey, [this, accountID, gifKey, callback](AnimatedGIFSprite* sprite) {
                 if (sprite) {
-                    m_downloadCount++;
                     log::info("[ThumbnailAPI] GIF profile loaded successfully for account {}", accountID);
 
                     // cachear la clave gif en profilethumbs
@@ -273,9 +352,7 @@ void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, D
                     // textura del primer frame pa compatibilidad
                     auto tex = sprite->getTexture();
                     if (tex) {
-                        tex->retain();
                         callback(true, tex);
-                        tex->release();
                     } else {
                         callback(true, nullptr); // ok pero sin textura estatica (solo gif)
                     }
@@ -290,11 +367,10 @@ void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, D
         // Not a GIF - try to convert as image (WebP/PNG/JPG)
         auto texture = webpToTexture(data);
         if (texture) {
-            m_downloadCount++;
             log::info("[ThumbnailAPI] descarga de perfil exitosa pal account {}", accountID);
             callback(true, texture);
         } else {
-            log::error("[ThumbnailAPI] falló al crear textura del perfil pal account {}", accountID);
+            log::error("[ThumbnailAPI] fallÃ³ al crear textura del perfil pal account {}", accountID);
             callback(false, nullptr);
         }
     });
@@ -302,7 +378,7 @@ void ThumbnailAPI::downloadProfile(int accountID, const std::string& username, D
 
 
 
-void ThumbnailAPI::uploadProfileConfig(int accountID, const ProfileConfig& config, ActionCallback callback) {
+void ThumbnailAPI::uploadProfileConfig(int accountID, ProfileConfig const& config, ActionCallback callback) {
     if (!m_serverEnabled) {
         callback(false, "Server disabled");
         return;
@@ -337,7 +413,7 @@ void ThumbnailAPI::uploadProfileConfig(int accountID, const ProfileConfig& confi
     std::string jsonStr = json.dump(matjson::NO_INDENTATION);
     log::info("[ThumbnailAPI] subiendo config json: {}", jsonStr);
     
-    HttpClient::get().uploadProfileConfig(accountID, jsonStr, [callback, accountID](bool success, const std::string& msg) {
+    HttpClient::get().uploadProfileConfig(accountID, jsonStr, [callback, accountID](bool success, std::string const& msg) {
         if (success) {
             ProfileThumbs::get().deleteProfile(accountID);
         }
@@ -345,61 +421,57 @@ void ThumbnailAPI::uploadProfileConfig(int accountID, const ProfileConfig& confi
     });
 }
 
-void ThumbnailAPI::downloadProfileConfig(int accountID, std::function<void(bool success, const ProfileConfig& config)> callback) {
+void ThumbnailAPI::downloadProfileConfig(int accountID, geode::CopyableFunction<void(bool success, ProfileConfig const& config)> callback) {
     if (!m_serverEnabled) {
         callback(false, ProfileConfig());
         return;
     }
     
-    HttpClient::get().downloadProfileConfig(accountID, [callback](bool success, const std::string& response) {
+    HttpClient::get().downloadProfileConfig(accountID, [callback](bool success, std::string const& response) {
         if (!success || response.empty()) {
             callback(false, ProfileConfig());
             return;
         }
         
-        try {
-            auto res = matjson::parse(response);
-            if (!res) {
-                callback(false, ProfileConfig());
-                return;
-            }
-            auto json = res.unwrap();
-            
-            ProfileConfig config;
-            config.hasConfig = true;
-            
-            if (json.contains("backgroundType")) config.backgroundType = json["backgroundType"].asString().unwrapOr("gradient");
-            if (json.contains("blurIntensity")) config.blurIntensity = (float)json["blurIntensity"].asDouble().unwrapOr(3.0);
-            if (json.contains("darkness")) config.darkness = (float)json["darkness"].asDouble().unwrapOr(0.2);
-            if (json.contains("useGradient")) config.useGradient = json["useGradient"].asBool().unwrapOr(false);
-            
-            if (json.contains("colorA")) {
-                auto c = json["colorA"];
-                config.colorA.r = (GLubyte)c["r"].asInt().unwrapOr(255);
-                config.colorA.g = (GLubyte)c["g"].asInt().unwrapOr(255);
-                config.colorA.b = (GLubyte)c["b"].asInt().unwrapOr(255);
-            }
-            
-            if (json.contains("colorB")) {
-                auto c = json["colorB"];
-                config.colorB.r = (GLubyte)c["r"].asInt().unwrapOr(255);
-                config.colorB.g = (GLubyte)c["g"].asInt().unwrapOr(255);
-                config.colorB.b = (GLubyte)c["b"].asInt().unwrapOr(255);
-            }
-
-            if (json.contains("separatorColor")) {
-                auto c = json["separatorColor"];
-                config.separatorColor.r = (GLubyte)c["r"].asInt().unwrapOr(0);
-                config.separatorColor.g = (GLubyte)c["g"].asInt().unwrapOr(0);
-                config.separatorColor.b = (GLubyte)c["b"].asInt().unwrapOr(0);
-            }
-            if (json.contains("separatorOpacity")) config.separatorOpacity = json["separatorOpacity"].asInt().unwrapOr(50);
-            if (json.contains("widthFactor")) config.widthFactor = (float)json["widthFactor"].asDouble().unwrapOr(0.60);
-            
-            callback(true, config);
-        } catch (...) {
+        auto res = matjson::parse(response);
+        if (!res.isOk()) {
             callback(false, ProfileConfig());
+            return;
         }
+        auto json = res.unwrap();
+
+        ProfileConfig config;
+        config.hasConfig = true;
+
+        if (json.contains("backgroundType")) config.backgroundType = json["backgroundType"].asString().unwrapOr("gradient");
+        if (json.contains("blurIntensity")) config.blurIntensity = (float)json["blurIntensity"].asDouble().unwrapOr(3.0);
+        if (json.contains("darkness")) config.darkness = (float)json["darkness"].asDouble().unwrapOr(0.2);
+        if (json.contains("useGradient")) config.useGradient = json["useGradient"].asBool().unwrapOr(false);
+
+        if (json.contains("colorA")) {
+            auto c = json["colorA"];
+            config.colorA.r = (GLubyte)c["r"].asInt().unwrapOr(255);
+            config.colorA.g = (GLubyte)c["g"].asInt().unwrapOr(255);
+            config.colorA.b = (GLubyte)c["b"].asInt().unwrapOr(255);
+        }
+
+        if (json.contains("colorB")) {
+            auto c = json["colorB"];
+            config.colorB.r = (GLubyte)c["r"].asInt().unwrapOr(255);
+            config.colorB.g = (GLubyte)c["g"].asInt().unwrapOr(255);
+            config.colorB.b = (GLubyte)c["b"].asInt().unwrapOr(255);
+        }
+
+        if (json.contains("separatorColor")) {
+            auto c = json["separatorColor"];
+            config.separatorColor.r = (GLubyte)c["r"].asInt().unwrapOr(0);
+            config.separatorColor.g = (GLubyte)c["g"].asInt().unwrapOr(0);
+            config.separatorColor.b = (GLubyte)c["b"].asInt().unwrapOr(0);
+        }
+        if (json.contains("separatorOpacity")) config.separatorOpacity = json["separatorOpacity"].asInt().unwrapOr(50);
+        if (json.contains("widthFactor")) config.widthFactor = (float)json["widthFactor"].asDouble().unwrapOr(0.60);
+
+        callback(true, config);
     });
 }
 
@@ -412,14 +484,13 @@ void ThumbnailAPI::downloadSuggestion(int levelId, DownloadCallback callback) {
     
     log::info("[ThumbnailAPI] descargando sugerencia pal nivel {}", levelId);
     
-    HttpClient::get().downloadSuggestion(levelId, [this, levelId, callback](bool success, const std::vector<uint8_t>& data, int width, int height) {
+    HttpClient::get().downloadSuggestion(levelId, [this, levelId, callback](bool success, std::vector<uint8_t> const& data, int width, int height) {
         if (!success || data.empty()) {
-            log::error("[ThumbnailAPI] falló descarga de sugerencia pal nivel {}", levelId);
+            log::error("[ThumbnailAPI] fallÃ³ descarga de sugerencia pal nivel {}", levelId);
             callback(false, nullptr);
             return;
         }
         
-        m_downloadCount++;
         log::info("[ThumbnailAPI] descargada sugerencia {} bytes pal nivel {}", data.size(), levelId);
         
         CCTexture2D* texture = webpToTexture(data);
@@ -427,7 +498,7 @@ void ThumbnailAPI::downloadSuggestion(int levelId, DownloadCallback callback) {
     });
 }
 
-void ThumbnailAPI::downloadSuggestionImage(const std::string& filename, DownloadCallback callback) {
+void ThumbnailAPI::downloadSuggestionImage(std::string const& filename, DownloadCallback callback) {
     if (!m_serverEnabled) {
         callback(false, nullptr);
         return;
@@ -436,7 +507,7 @@ void ThumbnailAPI::downloadSuggestionImage(const std::string& filename, Download
     std::string url = HttpClient::get().getServerURL() + "/" + filename;
     log::info("[ThumbnailAPI] descargando imagen de sugerencia: {}", url);
     
-    HttpClient::get().downloadFromUrl(url, [this, callback](bool success, const std::vector<uint8_t>& data, int w, int h) {
+    HttpClient::get().downloadFromUrl(url, [this, callback](bool success, std::vector<uint8_t> const& data, int w, int h) {
         if (!success || data.empty()) {
             callback(false, nullptr);
             return;
@@ -455,14 +526,13 @@ void ThumbnailAPI::downloadUpdate(int levelId, DownloadCallback callback) {
     
     log::info("[ThumbnailAPI] descargando update pal nivel {}", levelId);
     
-    HttpClient::get().downloadUpdate(levelId, [this, levelId, callback](bool success, const std::vector<uint8_t>& data, int width, int height) {
+    HttpClient::get().downloadUpdate(levelId, [this, levelId, callback](bool success, std::vector<uint8_t> const& data, int width, int height) {
         if (!success || data.empty()) {
-            log::error("[ThumbnailAPI] falló descarga de update pal nivel {}", levelId);
+            log::error("[ThumbnailAPI] fallÃ³ descarga de update pal nivel {}", levelId);
             callback(false, nullptr);
             return;
         }
         
-        m_downloadCount++;
         log::info("[ThumbnailAPI] descargado update {} bytes pal nivel {}", data.size(), levelId);
         
         CCTexture2D* texture = webpToTexture(data);
@@ -479,14 +549,13 @@ void ThumbnailAPI::downloadReported(int levelId, DownloadCallback callback) {
     
     log::info("[ThumbnailAPI] descargando reportado pal nivel {}", levelId);
     
-    HttpClient::get().downloadReported(levelId, [this, levelId, callback](bool success, const std::vector<uint8_t>& data, int width, int height) {
+    HttpClient::get().downloadReported(levelId, [this, levelId, callback](bool success, std::vector<uint8_t> const& data, int width, int height) {
         if (!success || data.empty()) {
-            log::error("[ThumbnailAPI] falló descarga de reportado pal nivel {}", levelId);
+            log::error("[ThumbnailAPI] fallÃ³ descarga de reportado pal nivel {}", levelId);
             callback(false, nullptr);
             return;
         }
         
-        m_downloadCount++;
         log::info("[ThumbnailAPI] descargado reportado {} bytes pal nivel {}", data.size(), levelId);
         
         CCTexture2D* texture = webpToTexture(data);
@@ -494,36 +563,57 @@ void ThumbnailAPI::downloadReported(int levelId, DownloadCallback callback) {
     });
 }
 
+void ThumbnailAPI::downloadPendingProfile(int accountID, DownloadCallback callback) {
+    if (!m_serverEnabled) {
+        log::warn("[ThumbnailAPI] servidor desactivado, saltando descarga de perfil pendiente");
+        callback(false, nullptr);
+        return;
+    }
+
+    log::info("[ThumbnailAPI] descargando perfil pendiente para account {}", accountID);
+
+    // Usar la URL de profiles con self=1 para que el servidor muestre el pending
+    std::string url = HttpClient::get().getServerURL() + "/profiles/" + std::to_string(accountID) + "?self=1";
+
+    HttpClient::get().downloadFromUrl(url, [this, accountID, callback](bool success, std::vector<uint8_t> const& data, int w, int h) {
+        if (!success || data.empty()) {
+            log::warn("[ThumbnailAPI] no se encontro perfil pendiente para account {}", accountID);
+            callback(false, nullptr);
+            return;
+        }
+
+        log::info("[ThumbnailAPI] descargado perfil pendiente {} bytes para account {}", data.size(), accountID);
+        CCTexture2D* texture = webpToTexture(data);
+        callback(texture != nullptr, texture);
+    });
+}
 
 
-void ThumbnailAPI::getRating(int levelId, const std::string& username, const std::string& thumbnailId, std::function<void(bool success, float average, int count, int userVote)> callback) {
+
+void ThumbnailAPI::getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback) {
     if (!m_serverEnabled) {
         callback(false, 0, 0, 0);
         return;
     }
-    HttpClient::get().getRating(levelId, username, thumbnailId, [callback](bool success, const std::string& response) {
+    HttpClient::get().getRating(levelId, username, thumbnailId, [callback](bool success, std::string const& response) {
         if (!success) {
             callback(false, 0, 0, 0);
             return;
         }
-        try {
-            auto jsonRes = matjson::parse(response);
-            if (!jsonRes) {
-                 callback(false, 0, 0, 0);
-                 return;
-            }
-            auto json = jsonRes.unwrap();
-            float average = (float)json["average"].asDouble().unwrapOr(0.0);
-            int count = (int)json["count"].asInt().unwrapOr(0);
-            int userVote = (int)json["userVote"].asInt().unwrapOr(0);
-            callback(true, average, count, userVote);
-        } catch (...) {
-            callback(false, 0, 0, 0);
+        auto jsonRes = matjson::parse(response);
+        if (!jsonRes.isOk()) {
+             callback(false, 0, 0, 0);
+             return;
         }
+        auto json = jsonRes.unwrap();
+        float average = (float)json["average"].asDouble().unwrapOr(0.0);
+        int count = (int)json["count"].asInt().unwrapOr(0);
+        int userVote = (int)json["userVote"].asInt().unwrapOr(0);
+        callback(true, average, count, userVote);
     });
 }
 
-void ThumbnailAPI::submitVote(int levelId, int stars, const std::string& username, const std::string& thumbnailId, ActionCallback callback) {
+void ThumbnailAPI::submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, ActionCallback callback) {
     if (!m_serverEnabled) {
         callback(false, "Server disabled");
         return;
@@ -540,16 +630,15 @@ void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback) {
     
     log::info("[ThumbnailAPI] descargando miniatura pal nivel {}", levelId);
     
-    HttpClient::get().downloadThumbnail(levelId, [this, levelId, callback](bool success, const std::vector<uint8_t>& data, int width, int height) {
+    HttpClient::get().downloadThumbnail(levelId, [this, levelId, callback](bool success, std::vector<uint8_t> const& data, int width, int height) {
         if (!success || data.empty()) {
             log::error("[ThumbnailAPI] descarga fallida pal nivel {}", levelId);
             callback(false, nullptr);
             return;
         }
         
-        m_downloadCount++;
-        log::info("[ThumbnailAPI] descargados {} bytes pal nivel {} - descargas totales: {}", data.size(), levelId, m_downloadCount);
-        
+        log::info("[ThumbnailAPI] descargados {} bytes pal nivel {}", data.size(), levelId);
+
         // Convert data to texture directly (no cache)
         CCTexture2D* texture = webpToTexture(data);
         callback(success, texture);
@@ -567,7 +656,7 @@ void ThumbnailAPI::checkExists(int levelId, ExistsCallback callback) {
 
 #include <Geode/utils/web.hpp>
 
-void ThumbnailAPI::checkModerator(const std::string& username, ModeratorCallback callback) {
+void ThumbnailAPI::checkModerator(std::string const& username, ModeratorCallback callback) {
     if (!m_serverEnabled) {
         callback(false, false);
         return;
@@ -584,14 +673,11 @@ void ThumbnailAPI::checkModerator(const std::string& username, ModeratorCallback
 
     std::string url = fmt::format("https://gdbrowser.com/api/profile/{}", username);
 
-    // Usar thread en lugar de async::spawn
-    std::thread([this, url, username, currentAccountID, callback]() {
-        auto req = web::WebRequest();
-        auto response = req.getSync(url);
+    auto req = web::WebRequest();
 
-        queueInMainThread([this, response = std::move(response), username, currentAccountID, callback]() {
+    WebHelper::dispatch(std::move(req), "GET", url, [this, username, currentAccountID, callback](web::WebResponse response) {
             if (!response.ok()) {
-                log::warn("[ThumbnailAPI] seguridad: falló chequeo gdbrowser pa '{}'", username);
+                log::warn("[ThumbnailAPI] seguridad: fallÃ³ chequeo gdbrowser pa '{}'", username);
                 callback(false, false);
                 return;
             }
@@ -599,17 +685,16 @@ void ThumbnailAPI::checkModerator(const std::string& username, ModeratorCallback
             auto data = response.data();
             std::string respStr(data.begin(), data.end());
 
-            try {
-                auto jsonRes = matjson::parse(respStr);
+            auto jsonRes = matjson::parse(respStr);
                 if (!jsonRes.isOk()) {
-                     log::warn("[ThumbnailAPI] seguridad: json inválido de gdbrowser pa '{}'", username);
+                     log::warn("[ThumbnailAPI] seguridad: json invÃ¡lido de gdbrowser pa '{}'", username);
                      callback(false, false);
                      return;
                 }
                 auto json = jsonRes.unwrap();
 
                 if (!json.contains("accountID")) {
-                    log::warn("[ThumbnailAPI] seguridad: no se halló accountID pa '{}'", username);
+                    log::warn("[ThumbnailAPI] seguridad: no se hallÃ³ accountID pa '{}'", username);
                     callback(false, false);
                     return;
                 }
@@ -626,40 +711,32 @@ void ThumbnailAPI::checkModerator(const std::string& username, ModeratorCallback
 
                 // Proceder con el chequeo original
                 HttpClient::get().checkModerator(username, [callback, username](bool isMod, bool isAdmin) {
-                    try {
-                        if (isAdmin) {
-                            Mod::get()->setSavedValue<bool>("is-verified-admin", true);
-                            auto path = Mod::get()->getSaveDir() / "admin_verification.dat";
-                            std::ofstream f(path, std::ios::binary | std::ios::trunc);
-                            if (f) {
-                                time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                                f.write(reinterpret_cast<const char*>(&now), sizeof(now));
-                                f.close();
-                            }
+                    if (isAdmin) {
+                        Mod::get()->setSavedValue<bool>("is-verified-admin", true);
+                        auto path = Mod::get()->getSaveDir() / "admin_verification.dat";
+                        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+                        if (f) {
+                            time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                            f.write(reinterpret_cast<char const*>(&now), sizeof(now));
+                            f.close();
                         }
-                        if (isMod) {
-                            Mod::get()->setSavedValue<bool>("is-verified-moderator", true);
-                            auto path = Mod::get()->getSaveDir() / "moderator_verification.dat";
-                            std::ofstream f(path, std::ios::binary | std::ios::trunc);
-                            if (f) {
-                                time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
-                                f.write(reinterpret_cast<const char*>(&now), sizeof(now));
-                                f.close();
-                            }
+                    }
+                    if (isMod) {
+                        Mod::get()->setSavedValue<bool>("is-verified-moderator", true);
+                        auto path = Mod::get()->getSaveDir() / "moderator_verification.dat";
+                        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+                        if (f) {
+                            time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+                            f.write(reinterpret_cast<char const*>(&now), sizeof(now));
+                            f.close();
                         }
-                    } catch (...) {}
+                    }
                     callback(isMod, isAdmin);
                 });
-
-            } catch (std::exception& e) {
-                log::error("[ThumbnailAPI] error chequeo seguridad: {}", e.what());
-                callback(false, false);
-            }
-        });
-    }).detach();
+    });
 }
 
-void ThumbnailAPI::checkUserStatus(const std::string& username, ModeratorCallback callback) {
+void ThumbnailAPI::checkUserStatus(std::string const& username, ModeratorCallback callback) {
     if (!m_serverEnabled) {
         callback(false, false);
         return;
@@ -669,7 +746,7 @@ void ThumbnailAPI::checkUserStatus(const std::string& username, ModeratorCallbac
     HttpClient::get().checkModerator(username, callback);
 }
 
-void ThumbnailAPI::checkModeratorAccount(const std::string& username, int accountID, ModeratorCallback callback) {
+void ThumbnailAPI::checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback) {
     if (!m_serverEnabled) {
         callback(false, false);
         return;
@@ -686,12 +763,9 @@ void ThumbnailAPI::checkModeratorAccount(const std::string& username, int accoun
 
     std::string url = fmt::format("https://gdbrowser.com/api/profile/{}", username);
 
-    // Usar thread en lugar de async::spawn
-    std::thread([this, url, username, currentAccountID, callback]() {
-        auto req = web::WebRequest();
-        auto response = req.getSync(url);
+    auto req = web::WebRequest();
 
-        queueInMainThread([this, response = std::move(response), username, currentAccountID, callback]() {
+    WebHelper::dispatch(std::move(req), "GET", url, [this, username, currentAccountID, callback](web::WebResponse response) {
             if (!response.ok()) {
                 callback(false, false);
                 return;
@@ -700,47 +774,39 @@ void ThumbnailAPI::checkModeratorAccount(const std::string& username, int accoun
             auto data = response.data();
             std::string respStr(data.begin(), data.end());
 
-            try {
-                 auto jsonRes = matjson::parse(respStr);
-                 if (!jsonRes.isOk()) {
-                     callback(false, false);
-                     return;
-                 }
-                 auto json = jsonRes.unwrap();
-
-                 if (!json.contains("accountID")) {
-                    callback(false, false);
-                    return;
-                 }
-
-                 std::string accIdStr = json["accountID"].asString().unwrapOr("0");
-                 int fetchedID = geode::utils::numFromString<int>(accIdStr).unwrapOr(0);
-
-                 if (fetchedID != currentAccountID) {
-                     log::warn("[ThumbnailAPI] seguridad: intento de spoof? usuario '{}' (ID: {}) != ID login: {}",
-                        username, fetchedID, currentAccountID);
-                     callback(false, false);
-                     return;
-                 }
-
-                 // ok
-                 HttpClient::get().checkModeratorAccount(username, currentAccountID, [callback](bool isMod, bool isAdmin){
-                    try {
-                        if (isAdmin) {
-                            Mod::get()->setSavedValue<bool>("is-verified-admin", true);
-                        }
-                        if (isMod) {
-                            Mod::get()->setSavedValue<bool>("is-verified-moderator", true);
-                        }
-                    } catch(...) {}
-                    callback(isMod, isAdmin);
-                });
-
-            } catch (...) {
+            auto jsonRes = matjson::parse(respStr);
+            if (!jsonRes.isOk()) {
                 callback(false, false);
+                return;
             }
-        });
-    }).detach();
+            auto json = jsonRes.unwrap();
+
+            if (!json.contains("accountID")) {
+               callback(false, false);
+               return;
+            }
+
+            std::string accIdStr = json["accountID"].asString().unwrapOr("0");
+            int fetchedID = geode::utils::numFromString<int>(accIdStr).unwrapOr(0);
+
+            if (fetchedID != currentAccountID) {
+                log::warn("[ThumbnailAPI] seguridad: intento de spoof? usuario '{}' (ID: {}) != ID login: {}",
+                   username, fetchedID, currentAccountID);
+                callback(false, false);
+                return;
+            }
+
+            // ok
+            HttpClient::get().checkModeratorAccount(username, currentAccountID, [callback](bool isMod, bool isAdmin) {
+                if (isAdmin) {
+                    Mod::get()->setSavedValue<bool>("is-verified-admin", true);
+                }
+                if (isMod) {
+                    Mod::get()->setSavedValue<bool>("is-verified-moderator", true);
+                }
+                callback(isMod, isAdmin);
+            });
+    });
 }
 
 void ThumbnailAPI::getThumbnail(int levelId, DownloadCallback callback) {
@@ -764,40 +830,30 @@ void ThumbnailAPI::getThumbnail(int levelId, DownloadCallback callback) {
     }
 }
 
-CCTexture2D* ThumbnailAPI::webpToTexture(const std::vector<uint8_t>& webpData) {
+CCTexture2D* ThumbnailAPI::webpToTexture(std::vector<uint8_t> const& webpData) {
     if (webpData.empty()) return nullptr;
 
     CCImage* img = new CCImage();
     if (!img) return nullptr;
 
-    try {
-        // tratar los datos como png ya que servidor devuelve png
-        if (!img->initWithImageData(const_cast<uint8_t*>(webpData.data()), webpData.size())) {
-            log::error("[ThumbnailAPI] fallo al iniciar ccimage desde datos");
-            img->release();
-            return nullptr;
-        }
-        
-        auto* tex = new CCTexture2D();
-        if (!tex->initWithImage(img)) {
-            tex->release();
-            img->release();
-            log::error("[ThumbnailAPI] fallo al crear textura desde imagen");
-            return nullptr;
-        }
-        
+    // tratar los datos como png ya que servidor devuelve png
+    if (!img->initWithImageData(const_cast<uint8_t*>(webpData.data()), webpData.size())) {
+        log::error("[ThumbnailAPI] fallo al iniciar ccimage desde datos");
         img->release();
-        tex->autorelease();
-        return tex;
-    } catch (std::exception& e) {
-        log::error("[ThumbnailAPI] excepcion convirtiendo datos a textura: {}", e.what());
-        // intentar liberar img si no se libero todavia
-        // esto es un poco inseguro si img ya se libero, pero en este flujo es lineal.
-        // si excepcion pasa durante initWithImageData o initWithImage, img sigue valido.
-        // si excepcion pasa despues de img->release(), podriamos hacer double free.
-        // pero initWithImage no deberia tirar excepciones c++ usualmente.
         return nullptr;
     }
+
+    auto* tex = new CCTexture2D();
+    if (!tex->initWithImage(img)) {
+        tex->release();
+        img->release();
+        log::error("[ThumbnailAPI] fallo al crear textura desde imagen");
+        return nullptr;
+    }
+
+    img->release();
+    tex->autorelease();
+    return tex;
 }
 
 CCTexture2D* ThumbnailAPI::loadFromLocal(int levelId) {
@@ -822,9 +878,12 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
         case PendingCategory::Verify: endpoint += "verify"; break;
         case PendingCategory::Update: endpoint += "update"; break;
         case PendingCategory::Report: endpoint += "report"; break;
+        case PendingCategory::Banner: endpoint += "banner"; break;
+        case PendingCategory::ProfileImg: endpoint += "profileimgs"; break;
+        case PendingCategory::Profile: endpoint += "profiles"; break;
     }
     
-    HttpClient::get().get(endpoint, [callback, category](bool success, const std::string& response) {
+    HttpClient::get().get(endpoint, [callback, category](bool success, std::string const& response) {
         if (!success) {
             log::error("[ThumbnailAPI] fallo al sincronizar cola desde servidor");
             // fallback a cola local
@@ -834,14 +893,13 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
         
         // parsear respuesta json con matjson
         std::vector<PendingItem> items;
-        try {
-            auto jsonRes = matjson::parse(response);
-            if (!jsonRes) {
-                log::warn("[ThumbnailAPI] fallo al parsear respuesta cola: json invalido");
-                callback(true, PendingQueue::get().list(category));
-                return;
-            }
-            auto json = jsonRes.unwrap();
+        auto jsonRes = matjson::parse(response);
+        if (!jsonRes.isOk()) {
+            log::warn("[ThumbnailAPI] fallo al parsear respuesta cola: json invalido");
+            callback(true, PendingQueue::get().list(category));
+            return;
+        }
+        auto json = jsonRes.unwrap();
 
             if (!json.contains("items") || !json["items"].isArray()) {
                 log::warn("[ThumbnailAPI] sync cola: no se encontro array items");
@@ -856,17 +914,25 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
                 return;
             }
 
-            for (const auto& item : itemsRes.unwrap()) {
+            for (auto const& item : itemsRes.unwrap()) {
                 PendingItem it{};
                 // campo levelId en json servidor es camelCase
                 if (item.contains("levelId")) {
                     if (item["levelId"].isString()) {
-                        it.levelID = std::atoi(item["levelId"].asString().unwrapOr("0").c_str());
+                        it.levelID = geode::utils::numFromString<int>(item["levelId"].asString().unwrapOr("0")).unwrapOr(0);
                     } else if (item["levelId"].isNumber()) {
                         it.levelID = item["levelId"].asInt().unwrapOr(0);
                     }
                 }
-                
+                // fallback: profileimg items may use accountID instead of levelId
+                if (it.levelID == 0 && item.contains("accountID")) {
+                    if (item["accountID"].isString()) {
+                        it.levelID = geode::utils::numFromString<int>(item["accountID"].asString().unwrapOr("0")).unwrapOr(0);
+                    } else if (item["accountID"].isNumber()) {
+                        it.levelID = item["accountID"].asInt().unwrapOr(0);
+                    }
+                }
+
                 it.category = category;
                 
                 // timestamp servidor es ms; convertir a segundos
@@ -897,7 +963,9 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
                 
                 // parsear array sugerencias si existe (soporte multi-sugerencia)
                 if (item.contains("suggestions") && item["suggestions"].isArray()) {
-                    for (const auto& sug : item["suggestions"].asArray().unwrap()) {
+                    auto sugArr = item["suggestions"].asArray();
+                    if (sugArr.isOk()) {
+                    for (auto const& sug : sugArr.unwrap()) {
                         Suggestion s;
                         if (sug.contains("filename") && sug["filename"].isString()) {
                             s.filename = sug["filename"].asString().unwrapOr("");
@@ -917,6 +985,7 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
                         }
                         it.suggestions.push_back(s);
                     }
+                    } // if (sugArr.isOk())
                 } else if (it.category == PendingCategory::Verify) {
                     // soporte legacy: crear una sugerencia desde el item mismo
                     Suggestion s;
@@ -927,22 +996,13 @@ void ThumbnailAPI::syncVerificationQueue(PendingCategory category, QueueCallback
                     it.suggestions.push_back(s);
                 }
 
-                if (it.levelID != 0) items.push_back(std::move(it));
-            }
-        } catch (std::exception& e) {
-            log::warn("[ThumbnailAPI] fallo al parsear respuesta cola: {}; usando lista local", e.what());
-            callback(true, PendingQueue::get().list(category));
-            return;
-        } catch (...) {
-            log::warn("[ThumbnailAPI] fallo al parsear respuesta cola (error desconocido); usando lista local");
-            callback(true, PendingQueue::get().list(category));
-            return;
+            if (it.levelID != 0) items.push_back(std::move(it));
         }
         callback(true, items);
     });
 }
 
-void ThumbnailAPI::claimQueueItem(int levelId, PendingCategory category, const std::string& username, ActionCallback callback) {
+void ThumbnailAPI::claimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, no se puede reclamar");
         callback(false, "servidor desactivado");
@@ -961,7 +1021,7 @@ void ThumbnailAPI::claimQueueItem(int levelId, PendingCategory category, const s
     });
     std::string postData = json.dump();
     
-    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId, username](bool success, const std::string& response) {
+    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId, username](bool success, std::string const& response) {
         if (success) {
             log::info("[ThumbnailAPI] item cola reclamado en servidor por {}: {}", username, levelId);
         } else {
@@ -971,7 +1031,7 @@ void ThumbnailAPI::claimQueueItem(int levelId, PendingCategory category, const s
     });
 }
 
-void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, const std::string& username, ActionCallback callback, const std::string& targetFilename) {
+void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, aceptando solo local");
         PendingQueue::get().accept(levelId, category);
@@ -994,7 +1054,7 @@ void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, const 
     }
     std::string postData = json.dump();
     
-    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId, category](bool success, const std::string& response) {
+    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId, category](bool success, std::string const& response) {
         if (success) {
             PendingQueue::get().accept(levelId, category);
             log::info("[ThumbnailAPI] item cola aceptado en servidor: {}", levelId);
@@ -1005,7 +1065,7 @@ void ThumbnailAPI::acceptQueueItem(int levelId, PendingCategory category, const 
     });
 }
 
-void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, const std::string& username, const std::string& reason, ActionCallback callback) {
+void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, std::string const& username, std::string const& reason, ActionCallback callback) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, rechazando solo local");
         PendingQueue::get().reject(levelId, category, reason);
@@ -1026,7 +1086,7 @@ void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, const 
     });
     std::string postData = json.dump();
     
-    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId, category, reason](bool success, const std::string& response) {
+    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId, category, reason](bool success, std::string const& response) {
         if (success) {
             PendingQueue::get().reject(levelId, category, reason);
             log::info("[ThumbnailAPI] item cola rechazado en servidor: {}", levelId);
@@ -1037,7 +1097,7 @@ void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, const 
     });
 }
 
-void ThumbnailAPI::submitReport(int levelId, const std::string& username, const std::string& note, ActionCallback callback) {
+void ThumbnailAPI::submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, enviando reporte solo local");
         PendingQueue::get().addOrBump(levelId, PendingCategory::Report, username, note);
@@ -1048,7 +1108,7 @@ void ThumbnailAPI::submitReport(int levelId, const std::string& username, const 
     log::info("[ThumbnailAPI] enviando reporte para nivel {}", levelId);
     
     // usar el metodo nuevo dedicado de HttpClient
-    HttpClient::get().submitReport(levelId, username, note, [callback, levelId, username, note](bool success, const std::string& response) {
+    HttpClient::get().submitReport(levelId, username, note, [callback, levelId, username, note](bool success, std::string const& response) {
         if (success) {
             PendingQueue::get().addOrBump(levelId, PendingCategory::Report, username, note);
             log::info("[ThumbnailAPI] reporte enviado al servidor: {}", levelId);
@@ -1059,7 +1119,7 @@ void ThumbnailAPI::submitReport(int levelId, const std::string& username, const 
     });
 }
 
-void ThumbnailAPI::addModerator(const std::string& username, const std::string& adminUser, ActionCallback callback) {
+void ThumbnailAPI::addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
     if (!m_serverEnabled) {
         callback(false, "servidor desactivado");
         return;
@@ -1074,7 +1134,7 @@ void ThumbnailAPI::addModerator(const std::string& username, const std::string& 
     });
     std::string payload = json.dump();
 
-    HttpClient::get().postWithAuth(endpoint, payload, [callback](bool success, const std::string& response) {
+    HttpClient::get().postWithAuth(endpoint, payload, [callback](bool success, std::string const& response) {
         if (success) {
             callback(true, "moderador anadido con exito");
         } else {
@@ -1083,7 +1143,7 @@ void ThumbnailAPI::addModerator(const std::string& username, const std::string& 
     });
 }
 
-void ThumbnailAPI::removeModerator(const std::string& username, const std::string& adminUser, ActionCallback callback) {
+void ThumbnailAPI::removeModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
     if (!m_serverEnabled) {
         callback(false, "servidor desactivado");
         return;
@@ -1098,7 +1158,7 @@ void ThumbnailAPI::removeModerator(const std::string& username, const std::strin
     });
     std::string payload = json.dump();
 
-    HttpClient::get().postWithAuth(endpoint, payload, [callback](bool success, const std::string& response) {
+    HttpClient::get().postWithAuth(endpoint, payload, [callback](bool success, std::string const& response) {
         if (success) {
             callback(true, "moderador eliminado con exito");
         } else {
@@ -1107,7 +1167,7 @@ void ThumbnailAPI::removeModerator(const std::string& username, const std::strin
     });
 }
 
-void ThumbnailAPI::deleteThumbnail(int levelId, const std::string& username, int accountID, ActionCallback callback) {
+void ThumbnailAPI::deleteThumbnail(int levelId, std::string const& username, int accountID, ActionCallback callback) {
     if (!m_serverEnabled) {
         log::warn("[ThumbnailAPI] servidor desactivado, no se puede borrar de servidor");
         callback(false, "servidor desactivado");
@@ -1125,7 +1185,7 @@ void ThumbnailAPI::deleteThumbnail(int levelId, const std::string& username, int
     });
     std::string postData = json.dump();
     
-    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId](bool success, const std::string& response) {
+    HttpClient::get().postWithAuth(endpoint, postData, [callback, levelId](bool success, std::string const& response) {
         if (success) {
             log::info("[ThumbnailAPI] miniatura borrada de servidor: {}", levelId);
             ThumbnailLoader::get().invalidateLevel(levelId);
@@ -1139,8 +1199,8 @@ void ThumbnailAPI::deleteThumbnail(int levelId, const std::string& username, int
 
 
 
-void ThumbnailAPI::downloadFromUrl(const std::string& url, DownloadCallback callback) {
-    HttpClient::get().downloadFromUrl(url, [this, callback](bool success, const std::vector<uint8_t>& data, int w, int h) {
+void ThumbnailAPI::downloadFromUrl(std::string const& url, DownloadCallback callback) {
+    HttpClient::get().downloadFromUrl(url, [this, callback](bool success, std::vector<uint8_t> const& data, int w, int h) {
         if (success) {
             auto texture = webpToTexture(data);
             callback(success, texture);
@@ -1150,10 +1210,10 @@ void ThumbnailAPI::downloadFromUrl(const std::string& url, DownloadCallback call
     });
 }
 
-void ThumbnailAPI::downloadFromUrlData(const std::string& url, DownloadDataCallback callback) {
-    HttpClient::get().downloadFromUrl(url, [callback](bool success, const std::vector<uint8_t>& data, int w, int h) {
+void ThumbnailAPI::downloadFromUrlData(std::string const& url, DownloadDataCallback callback) {
+    HttpClient::get().downloadFromUrl(url, [callback](bool success, std::vector<uint8_t> const& data, int w, int h) {
         callback(success, data);
     });
 }
 
- 
+

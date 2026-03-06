@@ -2,18 +2,21 @@
 #include "../utils/Localization.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../utils/Debug.hpp"
+#include "../utils/WebHelper.hpp"
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/binding/GJScoreCell.hpp>
 #include <Geode/binding/CustomListView.hpp>
 #include <Geode/binding/GJListLayer.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/utils/web.hpp>
+#include <Geode/utils/function.hpp>
 #include <Geode/utils/string.hpp>
 #include <matjson.hpp>
 #include <Geode/modify/GJScoreCell.hpp>
 #include <thread>
 
 using namespace geode::prelude;
+
 
 ModeratorsLayer* ModeratorsLayer::s_instance = nullptr;
 
@@ -32,9 +35,7 @@ ModeratorsLayer::~ModeratorsLayer() {
     if (s_instance == this) {
         s_instance = nullptr;
     }
-    if (m_scores) {
-        m_scores->release();
-    }
+    // m_scores: Ref<CCArray> handles release automatically
     if (GameLevelManager::get()->m_userInfoDelegate == this) {
         GameLevelManager::get()->m_userInfoDelegate = nullptr;
     }
@@ -77,15 +78,13 @@ void ModeratorsLayer::setup() {
     }
 }
 
-static void sortScoresByPriority(CCArray* scores, const std::vector<std::string>& priority) {
+static void sortScoresByPriority(CCArray* scores, std::vector<std::string> const& priority) {
     if (!scores) return;
-    auto toVec = std::vector<GJUserScore*>();
+    auto toVec = std::vector<Ref<GJUserScore>>();
     toVec.reserve(scores->count());
-    for (unsigned i = 0; i < scores->count(); ++i) {
-        auto obj = typeinfo_cast<GJUserScore*>(scores->objectAtIndex(i));
+    for (auto* obj : CCArrayExt<GJUserScore*>(scores)) {
         if (!obj) continue;
-        obj->retain(); // no borrar al quitar del array
-        toVec.push_back(obj);
+        toVec.push_back(obj); // Ref<T> handles retain automatically
     }
 
     auto toLower = [](std::string str) {
@@ -93,7 +92,7 @@ static void sortScoresByPriority(CCArray* scores, const std::vector<std::string>
         return str;
     };
 
-    auto indexOf = [&](const std::string& name) {
+    auto indexOf = [&](std::string const& name) {
         std::string lowerName = toLower(name);
         for (size_t i = 0; i < priority.size(); ++i) {
             if (toLower(priority[i]) == lowerName) return static_cast<int>(i);
@@ -101,35 +100,35 @@ static void sortScoresByPriority(CCArray* scores, const std::vector<std::string>
         return static_cast<int>(priority.size());
     };
 
-    std::stable_sort(toVec.begin(), toVec.end(), [&](GJUserScore* a, GJUserScore* b) {
+    std::stable_sort(toVec.begin(), toVec.end(), [&](Ref<GJUserScore> const& a, Ref<GJUserScore> const& b) {
         return indexOf(a->m_userName) < indexOf(b->m_userName);
     });
 
     scores->removeAllObjects();
-    for (auto* s : toVec) {
-        scores->addObject(s);
-        s->release(); // libera extra
+    for (auto& s : toVec) {
+        scores->addObject(s.data());
+        // Ref releases automatically when toVec goes out of scope
     }
 }
 
 void ModeratorsLayer::fetchModerators() {
-    m_loadingCircle = LoadingCircle::create();
-    m_loadingCircle->setParentLayer(this);
-    m_loadingCircle->show();
+    m_loadingSpinner = geode::LoadingSpinner::create(40.f);
+    m_loadingSpinner->setPosition(m_mainLayer->getContentSize() / 2);
+    m_loadingSpinner->setID("paimon-loading-spinner"_spr);
+    m_mainLayer->addChild(m_loadingSpinner, 100);
 
     m_scores = CCArray::create();
-    m_scores->retain();
 
     // weakref para evitar leaks/crashes
     WeakRef<ModeratorsLayer> self = this;
-    HttpClient::get().getModerators([self](bool success, const std::vector<std::string>& moderators) {
+    HttpClient::get().getModerators([self](bool success, std::vector<std::string> const& moderators) {
         auto layer = self.lock();
         if (!layer) return;
 
         if (!success || moderators.empty()) {
-            if (layer->m_loadingCircle) {
-                layer->m_loadingCircle->fadeAndRemove();
-                layer->m_loadingCircle = nullptr;
+            if (layer->m_loadingSpinner) {
+                layer->m_loadingSpinner->removeFromParent();
+                layer->m_loadingSpinner = nullptr;
             }
             layer->createList();
             return;
@@ -137,36 +136,32 @@ void ModeratorsLayer::fetchModerators() {
 
         layer->m_moderatorNames = moderators;
         layer->m_pendingRequests = moderators.size();
-        for (const auto& mod : moderators) {
+        for (auto const& mod : moderators) {
             layer->fetchGDBrowserProfile(mod);
         }
     });
 }
 
-void ModeratorsLayer::fetchGDBrowserProfile(const std::string& username) {
+void ModeratorsLayer::fetchGDBrowserProfile(std::string const& username) {
     std::string url = "https://gdbrowser.com/api/profile/" + username;
     
     WeakRef<ModeratorsLayer> self = this;
 
-    // usar thread directo en lugar de taskholder
-    std::thread([self, username, url]() {
-        auto req = web::WebRequest();
-        auto res = req.getSync(url);
+    auto req = web::WebRequest();
 
+    WebHelper::dispatch(std::move(req), "GET", url, [self, username](web::WebResponse res) {
         std::string data = res.ok() ? res.string().unwrapOr("") : "";
         if (!res.ok()) {
             log::error("Failed to fetch profile for {}", username);
         }
         
-        queueInMainThread([self, username, data]() {
-            if (auto layer = self.lock()) {
-                layer->onProfileFetched(username, data);
-            }
-        });
-    }).detach();
+        if (auto layer = self.lock()) {
+            layer->onProfileFetched(username, data);
+        }
+    });
 }
 
-void ModeratorsLayer::onProfileFetched(const std::string& username, const std::string& jsonData) {
+void ModeratorsLayer::onProfileFetched(std::string const& username, std::string const& jsonData) {
     if (!jsonData.empty()) {
         auto res = matjson::parse(jsonData);
         
@@ -181,8 +176,7 @@ void ModeratorsLayer::onProfileFetched(const std::string& username, const std::s
                 return 0;
             };
 
-            try {
-                auto score = GJUserScore::create();
+            auto score = GJUserScore::create();
                 score->m_userName = json["username"].asString().unwrapOr(username);
                 score->m_accountID = parseInt(json["accountID"]);
                 if (json.contains("playerID")) score->m_userID = parseInt(json["playerID"]);
@@ -207,9 +201,6 @@ void ModeratorsLayer::onProfileFetched(const std::string& username, const std::s
                 GameLevelManager::get()->storeUserName(score->m_userID, score->m_accountID, score->m_userName);
                 
                 m_scores->addObject(score);
-            } catch (...) {
-                log::error("Failed to parse profile for {}", username);
-            }
         }
     }
     
@@ -220,9 +211,9 @@ void ModeratorsLayer::onProfileFetched(const std::string& username, const std::s
 }
 
 void ModeratorsLayer::onAllProfilesFetched() {
-    if (m_loadingCircle) {
-        m_loadingCircle->fadeAndRemove();
-        m_loadingCircle = nullptr;
+    if (m_loadingSpinner) {
+        m_loadingSpinner->removeFromParent();
+        m_loadingSpinner = nullptr;
     }
     
     sortScoresByPriority(m_scores, m_moderatorNames);
@@ -234,7 +225,6 @@ void ModeratorsLayer::createList() {
     
     if (!m_scores) {
         m_scores = CCArray::create();
-        m_scores->retain();
     }
 
     // customlistview score
@@ -328,9 +318,10 @@ void ModeratorsLayer::getUserInfoFinished(GJUserScore* score) {
         if (m_scores) {
             // quita entrada misma cuenta
             for (int i = m_scores->count() - 1; i >= 0; i--) {
-                auto s = typeinfo_cast<GJUserScore*>(m_scores->objectAtIndex(i));
+                auto s = typeinfo_cast<GJUserScore*>(m_scores->data->arr[i]);
                 if (s && s->m_accountID == score->m_accountID) {
                     m_scores->removeObjectAtIndex(i);
+                    break;
                 }
             }
             // inserta pos correcta

@@ -4,8 +4,7 @@
 using namespace geode::prelude;
 
 RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), m_height(height) {
-    // crear textura
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1); // usar 1 por seguridad
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glGenTextures(1, &m_texture);
     glBindTexture(GL_TEXTURE_2D, m_texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -16,12 +15,10 @@ RenderTexture::RenderTexture(uint32_t width, uint32_t height) : m_width(width), 
 
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &m_oldFBO);
 
-    // crear fbo
     glGenFramebuffers(1, &m_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, m_texture, 0);
 
-    // crear buffer profundidad/stencil
     glGenRenderbuffers(1, &m_depthStencil);
     glBindRenderbuffer(GL_RENDERBUFFER, m_depthStencil);
     glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, m_width, m_height);
@@ -64,7 +61,6 @@ void RenderTexture::begin() {
 
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
     
-    // guardar antiguo color de limpiado y poner a negro opaco
     glGetFloatv(GL_COLOR_CLEAR_VALUE, m_oldClearColor.data());
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     
@@ -72,7 +68,6 @@ void RenderTexture::begin() {
 }
 
 void RenderTexture::end() {
-    // restaurar color de limpiado
     glClearColor(m_oldClearColor[0], m_oldClearColor[1], m_oldClearColor[2], m_oldClearColor[3]);
 
     if (m_oldFBO != -1) {
@@ -99,7 +94,6 @@ std::unique_ptr<uint8_t[]> RenderTexture::getData() const {
     if (!m_texture || !m_fbo) {
         return nullptr;
     }
-    // reservar para rgba (4 bytes por pixel)
     auto data = std::make_unique<uint8_t[]>(m_width * m_height * 4);
     glPixelStorei(GL_PACK_ALIGNMENT, 1);
     
@@ -107,7 +101,6 @@ std::unique_ptr<uint8_t[]> RenderTexture::getData() const {
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldFBO);
     
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
-    // leer rgba
     glReadPixels(0, 0, m_width, m_height, GL_RGBA, GL_UNSIGNED_BYTE, data.get());
     
     glBindFramebuffer(GL_FRAMEBUFFER, oldFBO);

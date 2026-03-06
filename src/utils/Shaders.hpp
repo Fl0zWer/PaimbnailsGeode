@@ -4,36 +4,17 @@
 #include <Geode/cocos/shaders/CCShaderCache.h>
 #include <Geode/utils/cocos.hpp>
 
-using namespace geode::prelude;
+// Nota: NO usar 'using namespace' en headers — contamina todo TU.
+// Las funciones/clases dentro de Shaders namespace usan tipos cocos2d:: explicitos
+// o estan en .cpp donde si se puede usar 'using namespace'.
 
 // shaders comunes que usamos por todos lados
-// todo junto aquí pa no copiar/pegar código
+// todo junto aqui pa no copiar/pegar codigo
 
 namespace Shaders {
 
-    inline CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc) {
-        auto shaderCache = CCShaderCache::sharedShaderCache();
-        if (auto program = shaderCache->programForKey(key)) {
-            return program;
-        }
-
-        auto program = new CCGLProgram();
-        program->initWithVertexShaderByteArray(vertexSrc, fragmentSrc);
-        program->addAttribute("a_position", kCCVertexAttrib_Position);
-        program->addAttribute("a_color", kCCVertexAttrib_Color);
-        program->addAttribute("a_texCoord", kCCVertexAttrib_TexCoords);
-
-        if (!program->link()) {
-            geode::log::error("failed to link shader: {}", key);
-            program->release();
-            return nullptr;
-        }
-
-        program->updateUniforms();
-        shaderCache->addProgram(program, key);
-        program->release();
-        return program;
-    }
+    // Declared in Shaders.cpp
+    cocos2d::CCGLProgram* getOrCreateShader(char const* key, char const* vertexSrc, char const* fragmentSrc);
 
 constexpr auto vertexShaderCell =
 R"(
@@ -173,7 +154,7 @@ void main() {
     gl_FragColor = vec4(result, color.a) * v_fragmentColor;
 })";
 
-// shader de viñeta
+// shader de vineta
 constexpr auto fragmentShaderVignette = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -209,7 +190,7 @@ void main() {
     gl_FragColor = vec4(color.rgb * scanline, color.a) * v_fragmentColor;
 })";
 
-// shader de bloom
+// shader de bloom (optimizado: 9-tap cross en lugar de NxN loop)
 constexpr auto fragmentShaderBloom = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -221,28 +202,28 @@ uniform float u_intensity;
 uniform vec2 u_screenSize;
 
 void main() {
+    vec2 px = u_intensity * 2.0 / u_screenSize;
     vec4 color = texture2D(u_texture, v_texCoord);
     vec3 bloom = vec3(0.0);
-    vec2 texOffset = 1.0 / u_screenSize;
-    float radius = u_intensity * 3.0;
-    
-    for (float x = -radius; x <= radius; x += 1.0) {
-        for (float y = -radius; y <= radius; y += 1.0) {
-            vec2 offset = vec2(x, y) * texOffset;
-            vec4 sample = texture2D(u_texture, v_texCoord + offset);
-            float bright = max(max(sample.r, sample.g), sample.b);
-            if (bright > 0.8) {
-                bloom += sample.rgb * (bright - 0.8) * 5.0;
-            }
-        }
-    }
-    
-    bloom /= (radius * 2.0 + 1.0) * (radius * 2.0 + 1.0);
-    vec3 result = color.rgb + bloom * u_intensity * 0.5;
-    gl_FragColor = vec4(result, color.a) * v_fragmentColor;
+    // 9-tap cross pattern: center + 4 cardinal + 4 diagonal
+    vec3 s0 = texture2D(u_texture, v_texCoord + vec2(-px.x, 0.0)).rgb;
+    vec3 s1 = texture2D(u_texture, v_texCoord + vec2( px.x, 0.0)).rgb;
+    vec3 s2 = texture2D(u_texture, v_texCoord + vec2(0.0, -px.y)).rgb;
+    vec3 s3 = texture2D(u_texture, v_texCoord + vec2(0.0,  px.y)).rgb;
+    vec3 s4 = texture2D(u_texture, v_texCoord + vec2(-px.x, -px.y)).rgb;
+    vec3 s5 = texture2D(u_texture, v_texCoord + vec2( px.x, -px.y)).rgb;
+    vec3 s6 = texture2D(u_texture, v_texCoord + vec2(-px.x,  px.y)).rgb;
+    vec3 s7 = texture2D(u_texture, v_texCoord + vec2( px.x,  px.y)).rgb;
+    // extract bright parts from each tap
+    float t = 0.75;
+    bloom += max(s0 - t, 0.0) + max(s1 - t, 0.0) + max(s2 - t, 0.0) + max(s3 - t, 0.0);
+    bloom += (max(s4 - t, 0.0) + max(s5 - t, 0.0) + max(s6 - t, 0.0) + max(s7 - t, 0.0)) * 0.7;
+    bloom += max(color.rgb - t, 0.0);
+    bloom *= u_intensity * 0.15;
+    gl_FragColor = vec4(color.rgb + bloom, color.a) * v_fragmentColor;
 })";
 
-// shader de aberración cromática
+// shader de aberracion cromatica (animado, optimizado: 3 texture reads)
 constexpr auto fragmentShaderChromatic = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -251,17 +232,23 @@ varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_intensity;
+uniform float u_time;
 
 void main() {
-    vec2 offset = (v_texCoord - 0.5) * u_intensity * 0.01;
-    float r = texture2D(u_texture, v_texCoord + offset).r;
-    float g = texture2D(u_texture, v_texCoord).g;
-    float b = texture2D(u_texture, v_texCoord - offset).b;
-    float a = texture2D(u_texture, v_texCoord).a;
-    gl_FragColor = vec4(r, g, b, a) * v_fragmentColor;
+    float pulse = 1.0 + 0.4 * sin(u_time * 1.8) + 0.2 * sin(u_time * 3.1);
+    float amount = u_intensity * 0.01 * pulse;
+    float angle = u_time * 0.5;
+    vec2 dir = vec2(cos(angle), sin(angle));
+    vec2 offset = (v_texCoord - 0.5) * amount;
+    vec2 oR = offset + dir * amount * 0.3;
+    vec2 oB = offset - dir * amount * 0.3;
+    vec4 center = texture2D(u_texture, v_texCoord);
+    float r = texture2D(u_texture, v_texCoord + oR).r;
+    float b = texture2D(u_texture, v_texCoord - oB).b;
+    gl_FragColor = vec4(r, center.g, b, center.a) * v_fragmentColor;
 })";
 
-// shader de blur radial
+// shader de blur radial (centro animado, optimizado: 8 muestras fijas)
 constexpr auto fragmentShaderRadialBlur = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -270,23 +257,27 @@ varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_intensity;
+uniform float u_time;
 
 void main() {
-    vec2 center = vec2(0.5, 0.5);
-    vec2 direction = v_texCoord - center;
-    vec4 color = vec4(0.0);
-    float samples = 10.0 + u_intensity * 5.0;
-    
-    for (float i = 0.0; i < samples; i += 1.0) {
-        float scale = 1.0 - (u_intensity * 0.05 * (i / samples));
-        color += texture2D(u_texture, center + direction * scale);
-    }
-    
-    color /= samples;
-    gl_FragColor = color * v_fragmentColor;
+    float cx = 0.5 + 0.15 * sin(u_time * 0.7) + 0.08 * cos(u_time * 1.3);
+    float cy = 0.5 + 0.12 * cos(u_time * 0.9) + 0.06 * sin(u_time * 1.7);
+    vec2 center = vec2(cx, cy);
+    vec2 dir = v_texCoord - center;
+    float str = u_intensity * 0.05;
+    // 8 fixed samples along radial direction
+    vec4 c  = texture2D(u_texture, center + dir * (1.0 - str * 0.000));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 0.143));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 0.286));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 0.429));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 0.571));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 0.714));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 0.857));
+    c += texture2D(u_texture, center + dir * (1.0 - str * 1.000));
+    gl_FragColor = (c * 0.125) * v_fragmentColor;
 })";
 
-// shader de glitch
+// shader de glitch (animado fluido, optimizado: 4 noise calls)
 constexpr auto fragmentShaderGlitch = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -295,28 +286,46 @@ varying vec4 v_fragmentColor;
 varying vec2 v_texCoord;
 uniform sampler2D u_texture;
 uniform float u_intensity;
+uniform float u_time;
 
-float rand(vec2 co) {
-    return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
+float hash(vec2 p) {
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float a = hash(i);
+    float b = hash(i + vec2(1.0, 0.0));
+    float c = hash(i + vec2(0.0, 1.0));
+    float d = hash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
 }
 
 void main() {
     vec2 uv = v_texCoord;
-    float glitchStrength = u_intensity * 0.1;
+    float b3 = u_intensity * 3.0;
+    float str = b3 * 0.1;
     
-    // random per-line horizontal displacement
-    float lineNoise = rand(vec2(floor(uv.y * 100.0), 0.0));
-    if (lineNoise > 0.95 - u_intensity * 0.05) {
-        uv.x += (rand(vec2(uv.y, 0.0)) - 0.5) * glitchStrength;
-    }
+    // line + block displacement (2 noise calls)
+    float n1 = noise(vec2(uv.y * 40.0, u_time * 6.0));
+    float n2 = noise(vec2(uv.y * 5.0, u_time * 3.5));
+    uv.x += (n1 - 0.5) * str * smoothstep(0.92 - b3 * 0.04, 0.95, n1);
+    uv.x += (n2 - 0.5) * str * 2.5 * smoothstep(0.93 - b3 * 0.02, 0.97, n2);
     
     vec4 color = texture2D(u_texture, uv);
     
-    // color channel separation
-    if (rand(vec2(uv.y, 1.0)) > 0.98 - u_intensity * 0.02) {
-        color.r = texture2D(u_texture, uv + vec2(0.01 * u_intensity, 0.0)).r;
-        color.b = texture2D(u_texture, uv - vec2(0.01 * u_intensity, 0.0)).b;
-    }
+    // chromatic split (1 noise call, reuse for flicker)
+    float n3 = noise(vec2(uv.y * 60.0, u_time * 8.0));
+    float cg = smoothstep(0.88 - b3 * 0.03, 0.94, n3);
+    float shift = 0.015 * b3 * cg;
+    color.r = mix(color.r, texture2D(u_texture, uv + vec2(shift, 0.0)).r, cg);
+    color.b = mix(color.b, texture2D(u_texture, uv - vec2(shift, 0.0)).b, cg);
+    
+    // scanline flicker (1 noise call)
+    float n4 = noise(vec2(u_time * 12.0, uv.y * 200.0));
+    color.rgb *= 1.0 - smoothstep(0.65, 0.95, n4) * 0.15 * b3;
     
     gl_FragColor = color * v_fragmentColor;
 })";
@@ -339,7 +348,7 @@ void main() {
 })";
 
 // shader de blur simple (para GIFs)
-// Dual Kawase Blur, el truco típico de juegos grandes
+// Dual Kawase Blur, el truco tipico de juegos grandes
 // buen balance entre calidad y rendimiento
 constexpr auto fragmentShaderBlurSinglePass = R"(
 #ifdef GL_ES
@@ -920,114 +929,248 @@ void main() {
         gl_FragColor = vec4(color / 16.0, 1.0) * v_fragmentColor;
     })";
 
-    inline void applyBlurPass(CCSprite* input, CCRenderTexture* output, CCGLProgram* program, CCSize const& size, float radius) {
-        input->setShaderProgram(program);
-        input->setPosition(size * 0.5f);
+    // Declared in Shaders.cpp
+    void applyBlurPass(cocos2d::CCSprite* input, cocos2d::CCRenderTexture* output, cocos2d::CCGLProgram* program, cocos2d::CCSize const& size, float radius);
 
-        program->use();
-        program->setUniformsForBuiltins();
-        program->setUniformLocationWith2f(
-            program->getUniformLocationForName("u_screenSize"),
-            size.width, size.height
-        );
-        program->setUniformLocationWith1f(
-            program->getUniformLocationForName("u_radius"),
-            radius
-        );
+    // Declared in Shaders.cpp
+    float intensityToBlurRadius(float intensity);
 
-        output->begin();
-        input->visit();
-        output->end();
-    }
+    /// Declared in Shaders.cpp
+    cocos2d::CCSprite* createBlurredSprite(cocos2d::CCTexture2D* texture, cocos2d::CCSize const& targetSize, float intensity, bool useDirectRadius = false);
 
-/// convierte intensidad (1–10) a radio de blur para shaders multi‑paso
-    inline float intensityToBlurRadius(float intensity) {
-        float normalized = std::clamp((intensity - 1.0f) / 9.0f, 0.0f, 1.0f);
-        return 0.02f + (normalized * 0.20f);
-    }
+    /// Declared in Shaders.cpp
+    cocos2d::CCGLProgram* getBlurCellShader();
 
-    /// crea un sprite con blur gaussiano multi‑paso; toda la magia del blur vive aquí
-    /// @param texture textura fuente
-    /// @param targetSize tamaño del área a blurear
-    /// @param intensity 1‑10 (slider típico), controla qué tan fuerte pega
-    /// @param useDirectRadius si true, intensity se usa como radio directo (ej. LevelSelectLayer con 4.0)
-    inline CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity, bool useDirectRadius = false) {
-        if (!texture) return nullptr;
+    /// Declared in Shaders.cpp
+    cocos2d::CCGLProgram* getBlurSinglePassShader();
 
-        auto srcSprite = CCSprite::createWithTexture(texture);
-        if (!srcSprite) return nullptr;
+// ═══════════════════════════════════════════════════════════
+//  NUEVOS EFECTOS ANIMADOS UNICOS
+// ═══════════════════════════════════════════════════════════
 
-        float scaleX = targetSize.width / texture->getContentSize().width;
-        float scaleY = targetSize.height / texture->getContentSize().height;
-        float scale = std::max(scaleX, scaleY);
+// Rain — gotas de lluvia (optimizado: loop desenrollado, 1 texture read)
+constexpr auto fragmentShaderRain = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+varying vec4 v_fragmentColor;
+varying vec2 v_texCoord;
+uniform sampler2D u_texture;
+uniform float u_intensity;
+uniform float u_time;
 
-        srcSprite->setScale(scale);
-        srcSprite->setAnchorPoint({0.5f, 0.5f});
-        srcSprite->setPosition(targetSize * 0.5f);
+float rHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 
-        ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
-        texture->setTexParameters(&params);
+float rainLayer(vec2 uv, float speed, float density, float layer) {
+    vec2 r = uv * vec2(density, 1.0);
+    r.y += u_time * speed + rHash(vec2(floor(r.x), layer)) * 100.0;
+    float drop = smoothstep(0.0, 0.02, fract(r.y * 0.1) - 0.97);
+    float mask = smoothstep(0.45, 0.5, abs(fract(r.x) - 0.5));
+    return drop * (1.0 - mask);
+}
 
-        auto blurH = getOrCreateShader("blur-horizontal"_spr, vertexShaderCell, fragmentShaderHorizontal);
-        auto blurV = getOrCreateShader("blur-vertical"_spr, vertexShaderCell, fragmentShaderVertical);
+void main() {
+    vec4 color = texture2D(u_texture, v_texCoord);
+    float str = u_intensity * 0.15;
+    // 3 layers unrolled
+    float rain = rainLayer(v_texCoord, 4.0, 80.0, 0.0)
+               + rainLayer(v_texCoord, 6.0, 120.0, 1.0) * 0.75
+               + rainLayer(v_texCoord, 8.0, 160.0, 2.0) * 0.5;
+    color.rgb += vec3(0.7, 0.8, 1.0) * rain * str * str;
+    color.rgb *= 1.0 - str * 0.2;
+    gl_FragColor = color * v_fragmentColor;
+})";
 
-        if (!blurH || !blurV) {
-            return srcSprite;
+// Matrix — digital rain (optimizado: 1 texture read, 2 hash calls)
+constexpr auto fragmentShaderMatrix = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+varying vec4 v_fragmentColor;
+varying vec2 v_texCoord;
+uniform sampler2D u_texture;
+uniform float u_intensity;
+uniform float u_time;
+
+float mHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+
+void main() {
+    vec4 color = texture2D(u_texture, v_texCoord);
+    float str = u_intensity * 0.2;
+    float cols = 30.0 + u_intensity * 10.0;
+    vec2 cell = floor(v_texCoord * vec2(cols, cols * 2.0));
+    
+    float spd = 2.0 + mHash(vec2(cell.x, 0.0)) * 4.0;
+    float fall = fract(cell.y / (cols * 2.0) - u_time * spd * 0.1);
+    float trail = smoothstep(0.0, 0.4, fall) * smoothstep(1.0, 0.5, fall);
+    float head = smoothstep(0.38, 0.42, fall);
+    float flick = step(0.3, mHash(cell + floor(u_time * 8.0)));
+    
+    float glow = (trail * 0.6 + head) * flick;
+    color.rgb = mix(color.rgb, color.rgb * 0.7 + vec3(0.1, 1.0, 0.3) * glow * str, str);
+    gl_FragColor = color * v_fragmentColor;
+})";
+
+// Neon Pulse — pulsing neon glow (optimizado: 4 texture reads, precomputed lum)
+constexpr auto fragmentShaderNeonPulse = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+varying vec4 v_fragmentColor;
+varying vec2 v_texCoord;
+uniform sampler2D u_texture;
+uniform float u_intensity;
+uniform float u_time;
+
+void main() {
+    vec4 color = texture2D(u_texture, v_texCoord);
+    float str = u_intensity * 0.15;
+    
+    // edge detection: 4 neighbors, skip center lum (not needed for gradient)
+    const vec3 lw = vec3(0.299, 0.587, 0.114);
+    float px = 1.0 / 512.0;
+    float lL = dot(texture2D(u_texture, v_texCoord + vec2(-px, 0.0)).rgb, lw);
+    float lR = dot(texture2D(u_texture, v_texCoord + vec2( px, 0.0)).rgb, lw);
+    float lU = dot(texture2D(u_texture, v_texCoord + vec2(0.0,  px)).rgb, lw);
+    float lD = dot(texture2D(u_texture, v_texCoord + vec2(0.0, -px)).rgb, lw);
+    float edge = smoothstep(0.02, 0.15, abs(lL - lR) + abs(lU - lD));
+    
+    // hue cycle + pulse in one pass
+    float h = (u_time * 0.5 + v_texCoord.x * 0.3 + v_texCoord.y * 0.2) * 6.2832;
+    vec3 neon = 0.5 + 0.5 * sin(vec3(h, h + 2.094, h + 4.189));
+    float pulse = 0.7 + 0.3 * sin(u_time * 3.0);
+    
+    color.rgb += neon * edge * pulse * str * 3.0;
+    gl_FragColor = color * v_fragmentColor;
+})";
+
+// Wave Distortion — underwater wavy effect
+constexpr auto fragmentShaderWaveDistortion = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+varying vec4 v_fragmentColor;
+varying vec2 v_texCoord;
+uniform sampler2D u_texture;
+uniform float u_intensity;
+uniform float u_time;
+
+void main() {
+    float strength = u_intensity * 0.02;
+    vec2 uv = v_texCoord;
+    
+    // multiple sine waves for organic distortion
+    uv.x += sin(uv.y * 15.0 + u_time * 2.0) * strength;
+    uv.y += cos(uv.x * 12.0 + u_time * 1.7) * strength * 0.8;
+    uv.x += sin(uv.y * 25.0 + u_time * 3.3) * strength * 0.4;
+    uv.y += cos(uv.x * 20.0 + u_time * 2.5) * strength * 0.3;
+    
+    // slight color shift for underwater feel
+    vec4 color = texture2D(u_texture, uv);
+    float caustic = sin(uv.x * 30.0 + u_time * 4.0) * sin(uv.y * 30.0 + u_time * 3.0);
+    caustic = smoothstep(0.3, 1.0, caustic) * strength * 2.0;
+    color.rgb += vec3(0.1, 0.3, 0.5) * caustic;
+    
+    // subtle blue tint
+    color.rgb = mix(color.rgb, color.rgb * vec3(0.9, 0.95, 1.1), u_intensity * 0.05);
+    
+    gl_FragColor = color * v_fragmentColor;
+})";
+
+// CRT — old TV effect (optimizado: 3 texture reads total)
+constexpr auto fragmentShaderCRT = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+varying vec4 v_fragmentColor;
+varying vec2 v_texCoord;
+uniform sampler2D u_texture;
+uniform float u_intensity;
+uniform float u_time;
+
+void main() {
+    float s = u_intensity * 0.1;
+    
+    // barrel distortion
+    vec2 uv = v_texCoord * 2.0 - 1.0;
+    uv *= 1.0 + dot(uv, uv) * s * 0.5;
+    uv = uv * 0.5 + 0.5;
+    
+    // vignette + clamp
+    float vig = smoothstep(0.0, 0.02, uv.x) * smoothstep(1.0, 0.98, uv.x)
+              * smoothstep(0.0, 0.02, uv.y) * smoothstep(1.0, 0.98, uv.y);
+    uv = clamp(uv, 0.0, 1.0);
+    
+    // 3 reads: center (g+a), left (r), right (b)
+    float subpx = s * 0.003;
+    vec4 center = texture2D(u_texture, uv);
+    float r = texture2D(u_texture, uv + vec2(subpx, 0.0)).r;
+    float b = texture2D(u_texture, uv - vec2(subpx, 0.0)).b;
+    
+    vec3 col = vec3(r, center.g, b);
+    
+    // scanlines + flicker + grain combined
+    col *= mix(1.0, sin(uv.y * 800.0) * 0.5 + 0.5, s * 0.3);
+    col *= 1.0 - 0.03 * s * sin(u_time * 8.0 + sin(u_time * 13.0) * 2.0);
+    col += fract(sin(dot(v_texCoord * 500.0 + u_time, vec2(127.1, 311.7))) * 43758.5453) * s * 0.15;
+    col *= vig;
+    
+    gl_FragColor = vec4(col, center.a) * v_fragmentColor;
+})";
+
+// ShaderBgSprite — CCSprite que re-aplica uniforms cada frame.
+// Sin esto, los uniforms custom se pierden al cambiar de shader activo.
+
+class ShaderBgSprite : public cocos2d::CCSprite {
+public:
+    float m_shaderIntensity = 0.5f;
+    float m_screenW = 0.f;
+    float m_screenH = 0.f;
+    float m_shaderTime = 0.f;
+
+    static ShaderBgSprite* createWithTexture(cocos2d::CCTexture2D* tex) {
+        auto ret = new ShaderBgSprite();
+        if (ret && ret->initWithTexture(tex)) {
+            ret->autorelease();
+            return ret;
         }
+        CC_SAFE_DELETE(ret);
+        return nullptr;
+    }
 
-        auto rtA = CCRenderTexture::create(targetSize.width, targetSize.height);
-        auto rtB = CCRenderTexture::create(targetSize.width, targetSize.height);
+    void draw() override {
+        auto* shader = getShaderProgram();
+        if (shader) {
+            shader->use();
+            shader->setUniformsForBuiltins();
 
-        if (!rtA || !rtB) {
-            return srcSprite;
+            GLint loc;
+            loc = shader->getUniformLocationForName("u_intensity");
+            if (loc != -1) shader->setUniformLocationWith1f(loc, m_shaderIntensity);
+
+            loc = shader->getUniformLocationForName("u_screenSize");
+            if (loc != -1) shader->setUniformLocationWith2f(loc, m_screenW, m_screenH);
+
+            loc = shader->getUniformLocationForName("u_time");
+            if (loc != -1) shader->setUniformLocationWith1f(loc, m_shaderTime);
+
+            loc = shader->getUniformLocationForName("u_texSize");
+            if (loc != -1) {
+                auto* t = getTexture();
+                float tw = t ? static_cast<float>(t->getPixelsWide()) : 1.f;
+                float th = t ? static_cast<float>(t->getPixelsHigh()) : 1.f;
+                shader->setUniformLocationWith2f(loc, tw, th);
+            }
         }
-
-        float radius = useDirectRadius ? intensity : intensityToBlurRadius(intensity);
-
-        applyBlurPass(srcSprite, rtA, blurH, targetSize, radius);
-
-        auto midSprite = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
-        midSprite->setFlipY(true);
-        midSprite->setAnchorPoint({0.5f, 0.5f});
-        midSprite->setPosition(targetSize * 0.5f);
-        midSprite->getTexture()->setTexParameters(&params);
-
-        applyBlurPass(midSprite, rtB, blurV, targetSize, radius);
-
-        if (!useDirectRadius && intensity > 5.0f) {
-            auto mid2 = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
-            mid2->setFlipY(true);
-            mid2->setAnchorPoint({0.5f, 0.5f});
-            mid2->setPosition(targetSize * 0.5f);
-            mid2->getTexture()->setTexParameters(&params);
-
-            applyBlurPass(mid2, rtA, blurH, targetSize, radius * 0.8f);
-
-            auto mid3 = CCSprite::createWithTexture(rtA->getSprite()->getTexture());
-            mid3->setFlipY(true);
-            mid3->setAnchorPoint({0.5f, 0.5f});
-            mid3->setPosition(targetSize * 0.5f);
-            mid3->getTexture()->setTexParameters(&params);
-
-            applyBlurPass(mid3, rtB, blurV, targetSize, radius * 0.8f);
-        }
-
-        auto finalSprite = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
-        finalSprite->setFlipY(true);
-        finalSprite->setAnchorPoint({0.5f, 0.5f});
-        finalSprite->getTexture()->setTexParameters(&params);
-
-        return finalSprite;
+        CCSprite::draw();
     }
 
-    /// shader de blur single‑pass para GIFs; solo ajusta intensidad en el sprite (m_intensity)
-    inline CCGLProgram* getBlurCellShader() {
-        return getOrCreateShader("paimon_cell_blur", vertexShaderCell, fragmentShaderBlurCell);
+    void updateShaderTime(float dt) {
+        m_shaderTime += dt;
     }
+};
 
-    /// shader blur single‑pass para fondos GIF (LevelInfoLayer), mismo rollo: solo intensidad
-    inline CCGLProgram* getBlurSinglePassShader() {
-        return getOrCreateShader("blur-single"_spr, vertexShaderCell, fragmentShaderBlurSinglePass);
-    }
+// Declared in Shaders.cpp
+cocos2d::CCGLProgram* getBgShaderProgram(std::string const& shaderName);
 
 }

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Geode/DefaultInclude.hpp>
-#include <functional>
+#include <Geode/utils/function.hpp>
 #include <string>
 
 namespace Assets {
@@ -20,7 +20,7 @@ namespace Assets {
 cocos2d::CCSprite* loadButtonSprite(
     std::string const& key,
     std::string const& defaultContent,
-    std::function<cocos2d::CCSprite*()> fallback
+    geode::CopyableFunction<cocos2d::CCSprite*()> fallback
 );
 
 } // namespace Assets

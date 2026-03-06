@@ -27,12 +27,12 @@ public:
 
     // guardar rgb24 + size
     bool saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
-    
+
     // guardar rgba32 (-> rgb24 interno)
     bool saveFromRGBA(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height);
 
     // Mapping system: levelID -> fileName (para nueva API)
-    void storeFileMapping(int32_t levelID, const std::string& fileName);
+    void storeFileMapping(int32_t levelID, std::string const& fileName);
     std::optional<std::string> getFileName(int32_t levelID) const;
     void loadMappings();
     void saveMappings();

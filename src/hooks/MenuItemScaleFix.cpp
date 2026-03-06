@@ -8,15 +8,22 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// Simplified: keep GD behavior but preserve the original scale.
+// Simplificado: mantiene el comportamiento de GD pero conserva la escala original.
 class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
+    static void onModify(auto& self) {
+        // VeryLate = correr despues de casi todos los otros mods
+        // este hook intercepta TODOS los botones del juego, asi que minimizamos conflictos
+        (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::selected", geode::Priority::VeryLate);
+        (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::unselected", geode::Priority::VeryLate);
+    }
+
     struct Fields {
         float m_originalScale = 1.0f;
         bool m_scaleCaptured = false;
     };
 
     void selected() {
-        // Only capture scale for our registered buttons.
+        // solo guardamos escala para los botones que registramos nosotros
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             if (!m_fields->m_scaleCaptured) {
                 m_fields->m_originalScale = this->getScale();
@@ -32,10 +39,10 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
         
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             if (m_fields->m_scaleCaptured) {
-                // Stop GD's default scaling animation.
+                // cancela la animacion de escala por defecto de GD
                 this->stopAllActions();
                 
-                // Ease back to original scale.
+                // vuelve suavemente a la escala original
                 auto scaleTo = CCScaleTo::create(0.2f, m_fields->m_originalScale);
                 this->runAction(CCEaseSineOut::create(scaleTo));
             }
@@ -47,11 +54,10 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
         
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             if (m_fields->m_scaleCaptured) {
-                // Restore original scale immediately on activate.
+                // restaura la escala original de golpe al activar
                 this->stopAllActions();
                 this->setScale(m_fields->m_originalScale);
             }
         }
     }
 };
-

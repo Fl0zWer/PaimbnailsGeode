@@ -6,6 +6,10 @@
 using namespace geode::prelude;
 
 class $modify(PaimonMapPackCell, MapPackCell) {
+    static void onModify(auto& self) {
+        (void)self.setHookPriorityPost("MapPackCell::loadFromMapPack", geode::Priority::Late);
+    }
+
     struct Fields {
         Ref<ListThumbnailCarousel> m_carousel = nullptr;
         Ref<GJMapPack> m_pack = nullptr;
@@ -25,12 +29,11 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         }
 
         // retrasar creacion pa que datos y layout esten listos
-        this->retain();
-        Loader::get()->queueInMainThread([this]() {
-            if (this->getParent()) { // comprobar que siga vivo
-                this->createCarousel();
+        Ref<MapPackCell> self = this;
+        Loader::get()->queueInMainThread([self]() {
+            if (self->getParent()) { // comprobar que siga vivo
+                static_cast<PaimonMapPackCell*>(self.data())->createCarousel();
             }
-            this->release();
         });
     }
 
@@ -88,12 +91,11 @@ class $modify(PaimonMapPackCell, MapPackCell) {
             // z=-1 pa quedar detras de texto/botones
             carousel->setZOrder(-1); 
             
-            // mandar fondo atras
-            if (this->getChildrenCount() > 0) {
-                auto bg = static_cast<CCNode*>(this->getChildren()->objectAtIndex(0));
-                if (bg) {
-                    bg->setZOrder(-2);
-                }
+            // mandar fondo atras (buscar por tipo en vez de indice fragil)
+            if (auto bg = this->getChildByType<CCLayerColor>(0)) {
+                bg->setZOrder(-2);
+            } else if (auto firstChild = this->getChildByType<CCNode>(0)) {
+                firstChild->setZOrder(-2);
             }
             
             carousel->setOpacity(255); 

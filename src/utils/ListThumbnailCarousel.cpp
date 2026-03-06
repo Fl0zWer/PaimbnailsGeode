@@ -12,7 +12,6 @@ using namespace geode::prelude;
 ListThumbnailCarousel::~ListThumbnailCarousel() {
     if (m_alive) *m_alive = false;
     
-    // cancelar descargas, liberar cola
     for (int id : m_levelIDs) {
         ThumbnailLoader::get().cancelLoad(id);
     }
@@ -21,7 +20,7 @@ ListThumbnailCarousel::~ListThumbnailCarousel() {
     this->unschedule(schedule_selector(ListThumbnailCarousel::updatePan));
 }
 
-ListThumbnailCarousel* ListThumbnailCarousel::create(const std::vector<int>& levelIDs, CCSize size) {
+ListThumbnailCarousel* ListThumbnailCarousel::create(std::vector<int> const& levelIDs, CCSize size) {
     auto ret = new ListThumbnailCarousel();
     if (ret && ret->init(levelIDs, size)) {
         ret->autorelease();
@@ -31,7 +30,7 @@ ListThumbnailCarousel* ListThumbnailCarousel::create(const std::vector<int>& lev
     return nullptr;
 }
 
-bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) {
+bool ListThumbnailCarousel::init(std::vector<int> const& levelIDs, CCSize size) {
     if (!CCNode::init()) return false;
     
     m_alive = std::make_shared<bool>(true);
@@ -40,17 +39,10 @@ bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) 
     this->setContentSize(size);
     this->setAnchorPoint({0.5f, 0.5f});
     
-    // no ccclippingnode (scroll visibilidad)
-    // usamos settexturerect en los sprites en su lugar
-    
-    m_loadingCircle = CCSprite::create("loadingCircle.png");
-    if (m_loadingCircle) {
-        this->addChild(m_loadingCircle);
-        // cerca del btn view, padding
-        
-        m_loadingCircle->setPosition({size.width - 85.0f, size.height / 2});
-        m_loadingCircle->setScale(0.4f); // Slightly smaller
-        m_loadingCircle->runAction(CCRepeatForever::create(CCRotateBy::create(1.0f, 360.0f)));
+    m_loadingSpinner = geode::LoadingSpinner::create(16.f);
+    if (m_loadingSpinner) {
+        m_loadingSpinner->setPosition({size.width - 85.0f, size.height / 2});
+        this->addChild(m_loadingSpinner);
     }
 
     return true;
@@ -59,11 +51,6 @@ bool ListThumbnailCarousel::init(const std::vector<int>& levelIDs, CCSize size) 
 void ListThumbnailCarousel::startCarousel() {
     if (m_levelIDs.empty()) return;
     
-    // pre-procesar lista bg (off)
-    // m_alive pa cancelar si nodo se destruye
-    // ListThumbnailManager::get().processList(m_levelIDs, nullptr, m_alive);
-
-    // load primera img
     tryShowNextImage();
 }
 
@@ -75,12 +62,11 @@ void ListThumbnailCarousel::updatePan(float dt) {
     if (!m_currentSprite) return;
     
     m_panElapsed += dt;
-    float duration = 5.0f; // pan lento
+    float duration = 5.0f;
     
     float t = m_panElapsed / duration;
     if (t > 1.0f) t = 1.0f;
     
-    // ease sine in-out
     float easeT = 0.5f * (1.0f - std::cos(t * M_PI));
     
     float currentX = m_panStartRect.origin.x + (m_panEndRect.origin.x - m_panStartRect.origin.x) * easeT;
@@ -146,13 +132,14 @@ void ListThumbnailCarousel::tryShowNextImage() {
             // double-check padre
             if (!self->getParent()) return;
 
-            if (self->m_loadingCircle) {
-                self->m_loadingCircle->runAction(CCSequence::create(
+            if (self->m_loadingSpinner) {
+                auto* circle = self->m_loadingSpinner;
+                circle->runAction(CCSequence::create(
                     CCFadeOut::create(0.2f),
-                    CCCallFunc::create(self->m_loadingCircle, callfunc_selector(CCNode::removeFromParent)),
+                    CCCallFunc::create(circle, callfunc_selector(CCNode::removeFromParent)),
                     nullptr
                 ));
-                self->m_loadingCircle = nullptr;
+                self->m_loadingSpinner = nullptr;
             }
             if (tex) self->onImageLoaded(tex, levelID);
         }, 0);
@@ -197,20 +184,8 @@ void ListThumbnailCarousel::onImageLoaded(CCTexture2D* texture, int index) {
     
     CCSprite* sprite = nullptr;
     
-    #ifdef GEODE_IS_WINDOWS
-    __try {
-        sprite = CCSprite::createWithTexture(texture);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        return;
-    }
-    #else
-    try {
-        sprite = CCSprite::createWithTexture(texture);
-    } catch(...) {
-        return;
-    }
-    #endif
+    // texture validity already verified by isTextureSane above
+    sprite = CCSprite::createWithTexture(texture);
 
     if (!sprite) return;
     
@@ -302,14 +277,5 @@ void ListThumbnailCarousel::setOpacity(GLubyte opacity) {
 }
 
 void ListThumbnailCarousel::visit() {
-#ifdef GEODE_IS_WINDOWS
-    __try {
-        CCNode::visit();
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        // Swallow SEH exceptions to avoid crashing during rendering.
-    }
-#else
     CCNode::visit();
-#endif
 }

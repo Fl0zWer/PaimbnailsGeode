@@ -18,7 +18,7 @@ public:
      * @param height Image height
      * @return RGBA data vector
      */
-    static std::vector<uint8_t> rgbToRgba(const std::vector<uint8_t>& rgbData, uint32_t width, uint32_t height);
+    static std::vector<uint8_t> rgbToRgba(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height);
     
     /**
      * Convert RGB888 data to PNG format.
@@ -28,7 +28,7 @@ public:
      * @param outPngData Output PNG data vector
      * @return true if successful
      */
-    static bool rgbToPng(const std::vector<uint8_t>& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData);
+    static bool rgbToPng(std::vector<uint8_t> const& rgbData, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData);
     
     /**
      * Load RGB data from file and convert to PNG.
@@ -36,8 +36,8 @@ public:
      * @param outPngData Output PNG data vector
      * @return true if successful
      */
-    static bool loadRgbFileToPng(const std::string& rgbFilePath, std::vector<uint8_t>& outPngData);
-    
+    static bool loadRgbFileToPng(std::string const& rgbFilePath, std::vector<uint8_t>& outPngData);
+
     /**
      * Load RGB data from file and get dimensions.
      * @param rgbFilePath Path to RGB file
@@ -46,7 +46,7 @@ public:
      * @param outHeight Output height
      * @return true if successful
      */
-    static bool loadRgbFile(const std::string& rgbFilePath, std::vector<uint8_t>& outRgbData, uint32_t& outWidth, uint32_t& outHeight);
+    static bool loadRgbFile(std::string const& rgbFilePath, std::vector<uint8_t>& outRgbData, uint32_t& outWidth, uint32_t& outHeight);
 
 private:
     struct RGBHeader {

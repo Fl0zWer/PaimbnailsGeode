@@ -1,27 +1,62 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/ui/Notification.hpp>
+#include "../utils/PaimonNotification.hpp"
 #include <Geode/binding/PlayerObject.hpp>
 #include <Geode/binding/HardStreak.hpp>
+#include <Geode/loader/SettingV3.hpp>
+#include <Geode/loader/GameEvent.hpp>
+#include <Geode/utils/Keyboard.hpp>
 #include "../layers/CapturePreviewPopup.hpp"
 #include "../utils/FramebufferCapture.hpp"
 #include "../utils/RenderTexture.hpp"
+#include "../utils/PlayerToggleHelper.hpp"
 #include "../utils/Localization.hpp"
 #include "../managers/LocalThumbs.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../managers/PendingQueue.hpp"
 #include "../utils/ImageConverter.hpp"
+#include "../utils/ModeratorUtils.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/UILayer.hpp>
+#include <Geode/binding/CCTextInputNode.hpp>
 #include "../utils/DominantColors.hpp"
 #include "../managers/LevelColors.hpp"
 #include <cstring>
 #include <memory>
 
+#include "../managers/DynamicSongManager.hpp"
+
 using namespace geode::prelude;
 
 namespace {
     std::atomic_bool gCaptureInProgress{false};
+
+    // Detecta si hay un campo de texto activo (CCTextInputNode, chat, busqueda, etc.)
+    // Cuando el usuario esta escribiendo, NO debemos interceptar teclas normales.
+    bool isTextInputActive() {
+        auto* scene = CCDirector::sharedDirector()->getRunningScene();
+        if (!scene) return false;
+
+        // Buscar iterativamente si hay algun CCTextInputNode con m_selected == true
+        // (m_selected se activa cuando el campo de texto tiene el foco del IME)
+        std::vector<CCNode*> stack;
+        stack.push_back(scene);
+        while (!stack.empty()) {
+            auto* node = stack.back();
+            stack.pop_back();
+            if (!node) continue;
+            if (auto* textInput = typeinfo_cast<CCTextInputNode*>(node)) {
+                if (textInput->m_selected) return true;
+            }
+            auto* children = node->getChildren();
+            if (!children) continue;
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                stack.push_back(child);
+            }
+        }
+        return false;
+    }
 
     CCNode* findGameplayNode(CCNode* root) {
         if (!root) return nullptr;
@@ -33,7 +68,7 @@ namespace {
         for (auto* node : CCArrayExt<CCNode*>(children)) {
             if (node) {
                 if (typeinfo_cast<GJBaseGameLayer*>(node)) {
-                    log::info("[FindGameplay] Found GJBaseGameLayer");
+                    log::debug("[FindGameplay] Found GJBaseGameLayer");
                     return node;
                 }
             }
@@ -44,13 +79,13 @@ namespace {
             if (node) {
                 std::string id = node->getID();
                 if (id == "game-layer" || id == "GameLayer") {
-                    log::info("[FindGameplay] Found by ID: {}", id);
+                    log::debug("[FindGameplay] Found by ID: {}", id);
                     return node;
                 }
             }
         }
 
-        // 3. recursivo por el árbol (saltando UILayer/PauseLayer)
+        // 3. recursivo por el arbol (saltando UILayer/PauseLayer)
         for (auto* node : CCArrayExt<CCNode*>(children)) {
             if (node) {
                 std::string cls = typeid(*node).name();
@@ -82,7 +117,7 @@ namespace {
         return false;
     }
 
-    void hideSiblingsOutsidePath(const std::vector<CCNode*>& path, std::vector<CCNode*>& hidden) {
+    void hideSiblingsOutsidePath(std::vector<CCNode*> const& path, std::vector<CCNode*>& hidden) {
         if (path.size() < 2) return;
         for (size_t i = 0; i + 1 < path.size(); ++i) {
             auto* parent = path[i];
@@ -109,7 +144,7 @@ namespace {
         // 1. check de z‑order
         if (checkZ && node->getZOrder() >= 10) return true;
 
-        // 2. heurísticas según el nombre de la clase
+        // 2. heuristicas segun el nombre de la clase
         std::string cls = typeid(*node).name();
         auto clsL = cls; for (auto& c : clsL) c = (char)tolower(c);
         
@@ -126,11 +161,11 @@ namespace {
             clsL.find("trajectory") != std::string::npos || // cosas de showTrajectory
             clsL.find("hitbox") != std::string::npos) return true;
 
-        // 3. heurísticas por ID
+        // 3. heuristicas por ID
         std::string id = node->getID();
         auto idL = id; for (auto& c : idL) c = (char)tolower(c);
         if (!idL.empty()) {
-            static const std::vector<std::string> patterns = {
+            static std::vector<std::string> patterns = {
                 "ui", "uilayer", "pause", "menu", "dialog", "popup", "editor", "notification", "btn", "button", "overlay", "checkpoint", "fps", "debug", "attempt", "percent", "progress", "bar", "score", "practice", "hitbox", "trajectory", "status"
             };
             for (auto const& p : patterns) {
@@ -138,13 +173,13 @@ namespace {
             }
         }
         
-        // 4. tipos explícitos
+        // 4. tipos explicitos
         if (typeinfo_cast<CCMenu*>(node) != nullptr) return true;
         
         // CCLabelBMFont
         if (auto* label = typeinfo_cast<CCLabelBMFont*>(node)) {
              // si es hijo directo con Z alta casi seguro es UI
-             // con Z baja todavía puede ser texto del propio nivel
+             // con Z baja todavia puede ser texto del propio nivel
              if (checkZ && node->getZOrder() >= 10) return true;
              // si no es hijo directo, dejo que ID/clase decidan
         }
@@ -172,8 +207,8 @@ namespace {
             if (node->isVisible() && isNonGameplayOverlay(node, checkZ)) {
                 node->setVisible(false);
                 hidden.push_back(node);
-                log::info("[Capture] Hide: ID='{}', Class='{}', Z={}", node->getID(), typeid(*node).name(), node->getZOrder());
-            } 
+                log::debug("[Capture] Hide: ID='{}', Class='{}', Z={}", node->getID(), typeid(*node).name(), node->getZOrder());
+            }
             // si no es UI, solo bajo si parece contenedor/layer
             // con checkZ=false ya no toco cosas del juego
             else {
@@ -193,21 +228,214 @@ namespace {
 
 static bool s_hidePlayerForCapture = false;
 
-class $modify(GIFRecordPlayLayer, PlayLayer) {
+class $modify(PaimonCapturePlayLayer, PlayLayer) {
     struct Fields {
         float m_frameTimer = 0.0f;
     };
 
+    $override
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
-        s_hidePlayerForCapture = false;
-        log::info("[GIFRecord] init() llamado para level {}", level ? level->m_levelID : 0);
-        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
-        log::info("[GIFRecord] PlayLayer::init() exitoso");
+        // DEFENSA FINAL: matar dynamic song al entrar al gameplay
+        // No importa como llegamos aqui (LevelSelect, LevelInfo, etc.)
+        DynamicSongManager::get()->forceKill();
 
-        log::info("[GIFRecord] init() completado exitosamente");
+        s_hidePlayerForCapture = false;
+        log::info("[PaimonCapture] init() llamado para level {}", level ? level->m_levelID : 0);
+        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
+        log::info("[PaimonCapture] PlayLayer::init() exitoso");
+
+        // registra listener LOCAL para el keybind de captura.
+        // addEventListener se limpia automaticamente cuando PlayLayer se destruye,
+        // evitando dangling pointers y crashes por teclas presionadas fuera del gameplay.
+        if (Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
+            this->addEventListener(
+                KeybindSettingPressedEventV3(Mod::get(), "capture-keybind"),
+                [this](Keybind const& keybind, bool down, bool repeat, double timestamp) {
+                    // solo actua cuando se presiona, no cuando se suelta o repite
+                    if (!down || repeat) return;
+
+                    // GUARD: ignorar si hay un campo de texto activo
+                    // (evita crash al escribir 'T' en chat, busqueda, etc.)
+                    if (isTextInputActive()) return;
+
+                    // GUARD: verificar que este PlayLayer sigue siendo el activo
+                    if (PlayLayer::get() != this) return;
+
+                    // verifica que no estemos en pausa
+                    if (this->m_isPaused) return;
+
+                    // verifica que el nivel tenga ID valido
+                    if (!this->m_level || this->m_level->m_levelID <= 0) {
+                        log::info("[Keybind] Level ID invalido, ignorando captura");
+                        return;
+                    }
+
+                    // evita capturas simultaneas
+                    if (gCaptureInProgress.load()) return;
+                    gCaptureInProgress.store(true);
+
+                    log::info("[Keybind] Captura activada con tecla: {} (timestamp: {})", keybind.toString(), timestamp);
+
+                    // usa FramebufferCapture (igual que PauseLayer) para diferir
+                    // la captura al siguiente frame completo y evitar artefactos
+                    int levelID = this->m_level->m_levelID;
+
+                    Ref<PlayLayer> safeRef = this;
+                    FramebufferCapture::requestCapture(levelID, [this, safeRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbaData, int width, int height) {
+                        Loader::get()->queueInMainThread([this, safeRef, success, texture, rgbaData, width, height, levelID]() {
+                            if (!success || !texture || !rgbaData) {
+                                log::error("[Keybind] FramebufferCapture fallo");
+                                gCaptureInProgress.store(false);
+                                return;
+                            }
+
+                            log::info("[Keybind] Captura exitosa: {}x{}", width, height);
+
+                            // pausa el juego para mostrar el popup de preview
+                            bool pausedByPopup = false;
+                            if (!safeRef->m_isPaused) { safeRef->pauseGame(true); pausedByPopup = true; }
+
+                            auto* popup = CapturePreviewPopup::create(
+                                texture,
+                                levelID,
+                                rgbaData,
+                                width,
+                                height,
+                                [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
+                                    gCaptureInProgress.store(false);
+
+                                    if (pausedByPopup) {
+                                        auto* pl = PlayLayer::get();
+                                        if (pl && pl->m_isPaused) {
+                                            bool hasPause = false;
+                                            if (auto* sc = CCDirector::sharedDirector()->getRunningScene()) {
+                                                CCArrayExt<CCNode*> children(sc->getChildren());
+                                                for (auto child : children) { 
+                                                    if (typeinfo_cast<PauseLayer*>(child)) { 
+                                                        hasPause = true; 
+                                                        break; 
+                                                    } 
+                                                }
+                                            }
+                                            if (!hasPause) {
+                                                if (auto* d = CCDirector::sharedDirector()) {
+                                                    if (d->getScheduler() && d->getActionManager()) {
+                                                        d->getScheduler()->resumeTarget(pl);
+                                                        d->getActionManager()->resumeTarget(pl);
+                                                        pl->m_isPaused = false;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (okSave && levelIDAccepted > 0 && buf) {
+                                        std::vector<uint8_t> rgbData(static_cast<size_t>(W) * static_cast<size_t>(H) * 3);
+                                        const uint8_t* src = buf.get();
+                                        for(size_t i=0; i < static_cast<size_t>(W)*H; ++i) {
+                                            rgbData[i*3+0] = src[i*4+0];
+                                            rgbData[i*3+1] = src[i*4+1];
+                                            rgbData[i*3+2] = src[i*4+2];
+                                        }
+
+                                        auto pair = DominantColors::extract(rgbData.data(), W, H);
+                                        ccColor3B A{pair.first.r, pair.first.g, pair.first.b};
+                                        ccColor3B B{pair.second.r, pair.second.g, pair.second.b};
+                                        LevelColors::get().set(levelIDAccepted, A, B);
+
+                                        std::vector<uint8_t> rgbaVec(static_cast<size_t>(W) * static_cast<size_t>(H) * 4);
+                                        memcpy(rgbaVec.data(), buf.get(), rgbaVec.size());
+                                        
+                                        std::vector<uint8_t> pngData;
+                                        if (!ImageConverter::rgbToPng(rgbaVec, static_cast<uint32_t>(W), static_cast<uint32_t>(H), pngData)) {
+                                            PaimonNotify::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
+                                        } else {
+                                            std::string username;
+                                            int accountID = 0;
+                                            if (auto* gm = GameManager::sharedState()) {
+                                                username = gm->m_playerName;
+                                                accountID = gm->m_playerUserID;
+                                            }
+                                            if (username.empty()) username = "unknown";
+
+                                            if (accountID <= 0) {
+                                                PaimonNotify::create(Localization::get().getString("level.account_required"), NotificationIcon::Error)->show();
+                                                return;
+                                            }
+
+                                            PaimonNotify::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
+                                            ThumbnailAPI::get().checkModeratorAccount(username, accountID, [levelIDAccepted, pngData, username](bool approved, bool isAdmin) {
+                                                bool allowModeratorFlow = approved;
+                                                if (allowModeratorFlow) {
+                                                    log::info("[Keybind] Usuario verificado como moderador, subiendo thumbnail");
+                                                    PaimonNotify::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                                                    ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted](bool success, std::string const& msg){
+                                                        if (success) {
+                                                            PaimonNotify::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
+                                                            PendingQueue::get().removeForLevel(levelIDAccepted);
+                                                        } else {
+                                                            PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                                        }
+                                                    });
+                                                } else {
+                                                    log::info("[Keybind] Usuario no es moderador, subiendo sugerencia");
+                                                    PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
+                                                    ThumbnailAPI::get().uploadSuggestion(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, std::string const& msg) {
+                                                        if (success) {
+                                                            log::info("[Keybind] Sugerencia subida exitosamente");
+                                                            PendingQueue::get().addOrBump(levelIDAccepted, PendingCategory::Verify, username, {}, false);
+                                                            PaimonNotify::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
+                                                        } else {
+                                                            log::error("[Keybind] Error subiendo sugerencia: {}", msg);
+                                                            PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                                        }
+                                                    });
+                                                }
+                                            });
+                                        }
+                                    }
+                                },
+                                [this, safeRef](bool hidePlayer, CapturePreviewPopup* popup) {
+                                    s_hidePlayerForCapture = hidePlayer;
+                                    if (popup) popup->setVisible(false);
+                                    gCaptureInProgress = false;
+                                    // safeRef mantiene vivo el objeto; this es valido porque safeRef == this
+                                    Loader::get()->queueInMainThread([this, safeRef, popup]() {
+                                        this->captureScreenshot(popup);
+                                    });
+                                },
+                                s_hidePlayerForCapture
+                            );
+                            if (popup) {
+                                popup->show();
+                            } else {
+                                gCaptureInProgress.store(false);
+                            }
+                        });
+                    });
+                }
+            );
+            log::info("[PaimonCapture] Keybind listener LOCAL registrado para captura");
+        }
+
+        log::info("[PaimonCapture] init() completado exitosamente");
         return true;
     }
     
+    $override
+    void onQuit() {
+        // Cancela cualquier captura pendiente para evitar que s_request
+        // mantenga una referencia (Ref<PlayLayer>) a este nodo despues de
+        // que se destruya. Sin esto, la lambda capturada sobrevive como
+        // variable estatica y al cerrar el proceso intenta liberar un
+        // PlayLayer ya destruido -> crash en PlayLayer::~PlayLayer.
+        FramebufferCapture::cancelPending();
+        gCaptureInProgress.store(false);
+
+        // addEventListener se limpia automaticamente al destruir el nodo
+        PlayLayer::onQuit();
+    }
+
     void triggerRecapture(float dt) {
         this->captureScreenshot();
     }
@@ -220,7 +448,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
         if (!director || !this->m_level) { gCaptureInProgress.store(false); return; }
         auto* scene = director->getRunningScene();
 
-        log::info("=== STARTING CAPTURE ===");
+        log::debug("=== STARTING CAPTURE ===");
         // debug: logueo los hijos directos del PlayLayer
         {
             auto children = this->getChildren();
@@ -230,7 +458,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                     if (node) {
                         std::string cls = typeid(*node).name();
                         std::string id = node->getID();
-                        log::info("PlayLayer Child: Class='{}', ID='{}', Z={}, Vis={}", cls, id, node->getZOrder(), node->isVisible());
+                        log::debug("PlayLayer Child: Class='{}', ID='{}', Z={}, Vis={}", cls, id, node->getZOrder(), node->isVisible());
                     }
                 }
             }
@@ -238,147 +466,31 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
 
         std::vector<CCNode*> hidden;
         
-        // estado de visibilidad del player y sus partículas
-        struct PlayerVisState {
-            bool visible = true;
-            bool regTrail = true;
-            bool waveTrail = true;
-            bool ghostTrail = true;
-            bool vehicleGroundPart = true;
-            bool robotFire = true;
-            
-            bool playerGroundPart = true;
-            bool trailingPart = true;
-            bool shipClickPart = true;
-            bool ufoClickPart = true;
-            bool robotBurstPart = true;
-            bool dashPart = true;
-            bool swingBurstPart1 = true;
-            bool swingBurstPart2 = true;
-            bool landPart0 = true;
-            bool landPart1 = true;
-            bool dashFireSprite = true;
-
-            std::vector<std::pair<CCNode*, bool>> otherParticles;
-        };
         PlayerVisState p1State, p2State;
 
-        auto togglePlayer = [](PlayerObject* p, PlayerVisState& state, bool hide) {
-            if (!p) return;
-            
-            auto toggle = [&](CCNode* node, bool& stateVar, bool hideNode) {
-                if (node) {
-                    if (hideNode) {
-                        stateVar = node->isVisible();
-                        node->setVisible(false);
-                    } else {
-                        node->setVisible(stateVar);
-                    }
-                }
-            };
-
-            if (hide) {
-                state.visible = p->isVisible();
-                p->setVisible(false);
-                
-                toggle(p->m_regularTrail, state.regTrail, true);
-                toggle(p->m_waveTrail, state.waveTrail, true);
-                toggle(p->m_ghostTrail, state.ghostTrail, true);
-                toggle(p->m_vehicleGroundParticles, state.vehicleGroundPart, true);
-                toggle(p->m_robotFire, state.robotFire, true);
-                
-                toggle(p->m_playerGroundParticles, state.playerGroundPart, true);
-                toggle(p->m_trailingParticles, state.trailingPart, true);
-                toggle(p->m_shipClickParticles, state.shipClickPart, true);
-                toggle(p->m_ufoClickParticles, state.ufoClickPart, true);
-                toggle(p->m_robotBurstParticles, state.robotBurstPart, true);
-                toggle(p->m_dashParticles, state.dashPart, true);
-                toggle(p->m_swingBurstParticles1, state.swingBurstPart1, true);
-                toggle(p->m_swingBurstParticles2, state.swingBurstPart2, true);
-                toggle(p->m_landParticles0, state.landPart0, true);
-                toggle(p->m_landParticles1, state.landPart1, true);
-                toggle(p->m_dashFireSprite, state.dashFireSprite, true);
-
-                // oculto otras partículas que cuelgan del player
-                auto children = p->getChildren();
-                if (children) {
-                    for (auto* obj : CCArrayExt<CCObject*>(children)) {
-                        if (auto* node = typeinfo_cast<CCNode*>(obj)) {
-                            // me salto miembros que ya manejo arriba para no tocarlos dos veces
-                            if (node == p->m_vehicleGroundParticles || 
-                                node == p->m_robotFire ||
-                                node == p->m_playerGroundParticles ||
-                                node == p->m_trailingParticles ||
-                                node == p->m_shipClickParticles ||
-                                node == p->m_ufoClickParticles ||
-                                node == p->m_robotBurstParticles ||
-                                node == p->m_dashParticles ||
-                                node == p->m_swingBurstParticles1 ||
-                                node == p->m_swingBurstParticles2 ||
-                                node == p->m_landParticles0 ||
-                                node == p->m_landParticles1 ||
-                                node == p->m_dashFireSprite) continue;
-                            
-                            // solo escondo partículas o sprites que parezcan efectos
-                            if (typeinfo_cast<CCParticleSystemQuad*>(node) || typeinfo_cast<CCSprite*>(node)) {
-                                state.otherParticles.push_back({node, node->isVisible()});
-                                node->setVisible(false);
-                            }
-                        }
-                    }
-                }
-
-            } else {
-                p->setVisible(state.visible);
-                
-                toggle(p->m_regularTrail, state.regTrail, false);
-                toggle(p->m_waveTrail, state.waveTrail, false);
-                toggle(p->m_ghostTrail, state.ghostTrail, false);
-                toggle(p->m_vehicleGroundParticles, state.vehicleGroundPart, false);
-                toggle(p->m_robotFire, state.robotFire, false);
-
-                toggle(p->m_playerGroundParticles, state.playerGroundPart, false);
-                toggle(p->m_trailingParticles, state.trailingPart, false);
-                toggle(p->m_shipClickParticles, state.shipClickPart, false);
-                toggle(p->m_ufoClickParticles, state.ufoClickPart, false);
-                toggle(p->m_robotBurstParticles, state.robotBurstPart, false);
-                toggle(p->m_dashParticles, state.dashPart, false);
-                toggle(p->m_swingBurstParticles1, state.swingBurstPart1, false);
-                toggle(p->m_swingBurstParticles2, state.swingBurstPart2, false);
-                toggle(p->m_landParticles0, state.landPart0, false);
-                toggle(p->m_landParticles1, state.landPart1, false);
-                toggle(p->m_dashFireSprite, state.dashFireSprite, false);
-
-                for (auto& pair : state.otherParticles) {
-                    pair.first->setVisible(pair.second);
-                }
-                state.otherParticles.clear();
-            }
-        };
-
         if (s_hidePlayerForCapture) {
-            togglePlayer(this->m_player1, p1State, true);
-            togglePlayer(this->m_player2, p2State, true);
+            paimTogglePlayer(this->m_player1, p1State, true);
+            paimTogglePlayer(this->m_player2, p2State, true);
         }
         
-        // oculto UI con checkZ activado en la raíz
-        log::info("[Capture] Iniciando limpieza recursiva de UI en PlayLayer");
+        // oculto UI con checkZ activado en la raiz
+        log::debug("[Capture] Iniciando limpieza recursiva de UI en PlayLayer");
         hideNonGameplayDescendants(this, hidden, true, this);
 
         // debug
-        if (!hidden.empty()) log::info("[Capture] Ocultados {} nodos (recursivo)", hidden.size());
+        if (!hidden.empty()) log::debug("[Capture] Ocultados {} nodos (recursivo)", hidden.size());
 
         auto hiddenCopy = hidden; // copia para restaurar luego
         int levelID = this->m_level->m_levelID;
         
         // capturo el framebuffer completo con overlays ya ocultos
-        log::info("[Capture] Capturando PlayLayer usando RenderTexture");
-        
-        // oculto m_uiLayer a mano por si no lo pilló la recursiva
+        log::debug("[Capture] Capturando PlayLayer usando RenderTexture");
+
+        // oculto m_uiLayer a mano por si no lo pillo la recursiva
         if (this->m_uiLayer && this->m_uiLayer->isVisible()) {
             this->m_uiLayer->setVisible(false);
             hidden.push_back(this->m_uiLayer);
-            log::info("[Capture] Ocultando m_uiLayer explícitamente");
+            log::debug("[Capture] Ocultando m_uiLayer explicitamente");
         }
 
         // pasada extra por los hijos directos para pillar overlays que se hayan escapado
@@ -388,16 +500,16 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
             if (node == this->m_uiLayer) continue; 
             
             // visible y marcado como overlay
-            // aquí checkZ=true porque son hijos directos del PlayLayer
+            // aqui checkZ=true porque son hijos directos del PlayLayer
             if (node->isVisible() && isNonGameplayOverlay(node, true)) {
-                // si ya está en hidden, lo dejo en paz
+                // si ya esta en hidden, lo dejo en paz
                 bool alreadyHidden = false;
                 for(auto* h : hidden) if(h == node) { alreadyHidden = true; break; }
                 
                 if (!alreadyHidden) {
                     node->setVisible(false);
                     hidden.push_back(node);
-                    log::info("[Capture] Ocultando nodo UI (Backup Loop): ID='{}', Class='{}', Z={}", 
+                    log::debug("[Capture] Ocultando nodo UI (Backup Loop): ID='{}', Class='{}', Z={}",
                         node->getID(), typeid(*node).name(), node->getZOrder());
                 }
             }
@@ -412,7 +524,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
         std::unique_ptr<uint8_t[]> data;
         bool needsVerticalFlip = true;
 
-        // pinto en un RenderTexture para leer los píxeles
+        // pinto en un RenderTexture para leer los pixeles
         RenderTexture rt(width, height);
         rt.begin();
         this->visit();
@@ -421,21 +533,17 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
         
         needsVerticalFlip = true; // necesito flip porque glReadPixels va de abajo a arriba
 
-        // restauro la visibilidad de todo lo que oculté
+        // restauro la visibilidad de todo lo que oculte
         for (auto* n : hiddenCopy) {
             if (n) {
-                try {
-                    n->setVisible(true);
-                } catch (...) {
-                    // el nodo ya no existe, lo ignoro
-                }
+                n->setVisible(true);
             }
         }
         
         // restauro visibilidad de los jugadores
         if (s_hidePlayerForCapture) {
-            togglePlayer(this->m_player1, p1State, false);
-            togglePlayer(this->m_player2, p2State, false);
+            paimTogglePlayer(this->m_player1, p1State, false);
+            paimTogglePlayer(this->m_player2, p2State, false);
         }
         
         if (!data) { 
@@ -459,11 +567,15 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
 
         // creo un CCTexture2D con los datos RGBA8888
         auto* tex = new CCTexture2D();
-        tex->initWithData(data.get(), kCCTexture2DPixelFormat_RGBA8888, width, height, CCSize(width, height));
-        tex->autorelease();
-        tex->retain(); // lo retengo mientras lo use el popup
+        if (!tex->initWithData(data.get(), kCCTexture2DPixelFormat_RGBA8888, width, height, CCSize(width, height))) {
+            tex->release();
+            gCaptureInProgress.store(false);
+            return;
+        }
+        // tex tiene refcount=1 desde new. Cada consumidor (popup/updateContent) debe retener.
+        // release final al terminar este scope (lineas abajo).
 
-        // copio a un shared_ptr para que el popup lo gestione cómodo
+        // copio a un shared_ptr para que el popup lo gestione comodo
         std::shared_ptr<uint8_t> rgba(new uint8_t[width * height * 4], std::default_delete<uint8_t[]>());
         memcpy(rgba.get(), data.get(), width * height * 4);
         
@@ -478,31 +590,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
             return;
         }
 
-        // helper para ver si el usuario es moderador (copiado de PauseLayer)
-        auto isUserModerator = []() -> bool {
-            try {
-                auto modDataPath = Mod::get()->getSaveDir() / "moderator_verification.dat";
-                if (std::filesystem::exists(modDataPath)) {
-                    std::ifstream modFile(modDataPath, std::ios::binary);
-                    if (modFile) {
-                        time_t timestamp{};
-                        modFile.read(reinterpret_cast<char*>(&timestamp), sizeof(timestamp));
-                        modFile.close();
-                        auto now = std::chrono::system_clock::now();
-                        auto fileTime = std::chrono::system_clock::from_time_t(timestamp);
-                        auto daysDiff = std::chrono::duration_cast<std::chrono::hours>(now - fileTime).count() / 24;
-                        if (daysDiff < 30) {
-                            return true;
-                        }
-                    }
-                }
-                return Mod::get()->getSavedValue<bool>("is-verified-moderator", false);
-            } catch (...) {
-                return false;
-            }
-        };
-
-        bool isMod = isUserModerator();
+        bool isMod = PaimonUtils::isUserModerator();
 
         auto* popup = CapturePreviewPopup::create(
             tex, 
@@ -511,12 +599,11 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
             width, 
             height, 
             [levelID, pausedByPopup](bool okSave, int levelIDAccepted, std::shared_ptr<uint8_t> buf, int W, int H, std::string mode, std::string replaceId){
-            try {
                 // reseteo la flag al cerrar el popup
-                // así puedes hacer más capturas aunque sigan corriendo callbacks async
+                // asi puedes hacer mas capturas aunque sigan corriendo callbacks async
                 gCaptureInProgress.store(false);
                 
-                // intento despausar el juego si lo pausé para mostrar el popup
+                // intento despausar el juego si lo pause para mostrar el popup
                 // solo si no hay PauseLayer en escena y PlayLayer sigue vivo
                 if (pausedByPopup) {
                     auto* pl = PlayLayer::get();
@@ -545,11 +632,11 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
 
                 // si el usuario acepta guardar, proceso la mini
                 if (okSave && levelIDAccepted > 0 && buf) {
-                    // aquí podríamos guardar el buffer en disco local si se quiere
+                    // aqui podriamos guardar el buffer en disco local si se quiere
                     // LocalThumbs::get().saveFromRGBA(...)
 
                     // saco colores dominantes para los gradientes
-                    // DominantColors trabaja en RGB, así que paso RGBA->RGB primero
+                    // DominantColors trabaja en RGB, asi que paso RGBA->RGB primero
                     
                     std::vector<uint8_t> rgbData(static_cast<size_t>(W) * static_cast<size_t>(H) * 3);
                     const uint8_t* src = buf.get();
@@ -571,7 +658,7 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                     
                     std::vector<uint8_t> pngData;
                     if (!ImageConverter::rgbToPng(rgbaData, static_cast<uint32_t>(W), static_cast<uint32_t>(H), pngData)) {
-                        Notification::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.save_png_error"), NotificationIcon::Error)->show();
                     } else {
                         // username/accountID del jugador actual
                         std::string username;
@@ -583,25 +670,25 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                         if (username.empty()) username = "unknown";
 
                         if (accountID <= 0) {
-                            Notification::create("Tienes que tener cuenta para subir", NotificationIcon::Error)->show();
+                            PaimonNotify::create(Localization::get().getString("level.account_required"), NotificationIcon::Error)->show();
                             return;
                         }
 
                         // verifico si el usuario es moderador antes de subir
-                        Notification::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
+                        PaimonNotify::create(Localization::get().getString("capture.verifying"), NotificationIcon::Info)->show();
                         // el server igual valida por nombre/accountID
                         ThumbnailAPI::get().checkModeratorAccount(username, accountID, [levelIDAccepted, pngData, username](bool approved, bool isAdmin) {
                             bool allowModeratorFlow = approved;
                             if (allowModeratorFlow) {
                                 // moderador verificado -> subo como thumbnail oficial
                                 log::info("[PlayLayer] Usuario verificado como moderador, subiendo thumbnail");
-                                Notification::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
-                                ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted](bool success, const std::string& msg){
+                                PaimonNotify::create(Localization::get().getString("capture.uploading"), NotificationIcon::Info)->show();
+                                ThumbnailAPI::get().uploadThumbnail(levelIDAccepted, pngData, username, [levelIDAccepted](bool success, std::string const& msg){
                                     if (success) {
-                                        Notification::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.upload_success"), NotificationIcon::Success)->show();
                                         PendingQueue::get().removeForLevel(levelIDAccepted);
                                     } else {
-                                        Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
                                     }
                                 });
                             } else {
@@ -609,31 +696,24 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
                                 log::info("[PlayLayer] Usuario no es moderador, subiendo sugerencia y encolando");
                                 
                                 // primero subo la sugerencia
-                                Notification::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
-                                ThumbnailAPI::get().uploadSuggestion(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, const std::string& msg) {
+                                PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion"), NotificationIcon::Info)->show();
+                                ThumbnailAPI::get().uploadSuggestion(levelIDAccepted, pngData, username, [levelIDAccepted, username](bool success, std::string const& msg) {
                                     if (success) {
                                         log::info("[PlayLayer] Sugerencia subida exitosamente");
                                         // suggestions -> cola de Verify
-                                        // no puedo saber si es creador aquí, así que uso false
+                                        // no puedo saber si es creador aqui, asi que uso false
                                         PendingQueue::get().addOrBump(levelIDAccepted, PendingCategory::Verify, username, {}, false);
-                                        Notification::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.suggested"), NotificationIcon::Success)->show();
                                     } else {
                                         log::error("[PlayLayer] Error subiendo sugerencia: {}", msg);
-                                        Notification::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
+                                        PaimonNotify::create(Localization::get().getString("capture.upload_error") + (msg.empty() ? std::string("") : (" (" + msg + ")")), NotificationIcon::Error)->show();
                                     }
                                 });
                             }
                         });
                     }
                 }
-                // la flag ya se reseteó arriba
-            } catch (const std::exception& e) {
-                log::error("[Capture] Exception en callback de captura: {}", e.what());
-                gCaptureInProgress.store(false);
-            } catch (...) {
-                log::error("[Capture] Exception desconocida en callback de captura");
-                gCaptureInProgress.store(false);
-            }
+                // la flag ya se reseteo arriba
         },
         [this](bool hidePlayer, CapturePreviewPopup* popup) {
             s_hidePlayerForCapture = hidePlayer;
@@ -642,32 +722,26 @@ class $modify(GIFRecordPlayLayer, PlayLayer) {
             if (popup) popup->setVisible(false);
 
             gCaptureInProgress = false;
+            this->retain();
             Loader::get()->queueInMainThread([this, popup]() {
                 this->captureScreenshot(popup);
+                this->release();
             });
         },
         s_hidePlayerForCapture
         );
         if (popup) { 
             if (existingPopup) {
-                // popup ya existe -> esto debería ser solo un update, no una creación nueva
-                // TODO: reestructurar este flujo para que sea más claro
+                // popup ya existe -> esto deberia ser solo un update, no una creacion nueva
+                // TODO: reestructurar este flujo para que sea mas claro
             } else {
                 popup->show(); 
             }
-            try {
-                tex->release();
-            } catch (...) {
-                log::error("[Capture] Error releasing texture after showing popup");
-            }
+            if (tex) tex->release();
         }
         else { 
-            try {
-                tex->release();
-            } catch (...) {
-                log::error("[Capture] Error releasing texture when popup creation failed");
-            }
-            gCaptureInProgress.store(false); 
+            if (tex) tex->release();
+            gCaptureInProgress.store(false);
         }
     }
 };

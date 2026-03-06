@@ -1,4 +1,5 @@
 #include "CapturePreviewPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 #include "CaptureEditPopup.hpp"
 #include "CaptureLayerEditorPopup.hpp"
 #include "../managers/LocalThumbs.hpp"
@@ -14,6 +15,7 @@
 #include <Geode/cocos/platform/CCGL.h>
 #include <Geode/cocos/kazmath/include/kazmath/GL/matrix.h>
 #include "../utils/PaimonButtonHighlighter.hpp"
+#include "../utils/PlayerToggleHelper.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include <filesystem>
 #include <chrono>
@@ -29,21 +31,19 @@ CapturePreviewPopup* CapturePreviewPopup::create(
     std::shared_ptr<uint8_t> buffer,
     int width,
     int height,
-    std::function<void(bool, int, std::shared_ptr<uint8_t>, int, int, std::string, std::string)> callback,
-    std::function<void(bool, CapturePreviewPopup*)> recaptureCallback,
+    geode::CopyableFunction<void(bool, int, std::shared_ptr<uint8_t>, int, int, std::string, std::string)> callback,
+    geode::CopyableFunction<void(bool, CapturePreviewPopup*)> recaptureCallback,
     bool isPlayerHidden,
     bool isModerator
 ) {
-    log::info("Creating CapturePreviewPopup...");
+    log::info("[CapturePreviewPopup] Creando popup de vista previa");
     
     if (!texture) {
-        log::error("Failed to create CapturePreviewPopup: texture is null");
+        log::error("[CapturePreviewPopup] No se pudo crear popup de vista previa: la textura es nula");
         return nullptr;
     }
     
     auto ret = new CapturePreviewPopup();
-    
-    texture->retain();
     
     ret->m_texture = texture;
     ret->m_levelID = levelID;
@@ -57,12 +57,10 @@ CapturePreviewPopup* CapturePreviewPopup::create(
     
     if (ret && ret->init()) {
         ret->autorelease();
-        log::info("CapturePreviewPopup created successfully");
+        log::info("[CapturePreviewPopup] Popup de vista previa creado exitosamente");
         return ret;
     }
-    log::error("Failed to initialize CapturePreviewPopup");
-    
-    texture->release();
+    log::error("[CapturePreviewPopup] No se pudo inicializar el popup de vista previa");
     
     CC_SAFE_DELETE(ret);
     return nullptr;
@@ -71,11 +69,6 @@ CapturePreviewPopup* CapturePreviewPopup::create(
 void CapturePreviewPopup::updateContent(CCTexture2D* texture, std::shared_ptr<uint8_t> buffer, int width, int height) {
     if (!texture) return;
 
-    if (m_texture) {
-        m_texture->release();
-    }
-
-    texture->retain();
     m_texture = texture;
     m_buffer = buffer;
     m_width = width;
@@ -95,31 +88,27 @@ void CapturePreviewPopup::updateContent(CCTexture2D* texture, std::shared_ptr<ui
 }
 
 CapturePreviewPopup::~CapturePreviewPopup() {
-    if (m_texture) {
-        m_texture->release();
-        m_texture = nullptr;
-    }
+    // m_texture is a Ref<T>, automatically releases
 }
 
 bool CapturePreviewPopup::init() {
     if (!Popup::init(320.f, 240.f)) return false;
 
-    log::info("Setting up CapturePreviewPopup...");
+    log::info("[CapturePreviewPopup] Configurando popup de vista previa");
     
-    try {
-        this->setTitle(Localization::get().getString("preview.title").c_str());
-        
+    this->setTitle(Localization::get().getString("preview.title").c_str());
+
         auto content = this->m_mainLayer->getContentSize();
-        log::debug("Main layer size: {}x{}", content.width, content.height);
+        log::debug("[CapturePreviewPopup] Tamano de la capa principal: {}x{}", content.width, content.height);
 
         if (!m_texture) {
-            log::error("Texture is null in setup");
+            log::error("[CapturePreviewPopup] La textura es nula en la configuracion");
             return false;
         }
         
         m_previewSprite = CCSprite::createWithTexture(m_texture);
         if (!m_previewSprite) {
-            log::error("Failed to create preview sprite");
+            log::error("[CapturePreviewPopup] No se pudo crear el sprite de vista previa");
             return false;
         }
         m_previewSprite->setAnchorPoint({0.5f, 0.5f});
@@ -136,7 +125,7 @@ bool CapturePreviewPopup::init() {
 
         m_clippingNode = CCClippingNode::create();
         if (!m_clippingNode) {
-            log::error("Failed to create clipping node");
+            log::error("[CapturePreviewPopup] No se pudo crear el nodo de recorte");
             return false;
         }
         m_clippingNode->setContentSize({previewAreaWidth, previewAreaHeight});
@@ -146,7 +135,7 @@ bool CapturePreviewPopup::init() {
         
         auto stencil = CCScale9Sprite::create("square02_001.png");
         if (!stencil) {
-            log::warn("Failed to create stencil sprite, using fallback");
+            log::warn("[CapturePreviewPopup] No se pudo crear el sprite de plantilla, usando alternativa");
             stencil = CCScale9Sprite::create();
         }
         stencil->ignoreAnchorPointForPosition(false);
@@ -161,9 +150,8 @@ bool CapturePreviewPopup::init() {
         updatePreviewScale();
         
         this->m_mainLayer->addChild(m_clippingNode);
-        log::debug("Clipping node added successfully");
+        log::debug("[CapturePreviewPopup] Nodo de recorte agregado exitosamente");
 
-        // menu botones principales
         auto buttonMenu = CCMenu::create();
 
         auto scaleSprite = [](CCSprite* spr, float targetSize) {
@@ -176,53 +164,51 @@ bool CapturePreviewPopup::init() {
             }
         };
         
-        // boton cancelar (circulo verde con x)
         auto cancelIcon = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
         if (!cancelIcon) cancelIcon = CCSprite::createWithSpriteFrameName("edit_delIcon_001.png");
         if (cancelIcon) cancelIcon->setScale(0.4f);
         auto cancelCircle = CircleButtonSprite::create(cancelIcon, CircleBaseColor::Green, CircleBaseSize::Medium);
-        CCSprite* cancelSpr = static_cast<CCSprite*>(cancelCircle);
+        CCSprite* cancelSpr = typeinfo_cast<CCSprite*>(cancelCircle);
+        if (!cancelSpr) cancelSpr = cancelCircle;
         scaleSprite(cancelSpr, 30.0f);
 
-        // boton aceptar (circulo verde con check)
         auto okIcon = CCSprite::createWithSpriteFrameName("GJ_completesIcon_001.png");
         if (!okIcon) okIcon = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
         if (okIcon) okIcon->setScale(0.55f);
         auto okCircle = CircleButtonSprite::create(okIcon, CircleBaseColor::Green, CircleBaseSize::Medium);
-        CCSprite* okSpr = static_cast<CCSprite*>(okCircle);
+        CCSprite* okSpr = typeinfo_cast<CCSprite*>(okCircle);
+        if (!okSpr) okSpr = okCircle;
         scaleSprite(okSpr, 30.0f);
 
-        // boton descargar
         auto downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
         if (!downloadSpr) {
             downloadSpr = CCSprite::createWithSpriteFrameName("GJ_button_01.png");
         }
         scaleSprite(downloadSpr, 28.0f);
 
-        // boton editar (abre herramientas)
         auto editSpr = CCSprite::createWithSpriteFrameName("GJ_editBtn_001.png");
         if (!editSpr) {
-            log::error("Failed to create edit button sprite");
+            log::error("[CapturePreviewPopup] No se pudo crear el sprite del boton de editar");
             return false;
         }
         scaleSprite(editSpr, 30.0f);
 
         if (!cancelSpr || !okSpr) {
-            log::error("Failed to create button sprites");
+            log::error("[CapturePreviewPopup] No se pudieron crear los sprites de los botones");
             return false;
         }
 
         auto cancelBtn = CCMenuItemSpriteExtra::create(cancelSpr, this, menu_selector(CapturePreviewPopup::onCancelBtn));
-        cancelBtn->setID("cancel-button");
+        cancelBtn->setID("cancel-button"_spr);
 
         auto downloadBtn = CCMenuItemSpriteExtra::create(downloadSpr, this, menu_selector(CapturePreviewPopup::onDownloadBtn));
-        downloadBtn->setID("download-button");
+        downloadBtn->setID("download-button"_spr);
 
         auto editBtn = CCMenuItemSpriteExtra::create(editSpr, this, menu_selector(CapturePreviewPopup::onEditBtn));
-        editBtn->setID("edit-button");
+        editBtn->setID("edit-button"_spr);
 
         auto okBtn = CCMenuItemSpriteExtra::create(okSpr, this, menu_selector(CapturePreviewPopup::onAcceptBtn));
-        okBtn->setID("ok-button");
+        okBtn->setID("ok-button"_spr);
         okBtn->setTag(100);
 
         PaimonButtonHighlighter::registerButton(cancelBtn);
@@ -230,7 +216,7 @@ bool CapturePreviewPopup::init() {
         PaimonButtonHighlighter::registerButton(editBtn);
         PaimonButtonHighlighter::registerButton(okBtn);
 
-        buttonMenu->setID("button-menu");
+        buttonMenu->setID("button-menu"_spr);
         buttonMenu->addChild(cancelBtn);
         buttonMenu->addChild(downloadBtn);
         buttonMenu->addChild(editBtn);
@@ -241,26 +227,18 @@ bool CapturePreviewPopup::init() {
         
         this->m_mainLayer->addChild(buttonMenu);
         
-        log::info("CapturePreviewPopup setup completed successfully");
+        log::info("[CapturePreviewPopup] Configuracion del popup de vista previa completada");
 
         return true;
-    } catch (std::exception& e) {
-        log::error("Exception in CapturePreviewPopup::setup: {}", e.what());
-        return false;
-    } catch (...) {
-        log::error("Unknown exception in CapturePreviewPopup::setup");
-        return false;
-    }
 }
 
 void CapturePreviewPopup::onTogglePlayerBtn(CCObject* sender) {
     if (!sender) return;
+    m_isPlayerHidden = !m_isPlayerHidden;
     if (m_recaptureCallback) {
-        m_isPlayerHidden = !m_isPlayerHidden;
         m_recaptureCallback(m_isPlayerHidden, this);
     } else {
-        log::warn("No recapture callback provided");
-        Notification::create(Localization::get().getString("preview.player_toggle_error").c_str(), NotificationIcon::Error)->show();
+        liveRecapture(true);
     }
 }
 
@@ -293,19 +271,13 @@ void CapturePreviewPopup::onToggleFillBtn(CCObject* sender) {
     m_fillMode = !m_fillMode;
     updatePreviewScale();
     
-    // recentra sprite al cambiar modo
-    if (m_previewSprite && m_clippingNode) {
-        m_previewSprite->setPosition(m_clippingNode->getContentSize() / 2);
-    }
-    
     std::string msg = m_fillMode ? Localization::get().getString("preview.fill_mode_active") : Localization::get().getString("preview.fit_mode_active");
-    Notification::create(msg.c_str(), NotificationIcon::Info)->show();
+    PaimonNotify::create(msg.c_str(), NotificationIcon::Info)->show();
 }
 
 void CapturePreviewPopup::onClose(CCObject* sender) {
-    log::info("[CapturePreviewPopup] onClose llamado");
+    log::info("[CapturePreviewPopup] Popup de vista previa cerrado");
 
-    // restaura visibilidad de capas
     CaptureLayerEditorPopup::restoreAllLayers();
 
     if (!m_callbackExecuted && m_callback) {
@@ -318,37 +290,36 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
 }
 
 void CapturePreviewPopup::recapture() {
-    log::info("[CapturePreviewPopup] Recapturing level {}...", m_levelID);
+    log::info("[CapturePreviewPopup] Capturando nuevamente el nivel {}", m_levelID);
 
     if (FramebufferCapture::hasPendingCapture()) {
-        Notification::create(
+        PaimonNotify::create(
             Localization::get().getString("layers.recapturing").c_str(),
             NotificationIcon::Warning
         )->show();
         return;
     }
 
-    this->retain();
+    Ref<CapturePreviewPopup> safeRef = this;
     this->setVisible(false);
 
     FramebufferCapture::requestCapture(m_levelID,
-        [this](bool success, CCTexture2D* texture,
+        [safeRef](bool success, CCTexture2D* texture,
                std::shared_ptr<uint8_t> rgbaData, int width, int height) {
             Loader::get()->queueInMainThread(
-                [this, success, texture, rgbaData, width, height]() {
+                [safeRef, success, texture, rgbaData, width, height]() {
                     if (success && texture && rgbaData) {
-                        this->updateContent(texture, rgbaData, width, height);
+                        safeRef->updateContent(texture, rgbaData, width, height);
                         log::info("[CapturePreviewPopup] Recapture OK: {}x{}",
                                   width, height);
                     } else {
-                        log::error("[CapturePreviewPopup] Recapture failed");
-                        Notification::create(
+                        log::error("[CapturePreviewPopup] La recaptura fallo");
+                        PaimonNotify::create(
                             Localization::get().getString("layers.recapture_error").c_str(),
                             NotificationIcon::Error
                         )->show();
                     }
-                    this->setVisible(true);
-                    this->release();
+                    safeRef->setVisible(true);
                 });
         });
 }
@@ -368,10 +339,6 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
     int  w = static_cast<int>(frameSize.width);
     int  h = static_cast<int>(frameSize.height);
 
-    // oculta overlays del sistema
-    // popup hereda de flalertlayer, se ocultan todos
-    // capas del usuario ya estan configuradas
-    // no fuerza ocultar nada mas
     std::vector<std::pair<CCNode*, bool>> hiddenSystem;
 
     for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
@@ -390,9 +357,18 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
         }
     }
 
-    // renderiza escena completa a textura
+    PlayerVisState p1State, p2State;
+    if (m_isPlayerHidden) {
+        paimTogglePlayer(pl->m_player1, p1State, true);
+        paimTogglePlayer(pl->m_player2, p2State, true);
+    }
+
     auto* rt = CCRenderTexture::create(w, h, kCCTexture2DPixelFormat_RGBA8888);
     if (!rt) {
+        if (m_isPlayerHidden) {
+            paimTogglePlayer(pl->m_player1, p1State, false);
+            paimTogglePlayer(pl->m_player2, p2State, false);
+        }
         for (auto& [node, _] : hiddenSystem) node->setVisible(true);
         return;
     }
@@ -410,11 +386,14 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
 
     rt->end();
 
-    // restaura overlays del sistema
+    if (m_isPlayerHidden) {
+        paimTogglePlayer(pl->m_player1, p1State, false);
+        paimTogglePlayer(pl->m_player2, p2State, false);
+    }
+
     for (auto& [node, _] : hiddenSystem) node->setVisible(true);
 
     if (updateBuffer) {
-        // ruta completa: lee pixeles para buffer
         auto* img = rt->newCCImage(true);
         if (!img) return;
 
@@ -432,7 +411,7 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
         auto* tex = new CCTexture2D();
         if (!tex->initWithData(buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
                                W, H, CCSize(W, H))) {
-            delete tex;
+            tex->release();
             return;
         }
         tex->setAntiAliasTexParameters();
@@ -442,9 +421,6 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
         log::info("[CapturePreviewPopup] liveRecapture FULL OK: {}x{}", W, H);
 
     } else {
-        // ruta rapida: reusa textura (sin gpu-cpu-gpu)
-        // salta lectura costosa de pixeles
-        // cambio de capas en tiempo real es instantaneo
         auto* rtSprite = rt->getSprite();
         if (!rtSprite || !m_previewSprite) return;
 
@@ -460,13 +436,13 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
         }
         updatePreviewScale();
 
-        log::debug("[CapturePreviewPopup] liveRecapture FAST OK: {}x{}", w, h);
+        log::debug("[CapturePreviewPopup] Recaptura rapida exitosa: {}x{}", w, h);
     }
 }
 
 void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
     if (!sender) return;
-    log::info("[CapturePreviewPopup] Usuario aceptó la captura para nivel {}", m_levelID);
+    log::info("[CapturePreviewPopup] Usuario acepto la captura para nivel {}", m_levelID);
     
     m_callbackExecuted = true;
     
@@ -481,7 +457,7 @@ void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
 
 void CapturePreviewPopup::onEditBtn(CCObject* sender) {
     if (!sender) return;
-    log::info("[CapturePreviewPopup] Abriendo popup de edición");
+    log::info("[CapturePreviewPopup] Abriendo popup de edicion");
 
     auto editPopup = CaptureEditPopup::create(this);
     if (editPopup) {
@@ -491,7 +467,7 @@ void CapturePreviewPopup::onEditBtn(CCObject* sender) {
 
 void CapturePreviewPopup::onCancelBtn(CCObject* sender) {
     if (!sender) return;
-    log::info("[CapturePreviewPopup] Usuario canceló la captura");
+    log::info("[CapturePreviewPopup] Usuario cancelo la captura");
     
     m_callbackExecuted = true;
     
@@ -506,27 +482,27 @@ void CapturePreviewPopup::onCropBtn(CCObject* sender) {
     if (!sender) return;
 
     if (m_isCropped) {
-        Notification::create(Localization::get().getString("preview.borders_removed").c_str(), NotificationIcon::Info)->show();
+        PaimonNotify::create(Localization::get().getString("preview.borders_removed").c_str(), NotificationIcon::Info)->show();
         return;
     }
     
-    log::info("[CropBtn] Detectando bordes negros...");
+    log::info("[CapturePreviewPopup] Detectando bordes negros");
     
     auto cropRect = detectBlackBorders();
     
     if (cropRect.width == m_width && cropRect.height == m_height) {
-        log::info("[CropBtn] No se detectaron bordes negros");
-        Notification::create(Localization::get().getString("preview.no_borders").c_str(), NotificationIcon::Info)->show();
+        log::info("[CapturePreviewPopup] No se detectaron bordes negros");
+        PaimonNotify::create(Localization::get().getString("preview.no_borders").c_str(), NotificationIcon::Info)->show();
         return;
     }
     
-    log::info("[CropBtn] Bordes detectados: x={}, y={}, w={}, h={}", 
+    log::info("[CapturePreviewPopup] Bordes detectados: x={}, y={}, w={}, h={}", 
               cropRect.x, cropRect.y, cropRect.width, cropRect.height);
     
     applyCrop(cropRect);
     m_isCropped = true;
     
-    Notification::create(Localization::get().getString("preview.borders_deleted").c_str(), NotificationIcon::Success)->show();
+    PaimonNotify::create(Localization::get().getString("preview.borders_deleted").c_str(), NotificationIcon::Success)->show();
 }
 
 CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
@@ -536,7 +512,7 @@ CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
     
     const uint8_t* data = m_buffer.get();
     
-    log::info("[detectBlackBorders] Iniciando detección en imagen {}x{}", m_width, m_height);
+    log::info("[CapturePreviewPopup] Iniciando deteccion de bordes en imagen {}x{}", m_width, m_height);
     
     auto isBlackPixel = [&](int x, int y) -> bool {
         int idx = (y * m_width + x) * 4;
@@ -602,16 +578,16 @@ CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
     int cropHeight = bottom - top + 1;
     float cropRatio = (float)(cropWidth * cropHeight) / (m_width * m_height);
     
-    log::info("[detectBlackBorders] Bordes detectados: L={}, T={}, R={}, B={} ({}x{}, {:.1f}% del original)", 
+    log::info("[CapturePreviewPopup] Bordes detectados: L={}, T={}, R={}, B={} ({}x{}, {:.1f}% del original)", 
               left, top, right, bottom, cropWidth, cropHeight, cropRatio * 100.0f);
     
     if (cropRatio < 0.30f) {
-        log::warn("[detectBlackBorders] Crop demasiado agresivo ({:.1f}%), usando imagen original", cropRatio * 100.0f);
+        log::warn("[CapturePreviewPopup] Recorte demasiado agresivo ({:.1f}%), usando imagen original", cropRatio * 100.0f);
         return { 0, 0, m_width, m_height };
     }
     
     if (cropRatio > 0.99f) {
-        log::info("[detectBlackBorders] No se detectaron bordes significativos");
+        log::info("[CapturePreviewPopup] No se detectaron bordes significativos");
         return { 0, 0, m_width, m_height };
     }
     
@@ -619,7 +595,7 @@ CapturePreviewPopup::CropRect CapturePreviewPopup::detectBlackBorders() {
 }
 
 void CapturePreviewPopup::applyCrop(const CropRect& rect) {
-    log::info("[applyCrop] Aplicando crop: {}x{} @ ({}, {})", rect.width, rect.height, rect.x, rect.y);
+    log::info("[CapturePreviewPopup] Aplicando recorte: {}x{} @ ({}, {})", rect.width, rect.height, rect.x, rect.y);
     
     size_t newSize = rect.width * rect.height * 4;
     std::shared_ptr<uint8_t> croppedBuffer(new uint8_t[newSize], std::default_delete<uint8_t[]>());
@@ -658,18 +634,18 @@ void CapturePreviewPopup::applyCrop(const CropRect& rect) {
                 m_previewSprite->setPosition(m_clippingNode->getContentSize() / 2);
             }
             
-            log::info("[applyCrop] Textura y sprite actualizados exitosamente");
+            log::info("[CapturePreviewPopup] Textura y sprite actualizados exitosamente");
         }
     } else {
-        log::error("[applyCrop] No se pudo crear nueva textura");
-        delete newTexture;
+        log::error("[CapturePreviewPopup] No se pudo crear nueva textura");
+        newTexture->release();
     }
 }
 
 void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     if (!sender) return;
     if (!m_buffer || m_width <= 0 || m_height <= 0) {
-        Notification::create(Localization::get().getString("preview.no_image").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::create(Localization::get().getString("preview.no_image").c_str(), NotificationIcon::Error)->show();
         return;
     }
 
@@ -679,7 +655,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
         std::filesystem::create_directory(downloadDir, ec);
         if (ec) {
             log::error("Failed to create download directory: {}", ec.message());
-            Notification::create(Localization::get().getString("preview.folder_error").c_str(), NotificationIcon::Error)->show();
+            PaimonNotify::create(Localization::get().getString("preview.folder_error").c_str(), NotificationIcon::Error)->show();
             return;
         }
     }
@@ -695,27 +671,21 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     auto img = new CCImage();
     if (img->initWithImageData(const_cast<uint8_t*>(m_buffer.get()), dataSize, CCImage::kFmtRawData, m_width, m_height, 8)) {
         std::thread([img, filePath = filePath, levelID = m_levelID]() {
-            try {
-                if (img->saveToFile(filePath.generic_string().c_str(), false)) {
-                    geode::Loader::get()->queueInMainThread([filePath, levelID]() {
-                        geode::Notification::create(Localization::get().getString("preview.downloaded").c_str(), geode::NotificationIcon::Success)->show();
-                        log::info("Thumbnail saved to: {}", filePath.generic_string());
-                        ThumbnailLoader::get().invalidateLevel(levelID);
-                    });
-                } else {
-                    geode::Loader::get()->queueInMainThread([]() {
-                        geode::Notification::create(Localization::get().getString("preview.save_error").c_str(), geode::NotificationIcon::Error)->show();
-                    });
-                }
-            } catch(...) {
-                 geode::Loader::get()->queueInMainThread([]() {
-                    log::error("Unknown error in preview save thread");
+            if (img->saveToFile(geode::utils::string::pathToString(filePath).c_str(), false)) {
+                geode::Loader::get()->queueInMainThread([filePath, levelID]() {
+                    PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(), geode::NotificationIcon::Success)->show();
+                    log::info("[CapturePreviewPopup] Miniatura guardada en: {}", geode::utils::string::pathToString(filePath));
+                    ThumbnailLoader::get().invalidateLevel(levelID);
+                });
+            } else {
+                geode::Loader::get()->queueInMainThread([]() {
+                    PaimonNotify::create(Localization::get().getString("preview.save_error").c_str(), geode::NotificationIcon::Error)->show();
                 });
             }
             img->release();
         }).detach();
     } else {
         img->release();
-        Notification::create(Localization::get().getString("preview.process_error").c_str(), NotificationIcon::Error)->show();
+        PaimonNotify::create(Localization::get().getString("preview.process_error").c_str(), NotificationIcon::Error)->show();
     }
 }

@@ -1,4 +1,5 @@
 #include "BanListPopup.hpp"
+#include "../utils/PaimonNotification.hpp"
 
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
@@ -33,9 +34,11 @@ bool BanListPopup::init() {
     panel->setOpacity(70);
     panel->setContentSize(CCSizeMake(content.width - 20.f, content.height - 60.f));
     panel->setPosition({content.width / 2, content.height / 2 - 10.f});
+    panel->setID("list-panel"_spr);
     this->m_mainLayer->addChild(panel);
 
     m_listMenu = CCMenu::create();
+    m_listMenu->setID("list-menu"_spr);
     m_listMenu->setPosition({0, 0});
 
     m_scroll = cocos2d::extension::CCScrollView::create();
@@ -45,63 +48,50 @@ bool BanListPopup::init() {
     m_scroll->setContainer(m_listMenu);
     this->m_mainLayer->addChild(m_scroll, 5);
 
-    // estado de carga inicial
-    {
-        auto lbl = CCLabelBMFont::create(Localization::get().getString("ban.list.loading").c_str(), "goldFont.fnt");
-        lbl->setScale(0.45f);
-        lbl->setPosition({panel->getContentSize().width / 2, panel->getContentSize().height / 2});
-        m_listMenu->addChild(lbl);
-        m_listMenu->setContentSize(panel->getContentSize());
-    }
-
-    // obtengo lista de baneados
-    // uso weakref para evitar crashes y memory management manual
-    WeakRef<BanListPopup> self = this;
-    HttpClient::get().getBanList([self](bool success, const std::string& jsonData) {
-        // si el popup murio, no hago nada
+    auto self = WeakRef<BanListPopup>(this);
+    HttpClient::get().getBanList([self](bool success, std::string const& jsonData) {
         auto popup = self.lock();
         if (!popup) return;
 
         std::vector<std::string> users;
 
         if (success) {
-            try {
-                auto parsed = matjson::parse(jsonData);
-                if (parsed.isOk()) {
-                    auto root = parsed.unwrap();
-                    if (root.isObject()) {
-                        auto banned = root["banned"];
-                        if (banned.isArray()) {
-                            for (auto const& v : banned.asArray().unwrap()) {
+            auto parsed = matjson::parse(jsonData);
+            if (parsed.isOk()) {
+                auto root = parsed.unwrap();
+                if (root.isObject()) {
+                    auto banned = root["banned"];
+                    if (banned.isArray()) {
+                        auto arrRes = banned.asArray();
+                        if (arrRes.isOk()) {
+                            for (auto const& v : arrRes.unwrap()) {
                                 if (v.isString()) {
-                                    users.push_back(v.asString().unwrap());
-                                }
-                            }
-                        }
-
-                        if (root.contains("details") && root["details"].isObject()) {
-                            for (auto const& val : root["details"]) {
-                                if (val.isObject()) {
-                                    auto keyOpt = val.getKey();
-                                    if (!keyOpt) continue;
-                                    std::string key = *keyOpt;
-
-                                    BanDetail d;
-                                    if (val.contains("reason") && val["reason"].isString()) 
-                                        d.reason = val["reason"].asString().unwrap();
-                                    if (val.contains("bannedBy") && val["bannedBy"].isString()) 
-                                        d.bannedBy = val["bannedBy"].asString().unwrap();
-                                    if (val.contains("date") && val["date"].isString()) 
-                                        d.date = val["date"].asString().unwrap();
-                                    
-                                    popup->m_banDetails[key] = d;
+                                    users.push_back(v.asString().unwrapOr(""));
                                 }
                             }
                         }
                     }
+
+                    if (root.contains("details") && root["details"].isObject()) {
+                        for (auto const& val : root["details"]) {
+                            if (val.isObject()) {
+                                auto keyOpt = val.getKey();
+                                if (!keyOpt) continue;
+                                std::string key = *keyOpt;
+
+                                BanDetail d;
+                                if (val.contains("reason") && val["reason"].isString())
+                                    d.reason = val["reason"].asString().unwrapOr("");
+                                if (val.contains("bannedBy") && val["bannedBy"].isString())
+                                    d.bannedBy = val["bannedBy"].asString().unwrapOr("");
+                                if (val.contains("date") && val["date"].isString())
+                                    d.date = val["date"].asString().unwrapOr("");
+
+                                popup->m_banDetails[key] = d;
+                            }
+                        }
+                    }
                 }
-            } catch (...) {
-                // ignoro errores de parseo; muestro vacio
             }
         }
 
@@ -113,10 +103,9 @@ bool BanListPopup::init() {
     return true;
 }
 
-void BanListPopup::rebuildList(const std::vector<std::string>& users) {
+void BanListPopup::rebuildList(std::vector<std::string> const& users) {
     m_listMenu->removeAllChildren();
     
-    // uso columnlayout para la lista
     m_listMenu->setLayout(ColumnLayout::create()->setGap(5.f)->setAxisReverse(true)->setAxisAlignment(AxisAlignment::End));
 
     auto viewSize = m_scroll->getViewSize();
@@ -129,12 +118,11 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         return;
     }
 
-    for (const auto& user : users) {
+    for (auto const& user : users) {
         auto cellContainer = CCNode::create();
         cellContainer->setContentSize({viewSize.width - 20.f, 30.f});
-        cellContainer->setID("user-cell");
+        cellContainer->setID("user-cell"_spr);
 
-        // fondo semitransparente
         auto bg = CCScale9Sprite::create("square02_001.png");
         bg->setColor({0, 0, 0});
         bg->setOpacity(55);
@@ -142,31 +130,29 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         bg->setPosition(cellContainer->getContentSize() / 2);
         cellContainer->addChild(bg);
 
-        // nombre del usuario
         auto name = CCLabelBMFont::create(user.c_str(), "chatFont.fnt");
         name->setScale(0.5f);
         name->setAnchorPoint({0, 0.5f});
         name->setPosition({10.f, cellContainer->getContentHeight() / 2});
         cellContainer->addChild(name);
 
-        // menu interno para botones
         auto btnMenu = CCMenu::create();
         btnMenu->setContentSize({100.f, 30.f});
         btnMenu->setPosition({cellContainer->getContentWidth() - 60.f, cellContainer->getContentHeight() / 2});
         btnMenu->setLayout(RowLayout::create()->setGap(10.f));
         cellContainer->addChild(btnMenu);
 
-        // boton de info
         auto infoSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
         infoSpr->setScale(0.6f);
         auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(BanListPopup::onInfo));
+        infoBtn->setID("ban-info-btn"_spr);
         infoBtn->setUserObject(CCString::create(user));
         btnMenu->addChild(infoBtn);
 
-        // boton de unban
         auto unbanSpr = ButtonSprite::create(Localization::get().getString("ban.list.unban_btn").c_str(), 50, true, "goldFont.fnt", "GJ_button_05.png", 30.f, 0.6f);
         unbanSpr->setScale(0.7f);
         auto unbanBtn = CCMenuItemSpriteExtra::create(unbanSpr, this, menu_selector(BanListPopup::onUnban));
+        unbanBtn->setID("unban-btn"_spr);
         unbanBtn->setUserObject(CCString::create(user));
         btnMenu->addChild(unbanBtn);
         
@@ -175,7 +161,6 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         m_listMenu->addChild(cellContainer);
     }
     
-    // fuerzo layout y height
     m_listMenu->updateLayout();
     
     float totalH = m_listMenu->getContentHeight();
@@ -184,8 +169,6 @@ void BanListPopup::rebuildList(const std::vector<std::string>& users) {
         m_listMenu->updateLayout();
     }
     
-    // m_contentlayer es de scrolllayer, ccscrollview usa getcontainer()
-    // pero como asigno m_listmenu como contenedor
     m_listMenu->setPosition({0,viewSize.height - m_listMenu->getContentHeight()});
 }
 
@@ -228,12 +211,12 @@ void BanListPopup::onUnban(CCObject* sender) {
         "Cancel", Localization::get().getString("ban.list.unban_btn").c_str(),
         [self, username](auto, bool btn2) {
             if (btn2) {
-                HttpClient::get().unbanUser(username, [self](bool success, const std::string& msg) {
+                HttpClient::get().unbanUser(username, [self](bool success, std::string const& msg) {
                     if (success) {
-                        Notification::create(Localization::get().getString("ban.unban.success"), NotificationIcon::Success)->show();
+                        PaimonNotify::create(Localization::get().getString("ban.unban.success"), NotificationIcon::Success)->show();
                         self->onClose(nullptr);
                     } else {
-                        Notification::create(Localization::get().getString("ban.unban.error"), NotificationIcon::Error)->show();
+                        PaimonNotify::create(Localization::get().getString("ban.unban.error"), NotificationIcon::Error)->show();
                     }
                 });
             }

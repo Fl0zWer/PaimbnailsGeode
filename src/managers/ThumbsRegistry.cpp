@@ -8,7 +8,7 @@
 using namespace geode::prelude;
 
 namespace {
-    const char* kindToStr(ThumbKind k) { return k == ThumbKind::Level ? "level" : "profile"; }
+    char const* kindToStr(ThumbKind k) { return k == ThumbKind::Level ? "level" : "profile"; }
     ThumbKind strToKind(std::string const& s) { return s == "profile" ? ThumbKind::Profile : ThumbKind::Level; }
 }
 
@@ -23,7 +23,8 @@ void ThumbsRegistry::load() const {
     m_loaded = true;
     m_items.clear();
     auto p = path();
-    if (!std::filesystem::exists(p)) return;
+    std::error_code ec;
+    if (!std::filesystem::exists(p, ec) || ec) return;
     auto data = file::readString(p).unwrapOr("");
     std::stringstream ss(data);
     std::string line;
@@ -36,7 +37,7 @@ void ThumbsRegistry::load() const {
         if (!std::getline(ls, verStr, ',')) verStr = "0";
         ThumbRecord r{};
         r.kind = strToKind(kind);
-        r.id = std::atoi(idStr.c_str());
+        r.id = geode::utils::numFromString<int>(idStr).unwrapOr(0);
         r.verified = (verStr == "1");
         if (r.id != 0) m_items.push_back(r);
     }
@@ -48,7 +49,8 @@ void ThumbsRegistry::save() const {
         ss << kindToStr(r.kind) << "," << r.id << "," << (r.verified ? "1" : "0") << "\n";
     }
     auto p = path();
-    std::filesystem::create_directories(p.parent_path());
+    std::error_code ec;
+    std::filesystem::create_directories(p.parent_path(), ec);
     std::ofstream out(p, std::ios::binary);
     out << ss.str();
     out.close();
