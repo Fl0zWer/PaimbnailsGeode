@@ -1,0 +1,406 @@
+{
+  "geode": "5.3.0",
+  "gd": {
+    "win": "2.2081",
+    "android": "2.2081",
+    "mac": "2.2081",
+    "ios": "2.2081"
+  },
+  "version": "v2.3.0",
+  "id": "flozwer.paimbnails",
+  "name": "Paimbnails",
+  "developer": "FlozWer",
+  "description": "Level & profile thumbnails with in-game capture, caching, and visual effects",
+  "tags": [
+    "interface",
+    "online",
+    "enhancement",
+    "performance"
+  ],
+  "links": {
+    "homepage": "https://paimon-thumbnails-server.paimonalcuadrado.workers.dev/",
+    "community": "https://discord.gg/5N5vpSfZwY"
+  },
+  "resources": {
+    "sprites": [
+      "resources/*.png"
+    ]
+  },
+  "settings": {
+    "general-title": {
+      "name": "General",
+      "description": "General mod settings",
+      "type": "title"
+    },
+    "language": {
+      "type": "string",
+      "name": "Language / Idioma",
+      "description": "Select language / Seleccionar idioma",
+      "default": "english",
+      "one-of": [
+        "spanish",
+        "english"
+      ]
+    },
+    "dynamic-song": {
+      "type": "bool",
+      "name": "Dynamic Song",
+      "description": "Plays the level song at a random position when viewing a level.",
+      "default": false
+    },
+    "level-thumbs-title": {
+      "name": "Level Thumbnails",
+      "description": "Settings for level list thumbnails",
+      "type": "title"
+    },
+    "level-thumb-width": {
+      "type": "float",
+      "name": "Thumbnail Size",
+      "description": "Width of the thumbnail area.",
+      "default": 0.5,
+      "min": 0.2,
+      "max": 0.95
+    },
+    "levelcell-background-type": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Gradient or Blurred Thumbnail.",
+      "default": "thumbnail",
+      "one-of": [
+        "gradient",
+        "thumbnail"
+      ]
+    },
+    "levelcell-background-blur": {
+      "type": "float",
+      "name": "Background Blur",
+      "description": "Blur intensity for thumbnail background.",
+      "default": 3.0,
+      "min": 0.0,
+      "max": 10.0
+    },
+    "levelcell-background-darkness": {
+      "type": "float",
+      "name": "Background Darkness",
+      "description": "Darkness overlay (0 = clear, 1 = black).",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 1.0
+    },
+    "levelcell-show-separator": {
+      "type": "bool",
+      "name": "Show Separator Line",
+      "description": "Shows the line separating thumbnail and info.",
+      "default": true
+    },
+    "levelcell-show-view-button": {
+      "type": "bool",
+      "name": "Show View Button",
+      "description": "Shows the 'View' button.",
+      "default": true
+    },
+    "compact-list-mode": {
+      "type": "bool",
+      "name": "Compact Mode (Lists)",
+      "description": "Optimizes layout for Compact Lists mod.",
+      "default": false
+    },
+    "level-effects-title": {
+      "name": "Level Visual Effects",
+      "description": "Animations and effects",
+      "type": "title"
+    },
+    "levelcell-hover-effects": {
+      "type": "bool",
+      "name": "Hover Animation",
+      "description": "Animate on hover.",
+      "default": true
+    },
+    "levelcell-anim-type": {
+      "type": "string",
+      "name": "Animation Type",
+      "description": "Style of hover animation.",
+      "default": "zoom-slide",
+      "one-of": [
+        "none",
+        "zoom-slide",
+        "zoom",
+        "slide",
+        "bounce",
+        "rotate",
+        "rotate-content",
+        "shake",
+        "pulse",
+        "swing"
+      ]
+    },
+    "levelcell-anim-speed": {
+      "type": "float",
+      "name": "Animation Speed",
+      "description": "Speed of animation.",
+      "default": 1.0,
+      "min": 0.1,
+      "max": 5.0
+    },
+    "levelcell-anim-effect": {
+      "type": "string",
+      "name": "Color Effect",
+      "description": "Color filter during animation.",
+      "default": "none",
+      "one-of": [
+        "none",
+        "brightness",
+        "darken",
+        "sepia",
+        "red",
+        "blue",
+        "gold",
+        "fade",
+        "grayscale",
+        "blur",
+        "invert",
+        "glitch",
+        "sharpen",
+        "edge-detection",
+        "vignette",
+        "pixelate",
+        "posterize",
+        "chromatic",
+        "scanlines",
+        "solarize",
+        "rainbow"
+      ]
+    },
+    "levelcell-effect-on-gradient": {
+      "type": "bool",
+      "name": "Apply Effect to Background",
+      "description": "Apply color effect to background gradient.",
+      "default": false
+    },
+    "levelcell-mythic-particles": {
+      "type": "bool",
+      "name": "Mythic Particles",
+      "description": "Particles for Mythic levels.",
+      "default": true
+    },
+    "levelcell-animated-gradient": {
+      "type": "bool",
+      "name": "Animated Gradient",
+      "description": "Animate background colors.",
+      "default": true
+    },
+    "levelinfo-title": {
+      "name": "Level Info Screen",
+      "description": "Settings for the level info screen",
+      "type": "title"
+    },
+    "levelinfo-background-style": {
+      "type": "string",
+      "name": "Background Style",
+      "description": "Primary visual style of the background.",
+      "default": "blur",
+      "one-of": [
+        "normal",
+        "pixel",
+        "blur",
+        "grayscale",
+        "sepia",
+        "vignette",
+        "scanlines",
+        "bloom",
+        "chromatic",
+        "radial-blur",
+        "glitch",
+        "posterize",
+        "rain",
+        "matrix",
+        "neon-pulse",
+        "wave-distortion",
+        "crt"
+      ]
+    },
+    "levelinfo-extra-styles": {
+      "type": "string",
+      "name": "Extra Effects",
+      "description": "Additional effects (comma-separated, max 4). Applied on top of the primary style via multi-pass.",
+      "default": ""
+    },
+    "levelinfo-effect-intensity": {
+      "type": "int",
+      "name": "Effect Intensity",
+      "description": "Intensity of the background effect.",
+      "default": 5,
+      "min": 1,
+      "max": 10
+    },
+    "levelinfo-bg-darkness": {
+      "type": "int",
+      "name": "Background Darkness",
+      "description": "Darkness overlay on the thumbnail background. 0 = clear, 50 = full black.",
+      "default": 27,
+      "min": 0,
+      "max": 50
+    },
+    "profile-music-title": {
+      "name": "Profile Music",
+      "description": "Music that plays when viewing profiles",
+      "type": "title"
+    },
+    "profile-music-enabled": {
+      "type": "bool",
+      "name": "Enable Profile Music",
+      "description": "Play custom music when viewing profiles.",
+      "default": true
+    },
+    "profile-music-autoplay": {
+      "type": "bool",
+      "name": "Autoplay Profile Music",
+      "description": "Automatically play music when viewing a profile.",
+      "default": true
+    },
+    "profile-music-crossfade": {
+      "type": "bool",
+      "name": "Crossfade Transition",
+      "description": "Smooth fade between background music and profile music instead of cutting abruptly.",
+      "default": true
+    },
+    "profile-music-fade-duration": {
+      "type": "float",
+      "name": "Fade Duration (seconds)",
+      "description": "Duration of the crossfade transition in seconds.",
+      "default": 0.8,
+      "min": 0.1,
+      "max": 3.0
+    },
+    "button-editor-title": {
+      "name": "Interface",
+      "description": "UI Customization",
+      "type": "title"
+    },
+    "show-button-editor": {
+      "type": "bool",
+      "name": "Show Button Editor",
+      "description": "Show button to move UI elements.",
+      "default": true
+    },
+    "profile-img-zlayer": {
+      "type": "int",
+      "name": "Profile Image Z-Layer",
+      "description": "Z-order of the profile image behind the popup. Lower = further back. Adjust until the image shows correctly behind panels.",
+      "default": -1,
+      "min": -10,
+      "max": 10
+    },
+    "capture-title": {
+      "name": "Capture Settings",
+      "description": "In-game thumbnail capture",
+      "type": "title"
+    },
+    "enable-thumbnail-taking": {
+      "name": "Enable Capture Button",
+      "description": "Show capture button in pause menu.",
+      "type": "bool",
+      "default": true
+    },
+    "save-thumbnails-locally": {
+      "type": "bool",
+      "name": "Save Thumbnails Locally",
+      "description": "Save captured thumbnails to local storage before uploading.",
+      "default": false
+    },
+    "capture-resolution": {
+      "type": "string",
+      "name": "Capture Resolution",
+      "description": "Resolution for Render mode.",
+      "default": "1080p",
+      "one-of": [
+        "1080p",
+        "1440p",
+        "4k"
+      ]
+    },
+    "keybinds-title": {
+      "name": "Keybinds",
+      "description": "Configure keyboard shortcuts",
+      "type": "title"
+    },
+    "capture-keybind": {
+      "type": "keybind",
+      "name": "Capture Thumbnail",
+      "description": "Press this key during gameplay to capture a thumbnail",
+      "default": "T",
+      "category": "gameplay"
+    },
+    "performance-title": {
+      "name": "Performance & Optimization",
+      "description": "Settings for improving performance and resource usage",
+      "type": "title"
+    },
+    "optimizer": {
+      "type": "bool",
+      "name": "Optimizer Mode",
+      "description": "Disables all logs for maximum performance. Keep OFF for debugging.",
+      "default": false
+    },
+    "gif-ram-cache": {
+      "type": "bool",
+      "name": "Cache GIFs in RAM",
+      "description": "Keep processed GIFs in RAM for faster loading. Warning: High RAM usage.",
+      "default": true
+    },
+    "thumbnail-concurrent-downloads": {
+      "type": "int",
+      "name": "Download Speed (Threads)",
+      "description": "Max simultaneous downloads (8-15 recommended).",
+      "default": 12,
+      "min": 1,
+      "max": 20
+    },
+    "maintenance-title": {
+      "name": "Maintenance & Moderator",
+      "description": "Repair tools and moderator code",
+      "type": "title"
+    },
+    "maintenance-cleanup": {
+      "type": "bool",
+      "name": "Run Mod Cleanup (Button)",
+      "description": "Turn ON to clean temporary/cache files and run a health check. It resets automatically.",
+      "default": false
+    },
+    "maintenance-refresh-mod-code": {
+      "type": "bool",
+      "name": "Fetch Mod Code (Button)",
+      "description": "Turn ON to verify mod/admin status and fetch a fresh moderator code. It resets automatically.",
+      "default": false
+    },
+    "test-category": {
+      "name": "Test / Debug",
+      "description": "Developer options",
+      "type": "title"
+    },
+    "clear-cache-on-exit": {
+      "type": "bool",
+      "name": "Clear Cache on Exit",
+      "description": "Delete downloaded thumbnails when the game closes. Next session will re-download them.",
+      "default": true
+    },
+    "debug-password": {
+      "type": "string",
+      "name": "Password",
+      "description": "Enter password to enable debug features",
+      "default": ""
+    },
+    "enable-debug-logs": {
+      "type": "bool",
+      "name": "Enable Debug Logs",
+      "description": "Enable verbose debug logging (requires debug password)",
+      "default": false
+    }
+  },
+  "dependencies": {
+    "geode.node-ids": {
+      "version": ">=1.23.0",
+      "required": true
+    }
+  }
+}
