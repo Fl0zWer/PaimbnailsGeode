@@ -1,20 +1,7 @@
-﻿#include "ThumbnailAPI.hpp"
+#include "ThumbnailAPI.hpp"
 #include <Geode/loader/Log.hpp>
 
 using namespace geode::prelude;
-
-/**
- * ThumbnailAPI.cpp â€” FACHADA DE COMPATIBILIDAD
- *
- * Toda la logica de negocio ha sido extraida a:
- *   - ThumbnailTransportClient   (thumbnails core)
- *   - ThumbnailSubmissionService  (sugerencias / updates)
- *   - ModerationService           (moderacion + cola)
- *   - ProfileImageService         (imagenes de perfil)
- *
- * Cada metodo delega al servicio correspondiente.
- * Los consumidores nuevos deben llamar al servicio directamente.
- */
 
 ThumbnailAPI::ThumbnailAPI() {
     m_serverEnabled = true;
@@ -29,8 +16,6 @@ void ThumbnailAPI::setServerEnabled(bool enabled) {
     ProfileImageService::get().setServerEnabled(enabled);
     log::info("[ThumbnailAPI] modo servidor cambiado a: {}", enabled);
 }
-
-// â”€â”€ Thumbnail core (ThumbnailTransportClient) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void ThumbnailAPI::getThumbnails(int levelId, ThumbnailListCallback callback) {
     ThumbnailTransportClient::get().getThumbnails(levelId, std::move(callback));
@@ -81,8 +66,6 @@ cocos2d::CCTexture2D* ThumbnailAPI::webpToTexture(std::vector<uint8_t> const& we
     return ThumbnailTransportClient::webpToTexture(webpData);
 }
 
-// â”€â”€ Submissions (ThumbnailSubmissionService) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
 void ThumbnailAPI::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     ThumbnailSubmissionService::get().uploadSuggestion(levelId, pngData, username, std::move(callback));
 }
@@ -101,8 +84,6 @@ void ThumbnailAPI::downloadUpdate(int levelId, DownloadCallback callback) {
 void ThumbnailAPI::downloadReported(int levelId, DownloadCallback callback) {
     ThumbnailSubmissionService::get().downloadReported(levelId, std::move(callback));
 }
-
-// â”€â”€ Moderation (ModerationService) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void ThumbnailAPI::checkModerator(std::string const& username, ModeratorCallback callback) {
     ModerationService::get().checkModerator(username, std::move(callback));
@@ -134,8 +115,6 @@ void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, std::s
 void ThumbnailAPI::submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback) {
     ModerationService::get().submitReport(levelId, username, note, std::move(callback));
 }
-
-// â”€â”€ Profiles (ProfileImageService) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void ThumbnailAPI::uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     ProfileImageService::get().uploadProfile(accountID, pngData, username, std::move(callback));

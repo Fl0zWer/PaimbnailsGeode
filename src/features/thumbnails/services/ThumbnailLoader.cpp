@@ -180,11 +180,9 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
         m_lruOrder.push_back(key);
         m_lruMap[key] = std::prev(m_lruOrder.end());
         
-        // fuerzo callback asincrono para no trabar la UI
+        // despachar via cola escalonada pa no trabar la UI si hay muchas celdas
         auto tex = it->second;
-        Loader::get()->queueInMainThread([callback, tex]() {
-            if (callback) callback(tex, true);
-        });
+        enqueueCachedCallback(std::move(callback), tex);
         return;
     }
 
@@ -722,6 +720,48 @@ int ThumbnailLoader::getInvalidationVersion(int levelID) const {
     std::lock_guard<std::mutex> lock(m_queueMutex);
     auto it = m_invalidationVersions.find(levelID);
     return it != m_invalidationVersions.end() ? it->second : 0;
+}
+
+void ThumbnailLoader::enqueueCachedCallback(LoadCallback callback, cocos2d::CCTexture2D* tex) {
+    // llamado bajo m_queueMutex desde requestLoad
+    m_cachedCallbackQueue.push_back({std::move(callback), tex});
+    if (!m_drainingCachedCallbacks) {
+        m_drainingCachedCallbacks = true;
+        Loader::get()->queueInMainThread([this]() {
+            drainCachedCallbacks();
+        });
+    }
+}
+
+void ThumbnailLoader::drainCachedCallbacks() {
+    // extraer batch bajo lock, invocar callbacks fuera del lock pa evitar deadlocks
+    std::vector<CachedCallback> batch;
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        int count = 0;
+        while (!m_cachedCallbackQueue.empty() && count < MAX_CACHED_CALLBACKS_PER_FRAME) {
+            batch.push_back(std::move(m_cachedCallbackQueue.front()));
+            m_cachedCallbackQueue.pop_front();
+            count++;
+        }
+    }
+
+    for (auto& item : batch) {
+        if (item.callback) item.callback(item.texture, true);
+    }
+
+    bool more = false;
+    {
+        std::lock_guard<std::mutex> lock(m_queueMutex);
+        more = !m_cachedCallbackQueue.empty();
+        if (!more) m_drainingCachedCallbacks = false;
+    }
+
+    if (more) {
+        Loader::get()->queueInMainThread([this]() {
+            drainCachedCallbacks();
+        });
+    }
 }
 
 void ThumbnailLoader::clearDiskCache() {

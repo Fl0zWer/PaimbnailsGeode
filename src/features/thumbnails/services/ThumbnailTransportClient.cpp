@@ -7,8 +7,6 @@
 
 using namespace geode::prelude;
 
-// ── helpers ─────────────────────────────────────────────────────────
-
 bool ThumbnailTransportClient::isGIFData(std::vector<uint8_t> const& data) {
     return data.size() >= 6 && GIFDecoder::isGIF(data.data(), data.size());
 }
@@ -70,8 +68,6 @@ cocos2d::CCTexture2D* ThumbnailTransportClient::loadFromLocal(int levelId) {
     return LocalThumbs::get().loadTexture(levelId);
 }
 
-// ── queries ─────────────────────────────────────────────────────────
-
 void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback callback) {
     if (!m_serverEnabled) { callback(false, {}); return; }
 
@@ -121,8 +117,6 @@ std::string ThumbnailTransportClient::getThumbnailURL(int levelId) {
     return HttpClient::get().getServerURL() + "/t/" + std::to_string(levelId) + ".webp";
 }
 
-// ── uploads ─────────────────────────────────────────────────────────
-
 void ThumbnailTransportClient::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData,
                                                std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
@@ -163,8 +157,6 @@ void ThumbnailTransportClient::uploadGIF(int levelId, std::vector<uint8_t> const
         });
 }
 
-// ── downloads ───────────────────────────────────────────────────────
-
 void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
@@ -199,8 +191,6 @@ void ThumbnailTransportClient::downloadFromUrlData(std::string const& url, Downl
     });
 }
 
-// ── exists / delete ─────────────────────────────────────────────────
-
 void ThumbnailTransportClient::checkExists(int levelId, ExistsCallback callback) {
     if (!m_serverEnabled) { callback(false); return; }
     HttpClient::get().checkThumbnailExists(levelId, callback);
@@ -230,8 +220,6 @@ void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& u
         });
 }
 
-// ── ratings ─────────────────────────────────────────────────────────
-
 void ThumbnailTransportClient::getRating(int levelId, std::string const& username,
                                          std::string const& thumbnailId,
                                          geode::CopyableFunction<void(bool, float, int, int)> callback) {
@@ -255,8 +243,6 @@ void ThumbnailTransportClient::submitVote(int levelId, int stars, std::string co
     if (!m_serverEnabled) { callback(false, "Server disabled"); return; }
     HttpClient::get().submitVote(levelId, stars, username, thumbnailId, callback);
 }
-
-// ── top lists ───────────────────────────────────────────────────────
 
 void ThumbnailTransportClient::getTopCreators(ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }

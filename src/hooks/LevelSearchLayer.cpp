@@ -16,10 +16,8 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
     bool init(int searchType) {
         if (!LevelSearchLayer::init(searchType)) return false;
 
-        // ── Aplicar fondo custom unificado ──
         bool hasCustomBg = LayerBackgroundManager::get().applyBackground(this, "search");
 
-        // ── Si hay fondo custom, ocultar sprites decorativos de busqueda ──
         if (hasCustomBg) {
             static char const* hideIDs[] = {
                 "level-search-bg",

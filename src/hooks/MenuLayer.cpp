@@ -26,7 +26,6 @@ extern void PaimonOnModLoaded();
 // declarada en PetHook.cpp — registra el ticker del pet con el scheduler
 extern void initPetTicker();
 
-// ── Helper: construye el nodo clip+container+borde para la foto de perfil ──
 // Centraliza la logica compartida entre la rama GIF y la estatica,
 // eliminando ~50 lineas de codigo duplicado.
 static CCNode* buildProfileClipContainer(
@@ -190,7 +189,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         this->updateBackground();
         this->updateProfileButton();
 
-        // ── Paimon escondida detras del titulo (clickeable) ──
         if (auto* title = this->getChildByID("main-title")) {
             auto paimonSpr = CCSprite::create("paim_Paimon.png"_spr);
             if (paimonSpr) {
@@ -280,7 +278,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             ? parent->convertToWorldSpace(btn->getPosition())
             : btn->getPosition();
 
-        // ── sonido de explosion random ──
         static std::string const explosionSounds[] = {
             std::string("explode_11") + ".ogg",
             std::string("quitSound_01") + ".ogg",
@@ -292,7 +289,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         std::uniform_int_distribution<int> soundDist(0, 4);
         FMODAudioEngine::sharedEngine()->playEffect(explosionSounds[soundDist(rng)].c_str());
 
-        // ── efecto de particulas de explosion random ──
         static char const* explosionEffects[] = {
             "explodeEffect.plist",
             "firework_01.plist",
@@ -324,10 +320,8 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void updateBackground() {
-        // ── Leer config unificada (layerbg-menu-*) ──
         auto cfg = LayerBackgroundManager::get().getConfig("menu");
 
-        // ── Fallback a legacy keys si la migracion no corrio ──
         if (cfg.type == "default") {
             std::string legacyType = Mod::get()->getSavedValue<std::string>("bg-type", "default");
             if (legacyType == "thumbnails") legacyType = "random";
@@ -343,7 +337,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             }
         }
 
-        // ── modo "default": restaurar fondo original del juego ──
         if (cfg.type == "default") {
             if (auto bg = this->getChildByID("main-menu-bg")) {
                 bg->setVisible(true);
@@ -362,12 +355,10 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             return;
         }
 
-        // ── Ocultar fondo original del juego ──
         if (auto bg = this->getChildByID("main-menu-bg")) {
             bg->setVisible(false);
         }
 
-        // ── Limpiar container previo ──
         if (auto oldContainer = this->getChildByID("paimon-bg-container"_spr)) {
             oldContainer->removeFromParent();
         }
@@ -387,7 +378,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         container->setZOrder(-10);
         this->addChild(container);
 
-        // ── Resolver tipo: manejar "Same as..." references ──
         std::string resolvedType = cfg.type;
         std::string resolvedPath = cfg.customPath;
         int resolvedId = cfg.levelId;
@@ -424,7 +414,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 return;
             }
             if (resolvedPath.ends_with(".gif") || resolvedPath.ends_with(".GIF")) {
-                // ── GIF async ──
                 // Ref<> en vez de retain/release manual para evitar leak
                 // si el callback nunca ejecuta (ej. GIF invalido)
                 Ref<MenuLayer> safeThis = this;
@@ -482,7 +471,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
                 });
                 return;
             } else {
-                // ── Imagen estatica ──
                 CCTextureCache::sharedTextureCache()->removeTextureForKey(resolvedPath.c_str());
                 tex = CCTextureCache::sharedTextureCache()->addImage(resolvedPath.c_str(), false);
                 if (!tex) {
@@ -543,7 +531,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         sprite->ignoreAnchorPointForPosition(false);
         sprite->setAnchorPoint({0.5f, 0.5f});
 
-        // ── Adaptive colors ──
         bool adaptive = Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
         m_fields->m_adaptiveColors = adaptive;
         if (adaptive && tex) {
@@ -568,7 +555,6 @@ class $modify(PaimonMenuLayer, MenuLayer) {
             this->applyAdaptiveColor({255, 255, 255});
         }
 
-        // ── Dark mode ──
         if (cfg.darkMode) {
             GLubyte alpha = static_cast<GLubyte>(cfg.darkIntensity * 200.0f);
             auto overlay = CCLayerColor::create({0, 0, 0, alpha});

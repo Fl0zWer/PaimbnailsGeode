@@ -38,14 +38,14 @@ public:
     bool isPlayer1Hidden() const { return m_isPlayer1Hidden; }
     bool isPlayer2Hidden() const { return m_isPlayer2Hidden; }
 
-    // Called by child popups to signal open/close
+    // para que los popups hijos me avisen si estan abiertos
     void setChildPopupOpen(bool open) { m_childPopupOpen = open; }
     void setPausedMusic(bool v) { m_pausedMusic = v; }
 
 protected:
     bool init() override;
 
-    // Touch zoom/pan (same pattern as LocalThumbnailViewPopup)
+    // zoom y paneo
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
@@ -67,7 +67,7 @@ private:
     bool m_touchDelegateRegistered = false;
     bool m_pausedMusic = false;
 
-    // Per-player saved visibility state (persists across recaptures)
+    // visibilidad guardada entre recapturas
     PlayerVisState m_p1SavedState;
     PlayerVisState m_p2SavedState;
     
@@ -79,7 +79,7 @@ private:
     bool m_fillMode = true;
     bool m_callbackExecuted = false;
 
-    // Zoom/pan state (mirrors LocalThumbnailViewPopup)
+    // estado de zoom y paneo
     float m_viewWidth = 0.f;
     float m_viewHeight = 0.f;
     float m_initialScale = 1.f;
@@ -103,7 +103,7 @@ private:
     CropRect detectBlackBorders();
     void applyCrop(const CropRect& rect);
 
-    // Zoom helpers
+    // util de zoom
     static float clampF(float value, float mn, float mx);
     void clampSpritePosition();
     void clampSpritePositionAnimated();

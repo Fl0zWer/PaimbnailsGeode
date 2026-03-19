@@ -37,7 +37,6 @@ public:
     // limpia tasks
     void cleanTasks();
 
-
     // sube thumb png
     void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
 
@@ -121,12 +120,12 @@ public:
     void getRating(int levelId, std::string const& username, std::string const& thumbnailId, GenericCallback callback);
     void submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, GenericCallback callback);
 
-    // get/post generico
+    // get/post base
     void get(std::string const& endpoint, GenericCallback callback);
     void post(std::string const& endpoint, std::string const& data, GenericCallback callback);
-    // post autenticado (incluye X-Mod-Code para operaciones privilegiadas)
+    // post con X-Mod-Code
     void postWithAuth(std::string const& endpoint, std::string const& data, GenericCallback callback);
-    // post sin X-Mod-Code (fuerza validacion alternativa en backend)
+    // post sin X-Mod-Code
     void postWithoutModCode(std::string const& endpoint, std::string const& data, GenericCallback callback);
 
     // whitelist

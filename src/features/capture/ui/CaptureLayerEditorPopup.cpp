@@ -26,8 +26,6 @@ using namespace cocos2d;
 // guarda visibilidad original de capas sin prolongar la vida de nodos de la escena
 static std::vector<std::pair<WeakRef<CCNode>, bool>> s_originalVisibilities;
 
-// ─── auxiliares ───────────────────────────────────────────────────
-
 namespace {
     static std::string simplifyClassName(std::string const& cls) {
         std::string name = cls;
@@ -85,8 +83,6 @@ namespace {
     }
 }
 
-// ─── api estatica ────────────────────────────────────────────────
-
 CaptureLayerEditorPopup* CaptureLayerEditorPopup::create(CapturePreviewPopup* previewPopup) {
     auto ret = new CaptureLayerEditorPopup();
     ret->m_previewPopup = previewPopup;
@@ -110,8 +106,6 @@ void CaptureLayerEditorPopup::restoreAllLayers() {
     log::info("[LayerEditor] All layers restored to original visibility");
 }
 
-// ─── init ──────────────────────────────────────────────────────
-
 bool CaptureLayerEditorPopup::init() {
     if (!Popup::init(290.f, 290.f)) return false;
     this->setTitle(Localization::get().getString("layers.title").c_str());
@@ -131,7 +125,6 @@ bool CaptureLayerEditorPopup::init() {
         return true;
     }
 
-    // ── mini preview ─────────────────────────────────────────────
     const float previewW = 160.f;
     const float previewH = 90.f; // 16:9
     const float previewY = content.height - 26.f - previewH * 0.5f;
@@ -150,7 +143,6 @@ bool CaptureLayerEditorPopup::init() {
 
     updateMiniPreview();
 
-    // ── filter button ────────────────────────────────────────────
     const float filterY = previewY - previewH * 0.5f - 14.f;
     auto filterMenu = CCMenu::create();
     filterMenu->setPosition({0.f, 0.f});
@@ -171,10 +163,8 @@ bool CaptureLayerEditorPopup::init() {
     filterMenu->addChild(filterBtn);
     m_mainLayer->addChild(filterMenu, 3);
 
-    // ── lista de capas ───────────────────────────────────────────
     buildList();
 
-    // ── botones inferiores ───────────────────────────────────────
     auto btnMenu = CCMenu::create();
     btnMenu->setPosition({content.width * 0.5f, 20.f});
     btnMenu->setID("bottom-buttons"_spr);
@@ -211,8 +201,6 @@ bool CaptureLayerEditorPopup::init() {
     paimon::markDynamicPopup(this);
     return true;
 }
-
-// ─── enumeracion de capas ─────────────────────────────────────────
 
 void CaptureLayerEditorPopup::populateLayers() {
     auto* pl = PlayLayer::get();
@@ -404,14 +392,11 @@ void CaptureLayerEditorPopup::populateLayers() {
     log::info("[LayerEditor] Enumerated {} layer entries", m_layers.size());
 }
 
-// ─── visibility helpers ───────────────────────────────────────────
-
 bool CaptureLayerEditorPopup::isEntryVisible(int idx) const {
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return false;
     auto const& entry = m_layers[idx];
 
-    // For groups: visible only if ALL children are visible
-    // This makes the group checkbox a "select all / deselect all" control
+    // en grupos solo cuenta visible si lo estan todos los hijos
     if (!entry.childIndices.empty()) {
         for (int child : entry.childIndices) {
             if (!isEntryVisible(child)) return false;
@@ -427,7 +412,7 @@ void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascad
     auto& entry = m_layers[idx];
 
     if (entry.isGroup) {
-        // Groups have no node; just propagate to children
+        // el grupo solo propaga a los hijos
         entry.currentVisibility = visible;
         if (cascadeChildren) {
             for (int child : entry.childIndices) {
@@ -436,9 +421,7 @@ void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascad
         }
     } else {
         if (visible && cascadeChildren) {
-            // Restoring via group cascade: use original visibility
-            // This prevents particles/trails that were originally hidden
-            // from appearing after a group off/on toggle
+            // al volver por cascada recupero la visibilidad original
             entry.currentVisibility = entry.originalVisibility;
             if (entry.node) entry.node->setVisible(entry.originalVisibility);
         } else {
@@ -453,24 +436,22 @@ void CaptureLayerEditorPopup::setEntryVisible(int idx, bool visible, bool cascad
     }
 }
 
-// ─── in-place visual refresh (no rebuild) ─────────────────────────
-
 void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return;
     auto& entry = m_layers[idx];
 
     bool vis = isEntryVisible(idx);
 
-    // Update toggler visual without triggering callback
+    // actualizo el toggler sin disparar callback
     if (entry.toggler) {
         bool isCurrentlyToggled = entry.toggler->isToggled();
-        bool shouldBeToggled = vis; // toggled (checkOn shown) = layer is visible
+        bool shouldBeToggled = vis;
         if (isCurrentlyToggled != shouldBeToggled) {
             entry.toggler->toggle(shouldBeToggled);
         }
     }
 
-    // Update label color
+    // color del label
     if (entry.label) {
         if (entry.isGroup) {
             entry.label->setColor(vis ? ccColor3B{255, 226, 120} : ccColor3B{120, 110, 80});
@@ -480,13 +461,11 @@ void CaptureLayerEditorPopup::refreshRowVisuals(int idx) {
     }
 }
 
-// ─── build list UI ─────────────────────────────────────────────────
-
 bool CaptureLayerEditorPopup::entryMatchesFilter(int idx) const {
     if (m_filterGroupIndex < 0) return true; // show all
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return false;
     if (idx == m_filterGroupIndex) return true;
-    // Check if this entry is a descendant of the selected group
+    // reviso si esta entrada cuelga del grupo elegido
     int parent = m_layers[idx].parentIndex;
     while (parent >= 0) {
         if (parent == m_filterGroupIndex) return true;
@@ -502,7 +481,7 @@ void CaptureLayerEditorPopup::buildList() {
         m_scrollView = nullptr;
     }
 
-    // Clear stale UI refs (nodes were just destroyed)
+    // limpio refs viejas de UI
     for (auto& entry : m_layers) {
         entry.toggler = nullptr;
         entry.label = nullptr;
@@ -520,7 +499,7 @@ void CaptureLayerEditorPopup::buildList() {
     const float viewH    = listTop - listBot;
     const float viewX    = (content.width - listW) * 0.5f;
 
-    // Collect visible (filtered) entry indices
+    // junto solo las filas visibles
     std::vector<int> visibleIndices;
     for (int i = 0; i < static_cast<int>(m_layers.size()); ++i) {
         if (entryMatchesFilter(i)) visibleIndices.push_back(i);
@@ -531,7 +510,7 @@ void CaptureLayerEditorPopup::buildList() {
     m_listRoot->setID("list-root"_spr);
     m_mainLayer->addChild(m_listRoot, 2);
 
-    // Dark panel background
+    // fondo del panel
     auto panel = CCScale9Sprite::create("square02_001.png");
     panel->setColor({0, 0, 0});
     panel->setOpacity(80);
@@ -543,7 +522,6 @@ void CaptureLayerEditorPopup::buildList() {
 
     float totalH = std::max(viewH, numVisible * rowH);
 
-    // ScrollLayer
     m_scrollView = ScrollLayer::create({listW, viewH});
     m_scrollView->setPosition({viewX, listBot});
     m_scrollView->m_contentLayer->setContentSize({listW, totalH});
@@ -553,13 +531,12 @@ void CaptureLayerEditorPopup::buildList() {
         auto& entry = m_layers[i];
         float y = totalH - rowH - row * rowH;
 
-        // Row container
         auto rowNode = CCNode::create();
         rowNode->setContentSize({listW, rowH});
         rowNode->setPosition({0.f, y});
         rowNode->setAnchorPoint({0.f, 0.f});
 
-        // Row background
+        // fondo de la fila
         if (entry.isGroup) {
             auto bg = CCLayerColor::create({255, 215, 90, 30});
             bg->setContentSize({listW, rowH});
@@ -568,7 +545,6 @@ void CaptureLayerEditorPopup::buildList() {
             bg->setPosition({0.f, 0.f});
             rowNode->addChild(bg, -2);
 
-            // Accent bar
             auto accent = CCLayerColor::create({255, 215, 90, 140});
             accent->setContentSize({3.f, rowH - 4.f});
             accent->ignoreAnchorPointForPosition(false);
@@ -584,13 +560,12 @@ void CaptureLayerEditorPopup::buildList() {
             rowNode->addChild(bg, -1);
         }
 
-        // Toggle menu (one per row — avoids CCMenu swallowing scroll)
+        // un menu por fila para no romper el scroll
         auto rowMenu = CCMenu::create();
         rowMenu->setContentSize({listW, rowH});
         rowMenu->setPosition({0.f, 0.f});
         rowMenu->setAnchorPoint({0.f, 0.f});
 
-        // Checkbox toggler
         float checkScale = entry.isGroup ? 0.52f : 0.45f;
         auto onSpr  = CCSprite::createWithSpriteFrameName("GJ_checkOn_001.png");
         auto offSpr = CCSprite::createWithSpriteFrameName("GJ_checkOff_001.png");
@@ -616,7 +591,6 @@ void CaptureLayerEditorPopup::buildList() {
 
         rowNode->addChild(rowMenu, 1);
 
-        // Label
         std::string labelText = entry.name;
         if (!entry.isGroup) {
             labelText = std::string(entry.depth >= 2 ? "• " : "› ") + labelText;
@@ -644,8 +618,6 @@ void CaptureLayerEditorPopup::buildList() {
     m_listRoot->addChild(m_scrollView, 2);
 }
 
-// ─── render mini-preview using CCRenderTexture ──────────────────
-
 void CaptureLayerEditorPopup::updateMiniPreview() {
     if (!m_miniPreview) return;
 
@@ -655,16 +627,14 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
     auto* director = CCDirector::sharedDirector();
     auto winSize = director->getWinSize();
 
-    // Use native CCRenderTexture with proper scale matrix
-    // This avoids the custom RenderTexture's design-resolution changes
-    // that cause the compressed preview
+    // uso CCRenderTexture nativo para no deformar el preview
     const int rtW = 480;
     const int rtH = 270;
 
     auto* rt = CCRenderTexture::create(rtW, rtH, kCCTexture2DPixelFormat_RGBA8888);
     if (!rt) return;
 
-    // Temporarily hide this popup and other system overlays
+    // escondo este popup y otros overlays mientras capturo
     bool selfWasVisible = this->isVisible();
     this->setVisible(false);
 
@@ -704,11 +674,11 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
     kmGLPopMatrix();
     rt->end();
 
-    // Restore overlays
+    // restauro overlays
     for (auto& [node, _] : hiddenOverlays) node->setVisible(true);
     this->setVisible(selfWasVisible);
 
-    // Apply texture to mini preview
+    // paso la textura al mini preview
     auto* rtSprite = rt->getSprite();
     if (rtSprite) {
         auto* rtTex = rtSprite->getTexture();
@@ -725,8 +695,6 @@ void CaptureLayerEditorPopup::updateMiniPreview() {
     }
 }
 
-// ─── callbacks ─────────────────────────────────────────────────
-
 void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
     auto* toggler = typeinfo_cast<CCMenuItemToggler*>(sender);
     if (!toggler) return;
@@ -734,32 +702,26 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
     int idx = toggler->getTag();
     if (idx < 0 || idx >= static_cast<int>(m_layers.size())) return;
 
-    // With create(offSpr, onSpr, ...):
-    //   - Normal (untoggled): shows offSpr (checkOff) = hidden
-    //   - Toggled: shows onSpr (checkOn) = visible
-    // After CCMenuItemToggler fires callback, it has already toggled.
-    // isToggled() == true means it's now showing onSpr (checkOn) = visible
+    // en este toggler, prendido = visible
     bool newVisible = toggler->isToggled();
     setEntryVisible(idx, newVisible, true);
 
     log::info("[LayerEditor] '{}' -> {}", m_layers[idx].name,
         newVisible ? "visible" : "hidden");
 
-    // Refresh visuals of this entry and related entries in-place
-    // (parent groups and children) — NO rebuild!
+    // refresco esta fila y las relacionadas sin rehacer la lista
     refreshRowVisuals(idx);
 
-    // Refresh parent chain
+    // padres
     int parentIdx = m_layers[idx].parentIndex;
     while (parentIdx >= 0) {
         refreshRowVisuals(parentIdx);
         parentIdx = m_layers[parentIdx].parentIndex;
     }
 
-    // Refresh children (for group toggles)
+    // hijos
     for (int child : m_layers[idx].childIndices) {
         refreshRowVisuals(child);
-        // Also refresh grandchildren
         for (int grandchild : m_layers[child].childIndices) {
             refreshRowVisuals(grandchild);
         }
@@ -767,8 +729,6 @@ void CaptureLayerEditorPopup::onToggleLayer(CCObject* sender) {
 
     updateMiniPreview();
 }
-
-// ─── filter dropdown ────────────────────────────────────────────
 
 void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     if (m_filterDropdown) {
@@ -788,7 +748,7 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     const float areaW    = content.width - 16.f;
     const float areaX    = 8.f;
 
-    // Gather top-level branches
+    // ramas de primer nivel
     struct FilterOption { int idx; std::string name; };
     std::vector<FilterOption> opts;
     opts.push_back({-1, tr("Todo", "All")});
@@ -914,13 +874,12 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
     auto previewRef = m_previewPopup;
     this->onClose(nullptr);
 
-    // Also close the CaptureEditPopup so the user sees the recaptured preview immediately
+    // cierro tambien el edit popup para que se note la recaptura
     auto* scene = CCDirector::sharedDirector()->getRunningScene();
     if (scene) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
             if (child != previewRef && typeinfo_cast<FLAlertLayer*>(child) && child != this) {
                 auto* fla = static_cast<FLAlertLayer*>(child);
-                // Skip popups that are not the edit popup (e.g. PauseLayer)
                 if (typeinfo_cast<CaptureEditPopup*>(child)) {
                     fla->keyBackClicked();
                     break;
@@ -929,7 +888,7 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
         }
     }
 
-    // Now recapture with updated layer visibility
+    // recapturo con la visibilidad nueva
     if (previewRef) {
         previewRef->liveRecapture(true);
     }
@@ -948,7 +907,7 @@ void CaptureLayerEditorPopup::onRestoreAllBtn(CCObject* sender) {
         entry.currentVisibility = entry.node ? entry.node->isVisible() : true;
     }
 
-    // Reset filter to show all
+    // vuelvo al filtro completo
     m_filterGroupIndex = -1;
     if (m_filterLabel) m_filterLabel->setString((tr("Filtro: Todo", "Filter: All") + "  \xe2\x96\xbc").c_str());
     closeFilterDropdown();

@@ -100,7 +100,7 @@ ButtonEditOverlay::~ButtonEditOverlay() {
 void ButtonEditOverlay::collectEditableButtons() {
     m_editableButtons.clear();
 
-    // Helper lambda para recoger botones de un menu
+    // lambda para juntar botones de un menu
     auto collectFromMenu = [this](CCMenu* menu) {
         if (!menu) return;
         auto children = menu->getChildren();
@@ -124,10 +124,10 @@ void ButtonEditOverlay::collectEditableButtons() {
         }
     };
 
-    // Recoger del menu principal
+    // junto el menu principal
     collectFromMenu(m_targetMenu);
 
-    // Recoger de menus extra
+    // junto menus extra
     for (auto& em : m_extraMenus) {
         collectFromMenu(em);
     }
@@ -200,7 +200,6 @@ void ButtonEditOverlay::createControls() {
     const float sliderX = centerX - 60.f;
     const float valueX = sliderX + 130.f;
 
-    // --- escala ---
     auto scaleText = CCLabelBMFont::create(Localization::get().getString("edit.scale").c_str(), "goldFont.fnt");
     scaleText->setScale(0.5f);
     scaleText->setAnchorPoint({0.f, 0.5f});
@@ -219,7 +218,6 @@ void ButtonEditOverlay::createControls() {
     m_scaleLabel->setPosition({valueX, row1Y});
     this->addChild(m_scaleLabel);
 
-    // --- opacidad ---
     auto opacityText = CCLabelBMFont::create(Localization::get().getString("edit.opacity").c_str(), "goldFont.fnt");
     opacityText->setScale(0.5f);
     opacityText->setAnchorPoint({0.f, 0.5f});
@@ -447,7 +445,7 @@ void ButtonEditOverlay::onAccept(CCObject*) {
         return;
     }
 
-    // Helper: guardar layouts de un menu
+    // guardo layouts de un menu
     auto saveMenuButtons = [this](CCMenu* menu) {
         if (!menu) return;
         auto children = menu->getChildren();

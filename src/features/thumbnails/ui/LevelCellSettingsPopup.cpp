@@ -5,9 +5,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ────────────────────────────────────────────────────────────
-// helpers
-// ────────────────────────────────────────────────────────────
+// nombres pa mostrar
 
 std::string LevelCellSettingsPopup::getBgTypeDisplayName(std::string const& type) {
     if (type == "gradient") return "Gradient";
@@ -54,9 +52,7 @@ std::string LevelCellSettingsPopup::getAnimEffectDisplayName(std::string const& 
     return effect;
 }
 
-// ────────────────────────────────────────────────────────────
-// load / save
-// ────────────────────────────────────────────────────────────
+// cargar y guardar
 
 void LevelCellSettingsPopup::loadSettings() {
     // Geode 5 getSettingValue is exception-safe — no try/catch needed
@@ -75,7 +71,7 @@ void LevelCellSettingsPopup::loadSettings() {
     m_mythicParticles = Mod::get()->getSettingValue<bool>("levelcell-mythic-particles");
     m_animatedGradient = Mod::get()->getSettingValue<bool>("levelcell-animated-gradient");
 
-    // indices
+    // indices guardados
     for (int i = 0; i < (int)m_bgTypes.size(); i++) {
         if (m_bgTypes[i] == m_currentBgType) { m_bgTypeIndex = i; break; }
     }
@@ -109,9 +105,7 @@ void LevelCellSettingsPopup::saveSettings() {
     s_settingsVersion++;
 }
 
-// ────────────────────────────────────────────────────────────
-// scroll indicator
-// ────────────────────────────────────────────────────────────
+// flecha del scroll
 
 void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     if (!m_scrollArrow || !m_scrollLayer) return;
@@ -130,7 +124,7 @@ void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     } else if (!nearBottom && m_scrollArrow->getOpacity() < 150) {
         m_scrollArrow->stopAllActions();
         m_scrollArrow->runAction(CCFadeTo::create(0.3f, 150));
-        // re-start bounce
+        // reanudar el rebote
         auto moveUp = CCMoveBy::create(0.5f, {0, 3.f});
         auto moveDown = CCMoveBy::create(0.5f, {0, -3.f});
         auto seq = CCSequence::create(moveUp, moveDown, nullptr);
@@ -138,9 +132,7 @@ void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     }
 }
 
-// ────────────────────────────────────────────────────────────
-// setup
-// ────────────────────────────────────────────────────────────
+    // armado
 
 bool LevelCellSettingsPopup::init() {
     if (!Popup::init(260.f, 240.f)) return false;
@@ -149,7 +141,7 @@ bool LevelCellSettingsPopup::init() {
 
     auto content = m_mainLayer->getContentSize();
 
-    // option arrays
+    // listas de opciones
     m_bgTypes = {"gradient", "thumbnail"};
     m_animTypes = {
         "none", "zoom-slide", "zoom", "slide", "bounce",
@@ -164,7 +156,6 @@ bool LevelCellSettingsPopup::init() {
 
     loadSettings();
 
-    // ── ScrollLayer para todo el contenido ──
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 42.f; // espacio para titulo
     float totalH = 560.f; // alto total del contenido scroll
@@ -176,7 +167,7 @@ bool LevelCellSettingsPopup::init() {
     auto* scrollContent = m_scrollLayer->m_contentLayer;
     scrollContent->setContentSize({scrollW, totalH});
 
-    // menu para botones interactivos
+    // menu de controles
     auto navMenu = CCMenu::create();
     navMenu->setPosition({0, 0});
     navMenu->setContentSize({scrollW, totalH});
@@ -185,7 +176,7 @@ bool LevelCellSettingsPopup::init() {
     float cx = scrollW / 2.f;
     float y = totalH - 8.f;
 
-    // helper lambdas
+    // lambdas cortas pa no repetir lo mismo
     auto addTitle = [&](char const* text, char const* info = nullptr) {
         auto label = CCLabelBMFont::create(text, "goldFont.fnt");
         label->setScale(0.4f);
@@ -258,9 +249,7 @@ bool LevelCellSettingsPopup::init() {
         scrollContent->addChild(label);
     };
 
-    // ═══════════════════════════════════════════
-    // BACKGROUND SECTION
-    // ═══════════════════════════════════════════
+    // seccion de fondo
     addTitle("Background Style",
         "Choose how the cell background is rendered.\n"
         "<cy>Gradient</c>: uses level colors as a gradient.\n"
@@ -272,7 +261,7 @@ bool LevelCellSettingsPopup::init() {
         menu_selector(LevelCellSettingsPopup::onBgTypeNext));
     y -= 22.f;
 
-    // Thumbnail Size
+    // tamano de la thumb
     addTitle("Thumbnail Size",
         "Controls how much of the cell width the thumbnail covers.\n"
         "<cy>Lower values</c> = smaller thumbnail on the right.\n"
@@ -291,7 +280,7 @@ bool LevelCellSettingsPopup::init() {
     }
     y -= 22.f;
 
-    // Background Blur
+    // blur del fondo
     addTitle("Background Blur",
         "Applies a gaussian blur to the thumbnail background.\n"
         "<cy>0</c> = no blur (sharp image).\n"
@@ -301,7 +290,7 @@ bool LevelCellSettingsPopup::init() {
         menu_selector(LevelCellSettingsPopup::onBlurChanged));
     y -= 22.f;
 
-    // Background Darkness
+    // oscuridad del fondo
     addTitle("Background Darkness",
         "Darkens the thumbnail background with a semi-transparent overlay.\n"
         "<cy>0</c> = no darkening.\n"
@@ -311,9 +300,7 @@ bool LevelCellSettingsPopup::init() {
         menu_selector(LevelCellSettingsPopup::onDarknessChanged));
     y -= 24.f;
 
-    // ═══════════════════════════════════════════
-    // TOGGLES SECTION
-    // ═══════════════════════════════════════════
+    // opciones extra
     addTitle("Display Options");
     y -= 18.f;
 
@@ -342,9 +329,7 @@ bool LevelCellSettingsPopup::init() {
         "Enables a smooth color-shifting animation on the gradient background.\nThe colors gently cycle based on the level's palette.");
     y -= 24.f;
 
-    // ═══════════════════════════════════════════
-    // ANIMATION SECTION
-    // ═══════════════════════════════════════════
+    // bloque de animacion
     addTitle("Hover & Animation");
     y -= 18.f;
 
@@ -353,7 +338,7 @@ bool LevelCellSettingsPopup::init() {
         "Enables animations when you hover over a level cell with the mouse.\nThe cell will react with the selected animation type.");
     y -= 22.f;
 
-    // Animation Type
+    // tipo de animacion
     addTitle("Animation Type",
         "The animation played when hovering over a cell.\n"
         "<cy>Zoom Slide</c>: subtle zoom + slide.\n"
@@ -367,7 +352,7 @@ bool LevelCellSettingsPopup::init() {
         menu_selector(LevelCellSettingsPopup::onAnimTypeNext));
     y -= 22.f;
 
-    // Animation Speed
+    // velocidad de animacion
     addTitle("Animation Speed",
         "How fast the hover animation plays.\n"
         "<cy>0.1</c> = very slow, smooth.\n"
@@ -386,7 +371,7 @@ bool LevelCellSettingsPopup::init() {
     }
     y -= 22.f;
 
-    // Color Effect
+    // efecto visual
     addTitle("Color Effect",
         "Applies a color/visual filter when hovering.\n"
         "<cy>Brightness</c>: lightens the cell.\n"
@@ -407,7 +392,6 @@ bool LevelCellSettingsPopup::init() {
     // scroll al inicio (arriba)
     m_scrollLayer->moveToTop();
 
-    // ── Indicador de scroll (flecha animada abajo) ──
     auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     if (scrollArrow) {
         scrollArrow->setRotation(-90.f); // apuntar hacia abajo
@@ -433,9 +417,7 @@ bool LevelCellSettingsPopup::init() {
     return true;
 }
 
-// ────────────────────────────────────────────────────────────
-// callbacks: Background Type
-// ────────────────────────────────────────────────────────────
+// cambio de fondo
 
 void LevelCellSettingsPopup::onBgTypePrev(CCObject*) {
     m_bgTypeIndex--;
@@ -453,9 +435,7 @@ void LevelCellSettingsPopup::onBgTypeNext(CCObject*) {
     saveSettings();
 }
 
-// ────────────────────────────────────────────────────────────
-// callbacks: Sliders
-// ────────────────────────────────────────────────────────────
+// sliders
 
 void LevelCellSettingsPopup::onThumbWidthChanged(CCObject*) {
     if (!m_thumbWidthSlider) return;
@@ -495,9 +475,7 @@ void LevelCellSettingsPopup::onAnimSpeedChanged(CCObject*) {
     saveSettings();
 }
 
-// ────────────────────────────────────────────────────────────
-// callbacks: Toggles
-// ────────────────────────────────────────────────────────────
+// toggles
 
 void LevelCellSettingsPopup::onSeparatorToggled(CCObject*) {
     m_showSeparator = !m_separatorToggle->isToggled();
@@ -534,9 +512,7 @@ void LevelCellSettingsPopup::onAnimatedGradientToggled(CCObject*) {
     saveSettings();
 }
 
-// ────────────────────────────────────────────────────────────
-// callbacks: Animation Type
-// ────────────────────────────────────────────────────────────
+// tipo de animacion
 
 void LevelCellSettingsPopup::onAnimTypePrev(CCObject*) {
     m_animTypeIndex--;
@@ -554,9 +530,7 @@ void LevelCellSettingsPopup::onAnimTypeNext(CCObject*) {
     saveSettings();
 }
 
-// ────────────────────────────────────────────────────────────
-// callbacks: Color Effect
-// ────────────────────────────────────────────────────────────
+// efecto de color
 
 void LevelCellSettingsPopup::onAnimEffectPrev(CCObject*) {
     m_animEffectIndex--;
@@ -574,9 +548,7 @@ void LevelCellSettingsPopup::onAnimEffectNext(CCObject*) {
     saveSettings();
 }
 
-// ────────────────────────────────────────────────────────────
-// create
-// ────────────────────────────────────────────────────────────
+// crear popup
 
 LevelCellSettingsPopup* LevelCellSettingsPopup::create() {
     auto ret = new LevelCellSettingsPopup();
@@ -587,12 +559,4 @@ LevelCellSettingsPopup* LevelCellSettingsPopup::create() {
     CC_SAFE_DELETE(ret);
     return nullptr;
 }
-
-
-
-
-
-
-
-
 

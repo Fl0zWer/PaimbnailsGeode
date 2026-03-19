@@ -8,7 +8,7 @@
 
 class VerificationCenterLayer : public cocos2d::CCLayer {
 protected:
-    // pestanas
+    // tabs
     cocos2d::CCMenu* m_tabsMenu = nullptr;
     PendingCategory m_current = PendingCategory::Verify;
 
@@ -17,26 +17,26 @@ protected:
     geode::Scrollbar* m_scrollbar = nullptr;
     cocos2d::CCNode* m_listContainer = nullptr;
 
-    // preview
+    // visor
     cocos2d::CCNode* m_previewPanel = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
-    cocos2d::CCNode* m_previewAnimNode = nullptr; // animated GIF sprite
+    cocos2d::CCNode* m_previewAnimNode = nullptr; // gif animado
     cocos2d::CCLabelBMFont* m_previewLabel = nullptr;
     cocos2d::CCNode* m_previewBorder = nullptr;
     geode::LoadingSpinner* m_previewSpinner = nullptr;
 
-    // suggestion navigation
+    // navegacion de sugerencias
     int m_currentSuggestionIndex = 0;
     cocos2d::CCMenu* m_previewNavMenu = nullptr;
     CCMenuItemSpriteExtra* m_prevArrowBtn = nullptr;
     CCMenuItemSpriteExtra* m_nextArrowBtn = nullptr;
     cocos2d::CCLabelBMFont* m_suggestionCountLabel = nullptr;
 
-    // unclaimed filter
+    // filtro de no reclamados
     bool m_filterUnclaimed = false;
     std::vector<PendingItem> m_allItems;
 
-    // manual refresh
+    // refresh manual
     CCMenuItemSpriteExtra* m_refreshBtn = nullptr;
 
     // datos
@@ -62,7 +62,7 @@ protected:
     cocos2d::CCNode* createRowForItem(const PendingItem& item, float width, int index);
     void highlightRow(int index);
 
-    // preview
+    // visor
     void showPreviewForItem(int index);
     void clearPreview();
     void setPreviewTexture(cocos2d::CCTexture2D* tex);

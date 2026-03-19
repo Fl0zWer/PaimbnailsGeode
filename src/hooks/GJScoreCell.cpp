@@ -204,7 +204,6 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 cs.height = this->m_height;
             }
 
-            // --- logica del fondo (gradiente vs mini blur) ---
             std::string bgType = "gradient";
             float blurIntensity = 3.0f;
             float darkness = 0.2f;
@@ -376,7 +375,6 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 }
             }
 
-            // --- logica del sprite principal ---
             CCNode* mainNode = nullptr;
             float contentW = 0, contentH = 0;
 

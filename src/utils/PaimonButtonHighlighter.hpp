@@ -2,26 +2,26 @@
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <cocos2d.h>
 
-// Helper to mark mod buttons
+// marca botones del mod
 class PaimonButtonHighlighter {
 public:
-    // Register a mod button
+    // registra un boton del mod
     static void registerButton(CCMenuItemSpriteExtra* btn) {
         if (!btn) return;
         
-        // Keep original ID (prefix it)
+        // conserva el ID original y solo le mete prefijo
         std::string currentID = btn->getID();
-        // Avoid double-prefixing
+        // evita prefijarlo dos veces
         if (currentID.find("paimon-mod-btn") != 0) {
             std::string newID = currentID.empty() ? "paimon-mod-btn" : ("paimon-mod-btn-" + currentID);
             btn->setID(newID);
         }
     }
     
-    // Check if a button is registered
+    // mira si ya esta marcado
     static bool isRegisteredButton(CCMenuItemSpriteExtra* btn) {
         if (!btn) return false;
-        // ID-based so it survives remove/re-add.
+        // lo hago por ID para que sobreviva al remove/re-add
         std::string id = btn->getID();
         return id.find("paimon-mod-btn") == 0;
     }

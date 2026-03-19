@@ -7,7 +7,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ── Handler independiente que vive en la escena ──
 // Su CCMenu y su boton NUNCA se hacen invisibles,
 // asi que siempre recibe toques.
 class PeekButtonHandler : public CCNode {
@@ -63,7 +62,6 @@ bool ThumbnailSettingsPopup::init() {
     navMenu->setPosition({0, 0});
     m_mainLayer->addChild(navMenu, 10);
 
-    // ── Background Style ──
     auto styleTitle = CCLabelBMFont::create("Background Style", "goldFont.fnt");
     styleTitle->setScale(0.5f);
     styleTitle->setPosition({cx, y});
@@ -106,7 +104,6 @@ bool ThumbnailSettingsPopup::init() {
     m_styleValueLabel->setPosition({cx, y});
     m_mainLayer->addChild(m_styleValueLabel);
 
-    // ── Extra Effects gear button ──
     y -= 30.f;
 
     auto gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
@@ -121,7 +118,6 @@ bool ThumbnailSettingsPopup::init() {
     extraLabel->setPosition({cx - 10.f, y});
     m_mainLayer->addChild(extraLabel);
 
-    // ── Effect Intensity ──
     y -= 30.f;
 
     auto intTitle = CCLabelBMFont::create("Effect Intensity", "goldFont.fnt");
@@ -153,7 +149,6 @@ bool ThumbnailSettingsPopup::init() {
     m_intensityLabel->setPosition({cx + 95.f, y});
     m_mainLayer->addChild(m_intensityLabel);
 
-    // ── Background Darkness ──
     y -= 30.f;
 
     auto darkTitle = CCLabelBMFont::create("Background Darkness", "goldFont.fnt");
@@ -185,7 +180,6 @@ bool ThumbnailSettingsPopup::init() {
     m_darknessLabel->setPosition({cx + 95.f, y});
     m_mainLayer->addChild(m_darknessLabel);
 
-    // ── Toggles ──
     y -= 32.f;
 
     auto toggleMenu = CCMenu::create();
@@ -215,7 +209,6 @@ bool ThumbnailSettingsPopup::init() {
     m_dynamicSongToggle->toggle(m_dynamicSong);
     toggleMenu->addChild(m_dynamicSongToggle);
 
-    // ── Peek Button ──
     // Usa un handler independiente en la escena para que el boton
     // SIEMPRE reciba toques incluso con los popups invisibles.
     {

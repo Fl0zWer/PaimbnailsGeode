@@ -32,8 +32,6 @@ public:
         return instance;
     }
 
-    // ── Configuracion ───────────────────────────────────────────────
-
     std::string const& serverURL()  const { return m_serverURL; }
     std::string const& modCode()    const { return m_modCode; }
     std::string const& apiKey()     const { return m_apiKey; }
@@ -49,8 +47,6 @@ public:
         m_modCode = code;
         geode::Mod::get()->setSavedValue("mod-code", code);
     }
-
-    // ── Primitivas de request ───────────────────────────────────────
 
     // GET/POST con respuesta texto.
     void request(
@@ -187,8 +183,6 @@ public:
                 if (callback) callback(ok, text);
             });
     }
-
-    // ── Utilidades ──────────────────────────────────────────────────
 
     // URL-encode de un parametro de query.
     static std::string encodeQueryParam(std::string const& value) {

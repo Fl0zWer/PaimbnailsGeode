@@ -7,9 +7,6 @@
 #include "../services/ProfileMusicManager.hpp"
 #include <vector>
 
-/**
- * ProfileMusicPopup, UI para configurarel perfil
- */
 class ProfileMusicPopup : public geode::Popup {
 protected:
     // Datos
@@ -44,14 +41,14 @@ protected:
     float m_waveformWidth = 360.f;
     float m_waveformHeight = 50.f;
 
-    // Dragging state
+    // estado del drag
     bool m_isDraggingStart = false;
     bool m_isDraggingEnd = false;
     bool m_isDraggingSelection = false;
     float m_dragStartX = 0;
     int m_dragStartMs = 0;
 
-    // Max fragment duration (20 seconds)
+    // maximo 20 s por fragmento
     static constexpr int MAX_FRAGMENT_MS = 20000;
     static constexpr int MIN_FRAGMENT_MS = 5000;
 
@@ -59,12 +56,12 @@ protected:
 
     void onClose(cocos2d::CCObject*) override;
 
-    // UI Creation
+    // armado UI
     void createSongIdInput();
     void createWaveformDisplay();
     void createControlButtons();
 
-    // Actions
+    // acciones
     void onLoadSong(cocos2d::CCObject*);
     void onPlayPreview(cocos2d::CCObject*);
     void onStopPreview(cocos2d::CCObject*);
@@ -72,18 +69,18 @@ protected:
     void onDelete(cocos2d::CCObject*);
     void onDownloadSong(cocos2d::CCObject*);
 
-    // Waveform
+    // waveform
     void loadWaveform();
     void renderWaveform();
     void updateSelectionOverlay();
     void updateSelectionLabel();
 
-    // Helpers
+    // util
     int positionToMs(float x);
     float msToPosition(int ms);
     void clampSelection();
 
-    // Touch handling for waveform
+    // toques sobre el waveform
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
@@ -97,7 +94,4 @@ public:
 
     void loadExistingConfig();
 };
-
-
-
 

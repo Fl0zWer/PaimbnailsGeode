@@ -2,29 +2,6 @@
 
 #include <Geode/Geode.hpp>
 
-/**
- * PaimonSupportLayer — pantalla completa estilo GD para apoyar el desarrollo de Paimbnails.
- *
- * Layout:
- *   ┌──────────────────────────────────────────────────────────┐
- *   │                  ★ Support Paimbnails ★                  │
- *   │                                                          │
- *   │   ┌─────────────────────┐  ┌──────────────────────────┐ │
- *   │   │   SUPPORTER BADGE   │  │   BENEFITS LIST          │ │
- *   │   │   ★ preview ★       │  │   ✓ Exclusive badge      │ │
- *   │   │                     │  │   ✓ Priority support     │ │
- *   │   │   "Supporter"       │  │   ✓ Early access         │ │
- *   │   │                     │  │   ✓ Credits in mod       │ │
- *   │   └─────────────────────┘  │   ✓ Help development     │ │
- *   │                            └──────────────────────────┘ │
- *   │                                                          │
- *   │   ┌──────────────────────────────────────────────────┐  │
- *   │   │   Thank you message                              │  │
- *   │   └──────────────────────────────────────────────────┘  │
- *   │                                                          │
- *   │            [ ♥ Donate ]     [ Back ]                     │
- *   └──────────────────────────────────────────────────────────┘
- */
 class PaimonSupportLayer : public cocos2d::CCLayer {
 protected:
     bool init() override;
@@ -33,7 +10,7 @@ protected:
     void onBack(cocos2d::CCObject*);
     void onDonate(cocos2d::CCObject*);
 
-    // UI builders
+    // armado de UI
     void createBackground();
     void createTitle();
     void createBadgePanel();
@@ -43,7 +20,7 @@ protected:
     void createParticles();
     void spawnParticles(float dt);
 
-    // fondo dinamico con thumbnails
+    // fondo dinamico con thumbs
     void loadShowcaseThumbnails();
     void cycleThumbnail(float dt);
     void applyThumbnailBackground(cocos2d::CCTexture2D* texture);

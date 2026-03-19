@@ -40,7 +40,7 @@ bool CommunityHubLayer::init() {
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // fondo
+    // fondo base
     if (!LayerBackgroundManager::get().applyBackground(this, "community_hub")) {
         auto bg = CCSprite::create("GJ_gradientBG.png");
         bg->setPosition(winSize / 2);
@@ -58,7 +58,7 @@ bool CommunityHubLayer::init() {
     title->setPosition({winSize.width / 2, winSize.height - 20.f});
     this->addChild(title, 10);
 
-    // boton volver
+    // volver
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
     menu->setZOrder(20);
@@ -72,7 +72,7 @@ bool CommunityHubLayer::init() {
     backBtn->setPosition(25, winSize.height - 25);
     menu->addChild(backBtn);
 
-    // tabs: Moderadores | Top Creadores | Top Miniaturas
+    // tabs
     auto tabMenu = CCMenu::create();
     tabMenu->setPosition(0, 0);
     tabMenu->setZOrder(10);
@@ -138,7 +138,7 @@ void CommunityHubLayer::onEnterTransitionDidFinish() {
 }
 
 void CommunityHubLayer::update(float dt) {
-    // Verificar que el efecto cueva sigue aplicado (por si el canal cambio)
+    // si otro mod toco el canal, lo vuelvo a poner
     if (!m_caveApplied) {
         applyCaveEffect();
     }
@@ -149,12 +149,12 @@ void CommunityHubLayer::applyCaveEffect() {
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
     if (m_caveApplied) return;
 
-    // Guardar volumen original y reducir al 55% para efecto de lejania
+    // bajo el volumen para que quede mas al fondo
     engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume);
     float caveVol = engine->m_musicVolume * 0.55f;
     engine->m_backgroundMusicChannel->setVolume(caveVol);
 
-    // Lowpass filter — simula paredes de cueva
+    // lowpass pa ese efecto de cueva
     if (!m_lowpassDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
         if (m_lowpassDSP) {
@@ -163,7 +163,7 @@ void CommunityHubLayer::applyCaveEffect() {
         }
     }
 
-    // Reverb sutil — eco de cueva
+    // reverb leve pa rematar
     if (!m_reverbDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
         if (m_reverbDSP) {
@@ -186,7 +186,7 @@ void CommunityHubLayer::removeCaveEffect() {
     if (engine && engine->m_backgroundMusicChannel) {
         if (m_lowpassDSP) engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
         if (m_reverbDSP) engine->m_backgroundMusicChannel->removeDSP(m_reverbDSP);
-        // Restaurar volumen original
+        // vuelvo al volumen normal
         engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
     }
     if (m_lowpassDSP) { m_lowpassDSP->release(); m_lowpassDSP = nullptr; }
@@ -279,7 +279,7 @@ void CommunityHubLayer::loadTab(Tab tab) {
     }
 }
 
-// ==================== MODERATORS TAB ====================
+// mods
 
 void CommunityHubLayer::loadModerators() {
     m_modEntries.clear();
@@ -379,7 +379,7 @@ void CommunityHubLayer::onProfileFetched(std::string const& username, std::strin
             score->m_iconType = IconType::Cube;
             score->m_glowEnabled = json["glow"].asBool().unwrapOr(false);
 
-            // Use modBadge to indicate role visually (2 = elder mod for admin, 1 = mod)
+            // uso modBadge para distinguir admin y mod
             if (role == "admin") {
                 score->m_modBadge = 2;
             } else {
@@ -400,7 +400,7 @@ void CommunityHubLayer::onProfileFetched(std::string const& username, std::strin
 void CommunityHubLayer::onAllProfilesFetched() {
     if (m_loadingSpinner) m_loadingSpinner->setVisible(false);
 
-    // Sort by original server order (admins first)
+    // mantengo el orden del server, con admins arriba
     if (m_modScores && m_modScores->count() > 0) {
         auto toVec = std::vector<Ref<GJUserScore>>();
         for (auto* obj : CCArrayExt<GJUserScore*>(m_modScores)) {
@@ -413,7 +413,6 @@ void CommunityHubLayer::onAllProfilesFetched() {
         };
 
         std::stable_sort(toVec.begin(), toVec.end(), [&](Ref<GJUserScore> const& a, Ref<GJUserScore> const& b) {
-            // Admins (modBadge=2) first, then mods (modBadge=1)
             return a->m_modBadge > b->m_modBadge;
         });
 
@@ -445,7 +444,7 @@ void CommunityHubLayer::buildModeratorsList() {
     m_listContainer = CCNode::create();
     this->addChild(m_listContainer, 5);
 
-    // Use GD's native CustomListView for moderators (consistent with ModeratorsLayer)
+    // aca uso la lista nativa de GD para que se vea igual
     auto listView = CustomListView::create(
         m_modScores,
         BoomListType::Score,
@@ -466,7 +465,7 @@ void CommunityHubLayer::buildModeratorsList() {
     m_listContainer->addChild(listLayer);
 }
 
-// ==================== TOP CREATORS TAB ====================
+// creadores
 
 void CommunityHubLayer::loadTopCreators() {
     m_creatorEntries.clear();
@@ -545,7 +544,7 @@ void CommunityHubLayer::buildCreatorsList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        // alternating background
+        // fondo alternado
         auto cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
         if (!cellBg) cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
         if (cellBg) {
@@ -559,7 +558,7 @@ void CommunityHubLayer::buildCreatorsList() {
         float textX = 10.f;
         float cellMidY = (cellH - 2.f) / 2;
 
-        // rank number
+        // puesto
         auto numLbl = CCLabelBMFont::create(fmt::format("#{}", i + 1).c_str(), "chatFont.fnt");
         numLbl->setScale(0.5f);
         numLbl->setColor({255, 200, 50});
@@ -567,7 +566,7 @@ void CommunityHubLayer::buildCreatorsList() {
         numLbl->setPosition({textX, cellMidY});
         cell->addChild(numLbl, 10);
 
-        // username
+        // nombre
         float nameX = 45.f;
         auto nameLbl = CCLabelBMFont::create(entry.username.c_str(), "bigFont.fnt");
         nameLbl->setScale(0.4f);
@@ -579,7 +578,7 @@ void CommunityHubLayer::buildCreatorsList() {
         }
         cell->addChild(nameLbl, 10);
 
-        // stats line
+        // stats
         auto statsStr = fmt::format("{}: {}  |  {}: {:.1f}",
             loc.getString("community.uploads"), entry.uploadCount,
             loc.getString("community.avg_rating"), entry.avgRating);
@@ -591,11 +590,11 @@ void CommunityHubLayer::buildCreatorsList() {
         cell->addChild(statsLbl, 10);
     }
 
-    // Scroll to top
+    // arranco arriba
     scrollView->m_contentLayer->setPositionY(listH - totalH);
 }
 
-// ==================== TOP THUMBNAILS TAB ====================
+// thumbs
 
 void CommunityHubLayer::loadTopThumbnails() {
     m_thumbnailEntries.clear();
@@ -677,7 +676,7 @@ void CommunityHubLayer::buildThumbnailsList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        // alternating background
+        // fondo alternado
         auto cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
         if (!cellBg) cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
         if (cellBg) {
@@ -688,7 +687,7 @@ void CommunityHubLayer::buildThumbnailsList() {
             cell->addChild(cellBg, 0);
         }
 
-        // thumbnail preview
+        // preview del thumb
         float thumbSize = cellH - 8.f;
         auto thumbPlaceholder = CCLayerColor::create({30, 28, 40, 255});
         thumbPlaceholder->setContentSize({thumbSize * 1.6f, thumbSize});
@@ -726,7 +725,7 @@ void CommunityHubLayer::buildThumbnailsList() {
         float textX = thumbSize * 1.6f + 12.f;
         float cellMidY = (cellH - 2.f) / 2;
 
-        // rank number
+        // puesto
         auto numLbl = CCLabelBMFont::create(fmt::format("#{}", i + 1).c_str(), "chatFont.fnt");
         numLbl->setScale(0.4f);
         numLbl->setColor({255, 200, 50});
@@ -734,7 +733,7 @@ void CommunityHubLayer::buildThumbnailsList() {
         numLbl->setPosition({textX, cellMidY + 14.f});
         cell->addChild(numLbl, 10);
 
-        // level name
+        // nombre del nivel
         auto saved = GameLevelManager::get()->getSavedLevel(levelID);
         std::string levelName = saved ? std::string(saved->m_levelName) : fmt::format("{} {}", loc.getString("community.level"), levelID);
         auto nameLbl = CCLabelBMFont::create(levelName.c_str(), "bigFont.fnt");
@@ -747,7 +746,7 @@ void CommunityHubLayer::buildThumbnailsList() {
         }
         cell->addChild(nameLbl, 10);
 
-        // creator + stats
+        // creador y rating
         auto infoStr = fmt::format("{} {} | {}: {:.1f} ({} {})",
             loc.getString("community.by"), entry.uploadedBy,
             loc.getString("community.rating"), entry.rating,
@@ -760,6 +759,6 @@ void CommunityHubLayer::buildThumbnailsList() {
         cell->addChild(infoLbl, 10);
     }
 
-    // Scroll to top
+    // arranco arriba
     scrollView->m_contentLayer->setPositionY(listH - totalH);
 }

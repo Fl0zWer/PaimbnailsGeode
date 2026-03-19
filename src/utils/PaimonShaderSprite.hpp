@@ -26,11 +26,6 @@ using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 #define kQuadSize sizeof(ccV3F_C4B_T2F)
 #endif
 
-/**
- * sprite con shader custom pa thumbnails.
- * draw() manual pa saltarse hooks de otros mods (ej: happy textures).
- * reutilizable en LevelCell, GJScoreCell, etc.
- */
 class PaimonShaderSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -108,10 +103,6 @@ public:
     }
 };
 
-/**
- * gradiente shader custom con colores por vertice.
- * draw() manual pa saltarse hooks de otros mods.
- */
 class PaimonShaderGradient : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -235,10 +226,6 @@ public:
     }
 };
 
-/**
- * sprite blur pa fondos de celdas con sync a GIF animado.
- * reutilizable en GJScoreCell y otros sitios.
- */
 class PaimonBlurSprite : public CCSprite {
 public:
     float m_intensity = 0.0f;
@@ -309,5 +296,4 @@ public:
         CCSprite::draw();
     }
 };
-
 

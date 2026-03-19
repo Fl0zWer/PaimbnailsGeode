@@ -8,7 +8,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ── helper: pick a random cached thumbnail path ──
 static std::optional<std::filesystem::path> pickRandomThumb() {
     std::vector<std::filesystem::path> candidates;
     std::error_code ec;
@@ -64,12 +63,11 @@ bool PaimonInfoPopup::init(std::string const& title, std::string const& desc) {
 
     this->setTitle(title.c_str());
 
-    // In geode::Popup, m_mainLayer contentSize = popup size (340x240)
-    // All children are positioned relative to this contentSize
+    // todo aca se acomoda segun el contentSize del popup
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // description text — use CCLabelBMFont with word wrap for reliable positioning
+    // TextArea aca me da wrap estable sin pelearme con la posicion
     auto descLabel = TextArea::create(desc, "chatFont.fnt", 1.0f, 300.f, {0.5f, 1.f}, 16.f, false);
     if (descLabel) {
         descLabel->setPosition({cx, content.height - 45.f});
@@ -77,7 +75,7 @@ bool PaimonInfoPopup::init(std::string const& title, std::string const& desc) {
         m_mainLayer->addChild(descLabel);
     }
 
-    // load blurred thumbnail background
+    // meto un fondo con blur si hay thumb
     loadRandomThumbnailBg();
 
     paimon::markDynamicPopup(this);
@@ -91,10 +89,8 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
     auto img = ImageLoadHelper::loadStaticImage(thumbPath.value());
     if (!img.success || !img.texture) return;
 
-    // popup size for the blur target
     auto popupSize = m_size;
 
-    // create blurred sprite sized to the popup
     auto* blurredSpr = Shaders::createBlurredSprite(img.texture, popupSize, 0.06f, true);
     CCSprite* bgSpr = nullptr;
 
@@ -110,7 +106,7 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
         blurredSpr->setColor({180, 180, 200});
         bgSpr = blurredSpr;
     } else {
-        // fallback: plain sprite
+        // si falla el blur, uso sprite normal
         auto* spr = CCSprite::createWithTexture(img.texture);
         if (spr) {
             float scX = popupSize.width / spr->getContentSize().width;
@@ -122,7 +118,7 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
     }
 
     if (bgSpr) {
-        // clip blur to popup area using a CCClippingNode
+        // recorto el fondo al area real del popup
         auto stencil = CCLayerColor::create({255, 255, 255, 255});
         stencil->setContentSize(popupSize);
         stencil->setAnchorPoint({0.5f, 0.5f});
@@ -138,7 +134,7 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
         bgSpr->setPosition(popupSize / 2.f);
         clip->addChild(bgSpr);
 
-        // position clip at same place as m_bgSprite
+        // lo alineo con el background del popup
         if (m_bgSprite) {
             clip->setPosition(m_bgSprite->getPosition());
             stencil->setPosition(popupSize / 2.f);
@@ -148,11 +144,9 @@ void PaimonInfoPopup::loadRandomThumbnailBg() {
             stencil->setPosition(popupSize / 2.f);
         }
 
-        // zOrder 1: above bg (0), below text/buttons (10+, 100)
         m_mainLayer->addChild(clip, 1);
     }
 
     img.texture->release();
 }
-
 

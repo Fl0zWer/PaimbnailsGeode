@@ -7,8 +7,6 @@
 
 using namespace geode::prelude;
 
-// ── uploads ─────────────────────────────────────────────────────────
-
 void ThumbnailSubmissionService::uploadSuggestion(int levelId,
     std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
     if (GJAccountManager::get()->m_accountID <= 0) {
@@ -41,8 +39,6 @@ void ThumbnailSubmissionService::uploadUpdate(int levelId,
             callback(success, message);
         });
 }
-
-// ── downloads ───────────────────────────────────────────────────────
 
 void ThumbnailSubmissionService::downloadSuggestion(int levelId, DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }

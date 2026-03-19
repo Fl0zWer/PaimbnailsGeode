@@ -3,10 +3,6 @@
 #include <vector>
 #include <cstdint>
 
-/**
- * Simple GIF decoder for extracting frames.
- * Supports basic animated GIFs without complex LZW compression.
- */
 class GIFDecoder {
 public:
     struct Frame {
@@ -25,22 +21,10 @@ public:
         bool isAnimated;
     };
 
-    /**
-     * Decodes a GIF from in-memory data.
-     * @param data GIF data
-     * @param size Data size in bytes
-     * @return GIFData with all frames, or an empty structure on failure
-     */
     static GIFData decode(uint8_t const* data, size_t size);
 
-    /**
-     * Verifies whether the data is a valid GIF.
-     */
     static bool isGIF(uint8_t const* data, size_t size);
 
-    /**
-     * Obtiene las dimensiones del GIF sin decodificarlo completo
-     */
     static bool getDimensions(uint8_t const* data, size_t size, int& width, int& height);
 
 private:

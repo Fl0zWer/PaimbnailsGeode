@@ -6,10 +6,6 @@
 #include <string>
 #include <vector>
 
-/**
- * ProfileImageService — subida/bajada de imagenes y configuracion de perfil.
- * Extraido de ThumbnailAPI.
- */
 class ProfileImageService {
 public:
     using UploadCallback   = geode::CopyableFunction<void(bool success, std::string const& message)>;

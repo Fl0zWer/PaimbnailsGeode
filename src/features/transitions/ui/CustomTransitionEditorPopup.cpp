@@ -8,9 +8,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ════════════════════════════════════════════════════════════
 // Static helpers
-// ════════════════════════════════════════════════════════════
 
 static CCMenuItemSpriteExtra* makeArrow(bool left, CCObject* t, SEL_MenuHandler s) {
     auto spr = CCSprite::createWithSpriteFrameName("navArrowBtn_001.png");
@@ -25,9 +23,7 @@ static CCMenuItemSpriteExtra* makeSmallBtn(const char* text, CCObject* t, SEL_Me
     return CCMenuItemSpriteExtra::create(spr, t, s);
 }
 
-// ════════════════════════════════════════════════════════════
 // allActions — all available command actions
-// ════════════════════════════════════════════════════════════
 
 std::vector<CommandAction> const& CustomTransitionEditorPopup::allActions() {
     static const std::vector<CommandAction> actions = {
@@ -66,10 +62,6 @@ std::string CustomTransitionEditorPopup::actionDisplayName(CommandAction a) {
     return "?";
 }
 
-// ════════════════════════════════════════════════════════════
-// Create / Setup
-// ════════════════════════════════════════════════════════════
-
 CustomTransitionEditorPopup* CustomTransitionEditorPopup::create(TransitionConfig* config, bool isGlobal) {
     auto ret = new CustomTransitionEditorPopup();
     if (ret && ret->init(config, isGlobal)) {
@@ -92,9 +84,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     auto ws = m_mainLayer->getContentSize();
     float cx = ws.width / 2.f;
 
-    // ════════════════════════════════════════════════════
-    // LEFT SIDE: Command list with scrollable area
-    // ════════════════════════════════════════════════════
+    // lado izquierdo: lista de comandos
     float listW = 180.f;
     float listH = ws.height - 80.f;
     float listX = 15.f;
@@ -105,7 +95,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     listTitle->setPosition({listX + listW / 2, ws.height - 40.f});
     m_mainLayer->addChild(listTitle);
 
-    // Dark panel behind list
+    // fondo oscuro de la lista
     auto listPanel = CCScale9Sprite::create("square02_001.png");
     listPanel->setColor({0, 0, 0});
     listPanel->setOpacity(80);
@@ -123,7 +113,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_commandListMenu->setContentSize(m_scrollSize);
     m_commandScroll->m_contentLayer->addChild(m_commandListMenu);
 
-    // Buttons below list: Add, Remove, Up, Down, Duplicate
+    // botones de abajo
     float btnY = 18.f;
     float btnBaseX = listX + 10.f;
 
@@ -155,9 +145,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     nextCmdBtn->setPosition({btnBaseX + 175, btnY});
     m_buttonMenu->addChild(nextCmdBtn);
 
-    // ════════════════════════════════════════════════════
     // RIGHT SIDE: Editor panel
-    // ════════════════════════════════════════════════════
     float editX = listX + listW + 10.f;
     float editW = ws.width - editX - 10.f;
     float editH = listH;
@@ -221,7 +209,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     tgtBtn->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(tgtBtn);
 
-    // Duration
+    // duracion
     ey -= 22;
     auto durLbl = CCLabelBMFont::create("Duration:", "bigFont.fnt");
     durLbl->setScale(0.25f);
@@ -242,7 +230,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     durUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(durUp);
 
-    // Delay
+    // delay
     ey -= 22;
     auto delayLbl = CCLabelBMFont::create("Delay:", "bigFont.fnt");
     delayLbl->setScale(0.25f);
@@ -263,7 +251,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     delayUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(delayUp);
 
-    // From value (opacity/scale/rotation depending on action)
+    // valor de salida
     ey -= 22;
     auto fromLbl = CCLabelBMFont::create("From:", "bigFont.fnt");
     fromLbl->setScale(0.25f);
@@ -284,7 +272,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     fromUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(fromUp);
 
-    // To value
+    // valor de llegada
     ey -= 22;
     auto toLbl = CCLabelBMFont::create("To:", "bigFont.fnt");
     toLbl->setScale(0.25f);
@@ -305,7 +293,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     toUp->setPosition({editX + ecx + 70, editY + ey});
     m_buttonMenu->addChild(toUp);
 
-    // Extra info label (for move: shows X/Y, for color: shows RGB, etc.)
+    // info extra
     ey -= 22;
     m_extraLabel = CCLabelBMFont::create("", "chatFont.fnt");
     m_extraLabel->setScale(0.4f);
@@ -313,7 +301,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_extraLabel->setPosition({ecx, ey});
     m_editorPanel->addChild(m_extraLabel);
 
-    // Move X/Y controls
+    // controles X/Y
     ey -= 18;
     auto fxLbl = CCLabelBMFont::create("FromX:", "bigFont.fnt");
     fxLbl->setScale(0.2f);
@@ -384,7 +372,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     tyUp->setTag(115);
     m_buttonMenu->addChild(tyUp);
 
-    // Intensity (for Shake)
+    // intensidad
     ey -= 18;
     auto intLbl = CCLabelBMFont::create("Intensity:", "bigFont.fnt");
     intLbl->setScale(0.2f);
@@ -403,9 +391,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     intUp->setTag(122);
     m_buttonMenu->addChild(intUp);
 
-    // ════════════════════════════════════════════════════
-    // MINI PREVIEW (Scene A -> B)
-    // ════════════════════════════════════════════════════
+    // mini preview
     float prevW = editW - 20;
     float prevH = 40.f;
     float prevY = editY + 5.f;
@@ -415,7 +401,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_previewArea->setPosition({editX + 10, prevY});
     m_mainLayer->addChild(m_previewArea, 6);
 
-    // Scene A mini box
     m_previewFrom = CCLayerColor::create({60, 60, 180, 255}, prevW / 2 - 5, prevH);
     m_previewFrom->setPosition({0, 0});
     m_previewArea->addChild(m_previewFrom);
@@ -425,13 +410,11 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     fromLblPrev->setPosition({(prevW / 2 - 5) / 2, prevH / 2});
     m_previewFrom->addChild(fromLblPrev);
 
-    // Arrow
     auto arrow = CCLabelBMFont::create("->", "bigFont.fnt");
     arrow->setScale(0.3f);
     arrow->setPosition({prevW / 2, prevH / 2});
     m_previewArea->addChild(arrow);
 
-    // Scene B mini box
     m_previewTo = CCLayerColor::create({180, 60, 60, 255}, prevW / 2 - 5, prevH);
     m_previewTo->setPosition({prevW / 2 + 5, 0});
     m_previewArea->addChild(m_previewTo);
@@ -441,9 +424,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     toLblPrev->setPosition({(prevW / 2 - 5) / 2, prevH / 2});
     m_previewTo->addChild(toLblPrev);
 
-    // ════════════════════════════════════════════════════
-    // BOTTOM BUTTONS: Save, Preview, Load Preset
-    // ════════════════════════════════════════════════════
+    // botones de abajo
     float bbY = 18.f;
     float bbX = editX + editW / 2;
 
@@ -469,7 +450,7 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_statusLabel->setPosition({cx, 8});
     m_mainLayer->addChild(m_statusLabel);
 
-    // If no commands, add default ones
+    // si no hay nada, meto un par basicos
     if (m_commands.empty()) {
         m_commands.push_back({CommandAction::FadeOut, "from", 0.25f, 0,0,0,0, 255.f, 0.f});
         m_commands.push_back({CommandAction::FadeIn, "to", 0.25f, 0,0,0,0, 0.f, 255.f});
@@ -481,10 +462,6 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     paimon::markDynamicPopup(this);
     return true;
 }
-
-// ════════════════════════════════════════════════════════════
-// Command list
-// ════════════════════════════════════════════════════════════
 
 void CustomTransitionEditorPopup::rebuildCommandList() {
     m_commandListMenu->removeAllChildren();
@@ -501,7 +478,7 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
 
         float y = contentH - (i + 0.5f) * cellH;
 
-        // Cell background
+        // fondo de la fila
         auto bg = CCScale9Sprite::create("square02_001.png");
         bg->setColor(i == m_selectedIdx ? ccColor3B{80, 120, 200} : ccColor3B{40, 40, 40});
         bg->setOpacity(i == m_selectedIdx ? 180 : 100);
@@ -509,7 +486,7 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
         bg->setPosition({m_scrollSize.width / 2, y});
         m_commandListMenu->addChild(bg);
 
-        // Command index + name
+        // indice + resumen
         char buf[64];
         snprintf(buf, sizeof(buf), "%d. %s [%s] %.2fs",
             i + 1, actionDisplayName(cmd.action).c_str(),
@@ -526,10 +503,6 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
     m_commandScroll->m_contentLayer->setContentSize({m_scrollSize.width, contentH});
     m_commandScroll->scrollToTop();
 }
-
-// ════════════════════════════════════════════════════════════
-// Selection
-// ════════════════════════════════════════════════════════════
 
 void CustomTransitionEditorPopup::selectCommand(int idx) {
     if (idx < 0 || idx >= static_cast<int>(m_commands.size())) {
@@ -548,9 +521,7 @@ TransitionCommand& CustomTransitionEditorPopup::selectedCmd() {
     return dummy;
 }
 
-// ════════════════════════════════════════════════════════════
 // Editor panel display
-// ════════════════════════════════════════════════════════════
 
 void CustomTransitionEditorPopup::updateEditorPanel() {
     if (m_selectedIdx < 0 || m_selectedIdx >= static_cast<int>(m_commands.size())) {
@@ -684,9 +655,7 @@ void CustomTransitionEditorPopup::refreshDisplay() {
     updateEditorPanel();
 }
 
-// ════════════════════════════════════════════════════════════
 // Command list callbacks
-// ════════════════════════════════════════════════════════════
 
 void CustomTransitionEditorPopup::onAddCommand(CCObject*) {
     TransitionCommand cmd;
@@ -752,9 +721,7 @@ void CustomTransitionEditorPopup::onNextCommand(CCObject*) {
         selectCommand(0);
 }
 
-// ════════════════════════════════════════════════════════════
 // Editor callbacks
-// ════════════════════════════════════════════════════════════
 
 void CustomTransitionEditorPopup::onActionPrev(CCObject*) {
     if (m_selectedIdx < 0) return;
@@ -903,9 +870,7 @@ void CustomTransitionEditorPopup::onIntensityUp(CCObject*) {
     updateEditorPanel();
 }
 
-// ════════════════════════════════════════════════════════════
-// Image selection
-// ════════════════════════════════════════════════════════════
+// imagen
 
 void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
     if (m_selectedIdx < 0) {
@@ -919,7 +884,7 @@ void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
         return;
     }
 
-    // Open file dialog for image selection
+    // abro el selector de archivo
     pt::openImageFileDialog([this](std::optional<std::filesystem::path> path) {
         if (!path) return;
         if (m_selectedIdx >= 0 && m_selectedIdx < static_cast<int>(m_commands.size())) {
@@ -930,9 +895,7 @@ void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
     });
 }
 
-// ════════════════════════════════════════════════════════════
-// Preview
-// ════════════════════════════════════════════════════════════
+// preview
 
 void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     if (m_commands.empty()) {
@@ -943,7 +906,7 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     auto director = CCDirector::sharedDirector();
     auto winSize = director->getWinSize();
 
-    // Build temp destination scene
+    // escena temporal del preview
     auto destScene = CCScene::create();
     auto bg = CCLayerGradient::create(
         {40, 160, 80, 255}, {80, 40, 160, 255}, {0.5f, 1.0f});
@@ -959,11 +922,11 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     sub->setScale(0.5f);
     destScene->addChild(sub);
 
-    // Calculate total duration from commands
+    // saco la duracion total
     float totalDur = 0.f;
     for (auto const& cmd : m_commands) totalDur += cmd.duration + cmd.delay;
 
-    // Add auto-return
+    // nodo para volver solo
     class ReturnNode : public CCNode {
     public:
         static ReturnNode* create(float d) {
@@ -984,11 +947,11 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     auto rn = ReturnNode::create(totalDur + 1.5f);
     if (rn) destScene->addChild(rn);
 
-    // Create custom transition from current commands
+    // armo la transicion con lo actual
     auto fromScene = director->getRunningScene();
     auto* transScene = CustomTransitionScene::create(fromScene, destScene, m_commands, false);
 
-    // Keep the popup alive locally so onClose can't destroy it mid-function.
+    // lo retengo para que onClose no lo mate en medio del flujo
     [[maybe_unused]] Ref<CustomTransitionEditorPopup> safeSelf = this;
     this->onClose(nullptr);
 
@@ -998,9 +961,7 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     TransitionManager::get().setEnabled(wasEnabled);
 }
 
-// ════════════════════════════════════════════════════════════
-// Save
-// ════════════════════════════════════════════════════════════
+// guardar
 
 void CustomTransitionEditorPopup::onSave(CCObject*) {
     if (!m_config) return;
@@ -1020,12 +981,10 @@ void CustomTransitionEditorPopup::onSave(CCObject*) {
     PaimonNotify::create("Custom transition saved!", NotificationIcon::Success)->show();
 }
 
-// ════════════════════════════════════════════════════════════
-// Presets
-// ════════════════════════════════════════════════════════════
+// presets
 
 void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
-    // Show preset menu
+    // menu de presets
     geode::createQuickPopup(
         "Load Preset",
         "<cy>1</c> Fade\n"
@@ -1037,7 +996,7 @@ void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
         "Cancel", "1",
         [this](auto*, bool btn2) {
             if (!btn2) return;
-            // Load preset 1: Simple fade
+            // cargo el preset 1
             m_commands.clear();
             m_commands.push_back({CommandAction::FadeOut, "from", 0.3f, 0,0,0,0, 255.f, 0.f});
             m_commands.push_back({CommandAction::FadeIn, "to", 0.3f, 0,0,0,0, 0.f, 255.f});
@@ -1046,18 +1005,17 @@ void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
         }
     );
 
-    // Additional presets available through separate quick popups
-    // The user can create their own via the editor
+    // el resto queda para despues o para armarlo a mano
 }
 
 void CustomTransitionEditorPopup::updatePreviewArea() {
-    // Mini preview shows timeline state
+    // mini preview
     if (m_commands.empty()) return;
 
     float totalDur = 0.f;
     for (auto const& cmd : m_commands) totalDur += cmd.duration + cmd.delay;
 
-    // Visualize by adjusting box opacities based on command sequence
+    // lo dibujo segun la secuencia actual
     bool hasFadeOut = false, hasFadeIn = false;
     for (auto const& cmd : m_commands) {
         if (cmd.action == CommandAction::FadeOut && cmd.target == "from") hasFadeOut = true;

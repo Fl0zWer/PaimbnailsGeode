@@ -36,4 +36,3 @@ PaimonInfoTarget* PaimonInfoTarget::shared() {
     return s_inst.data();
 }
 
-

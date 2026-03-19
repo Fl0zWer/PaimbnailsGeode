@@ -60,10 +60,6 @@ public:
 private:
     DynSongLayer m_currentLayer = DynSongLayer::None;
 
-    // Crossfade song-to-song: canal temporal para la cancion saliente
-    FMOD::Channel* m_fadeOutChannel = nullptr;
-    FMOD::Sound* m_fadeOutSound = nullptr;
-
     // Crossfade
     static constexpr int FADE_STEPS = 20;
     bool m_isFadingIn = false;
@@ -89,16 +85,14 @@ private:
     void fadeInMainChannel(float targetVolume);
     void fadeOutAndRestore();
     void executeFadeStep(int step, int totalSteps, float mainFrom, float mainTo,
-                         float fadeOutFrom, float fadeOutTo, bool restoreAfter);
+                         bool restoreAfter);
     void executeSongTransition(int step, int totalSteps,
-                               float newFrom, float newTo, float oldFrom, float oldTo);
+                               float volFrom, float volTo);
     void executeLevelStartFade(int step, int totalSteps, float volFrom);
-    void cleanupFadeOutChannel();
 
     // Seek aleatorio en el canal principal
     void applyRandomSeek();
 
-    // ─── Rotacion de canciones por nivel ──────────────────────────
     std::unordered_map<int, std::vector<std::string>> m_songRotationCache;
     std::vector<std::string> getAllSongPaths(GJGameLevel* level);
     std::string getNextRotationSong(GJGameLevel* level);

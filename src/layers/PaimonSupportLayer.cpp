@@ -13,8 +13,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ── factory ──────────────────────────────────────────────
-
 PaimonSupportLayer* PaimonSupportLayer::create() {
     auto ret = new PaimonSupportLayer();
     if (ret && ret->init()) {
@@ -31,8 +29,6 @@ CCScene* PaimonSupportLayer::scene() {
     return scene;
 }
 
-// ── init ─────────────────────────────────────────────────
-
 bool PaimonSupportLayer::init() {
     if (!CCLayer::init()) return false;
 
@@ -48,8 +44,6 @@ bool PaimonSupportLayer::init() {
 
     return true;
 }
-
-// ── background ───────────────────────────────────────────
 
 void PaimonSupportLayer::createBackground() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
@@ -94,8 +88,6 @@ void PaimonSupportLayer::createBackground() {
     // iniciar carga de thumbnails showcase
     loadShowcaseThumbnails();
 }
-
-// ── thumbnail background dinamico ────────────────────────
 
 void PaimonSupportLayer::loadShowcaseThumbnails() {
     // escanear el cache local de thumbnails en disco
@@ -228,8 +220,6 @@ void PaimonSupportLayer::applyThumbnailBackground(CCTexture2D* texture) {
     m_bgThumb = newBg;
 }
 
-// ── title ────────────────────────────────────────────────
-
 void PaimonSupportLayer::createTitle() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     float topY = winSize.height - 24.f;
@@ -265,8 +255,6 @@ void PaimonSupportLayer::createTitle() {
     subtitle->setColor({200, 180, 255});
     this->addChild(subtitle, 2);
 }
-
-// ── badge panel (izquierda) ──────────────────────────────
 
 void PaimonSupportLayer::createBadgePanel() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
@@ -349,8 +337,6 @@ void PaimonSupportLayer::createBadgePanel() {
     this->addChild(badgeDesc, 3);
 }
 
-// ── benefits panel (derecha) ─────────────────────────────
-
 void PaimonSupportLayer::createBenefitsPanel() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -423,8 +409,6 @@ void PaimonSupportLayer::createBenefitsPanel() {
     }
 }
 
-// ── thank you section ────────────────────────────────────
-
 void PaimonSupportLayer::createThankYouSection() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -467,12 +451,9 @@ void PaimonSupportLayer::createThankYouSection() {
     }
 }
 
-// ── buttons ──────────────────────────────────────────────
-
 void PaimonSupportLayer::createButtons() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // ── boton Donate (principal, grande, dorado) ──
     auto donateMenu = CCMenu::create();
     donateMenu->setPosition({winSize.width / 2, 28.f});
     this->addChild(donateMenu, 5);
@@ -496,7 +477,6 @@ void PaimonSupportLayer::createButtons() {
         donateSpr->addChild(heartIcon, 10);
     }
 
-    // ── boton Back ──
     auto backMenu = CCMenu::create();
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     auto backBtn = CCMenuItemSpriteExtra::create(
@@ -508,8 +488,6 @@ void PaimonSupportLayer::createButtons() {
     backMenu->setPosition({winSize.width / 2, winSize.height / 2});
     this->addChild(backMenu, 5);
 }
-
-// ── particles ────────────────────────────────────────────
 
 void PaimonSupportLayer::createParticles() {
     // crear primera tanda y programar las siguientes
@@ -551,8 +529,6 @@ void PaimonSupportLayer::spawnParticles(float dt) {
         star->runAction(CCRepeatForever::create(CCRotateBy::create(2.f, rotSpeed)));
     }
 }
-
-// ── navigation ───────────────────────────────────────────
 
 void PaimonSupportLayer::onBack(CCObject*) {
     CCDirector::sharedDirector()->popSceneWithTransition(0.5f, kPopTransitionFade);

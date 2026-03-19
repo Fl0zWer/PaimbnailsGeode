@@ -51,7 +51,7 @@ bool LeaderboardHistoryLayer::init() {
     title->setPosition({winSize.width / 2, winSize.height - 20.f});
     this->addChild(title, 10);
 
-    // boton volver
+    // volver
     auto menu = CCMenu::create();
     menu->setPosition(0, 0);
     menu->setZOrder(20);
@@ -65,7 +65,7 @@ bool LeaderboardHistoryLayer::init() {
     backBtn->setPosition(25, winSize.height - 25);
     menu->addChild(backBtn);
 
-    // tabs daily / weekly
+    // tabs
     auto tabMenu = CCMenu::create();
     tabMenu->setPosition(0, 0);
     tabMenu->setZOrder(10);
@@ -103,7 +103,7 @@ bool LeaderboardHistoryLayer::init() {
     auto weeklyBtn = createTab("Weekly", "weekly", {centerX + 55.f, topY});
     tabMenu->addChild(weeklyBtn);
 
-    // botones de paginacion
+    // flechas de pagina
     m_pageMenu = CCMenu::create();
     m_pageMenu->setPosition(0, 0);
     m_pageMenu->setZOrder(15);
@@ -141,7 +141,7 @@ bool LeaderboardHistoryLayer::init() {
     
     CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, 0, false);
 
-    // aplicar efecto cueva sobre musica de menu
+    // arranco con el audio amortiguado
     applyCaveEffect();
     this->scheduleUpdate();
 
@@ -163,7 +163,7 @@ void LeaderboardHistoryLayer::onExitTransitionDidStart() {
 }
 
 void LeaderboardHistoryLayer::update(float dt) {
-    // Verificar que el efecto cueva sigue aplicado
+    // si otro mod lo saco, lo repongo
     if (!m_caveApplied) {
         applyCaveEffect();
     }
@@ -174,12 +174,12 @@ void LeaderboardHistoryLayer::applyCaveEffect() {
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
     if (m_caveApplied) return;
 
-    // Guardar volumen original y reducir al 55% para efecto de lejania
+    // bajo el volumen para que quede al fondo
     engine->m_backgroundMusicChannel->getVolume(&m_savedBgVolume);
     float caveVol = engine->m_musicVolume * 0.55f;
     engine->m_backgroundMusicChannel->setVolume(caveVol);
 
-    // Lowpass filter
+    // lowpass
     if (!m_lowpassDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_LOWPASS, &m_lowpassDSP);
         if (m_lowpassDSP) {
@@ -188,7 +188,7 @@ void LeaderboardHistoryLayer::applyCaveEffect() {
         }
     }
 
-    // Reverb sutil
+    // reverb leve
     if (!m_reverbDSP) {
         engine->m_system->createDSPByType(FMOD_DSP_TYPE_SFXREVERB, &m_reverbDSP);
         if (m_reverbDSP) {
@@ -220,7 +220,7 @@ void LeaderboardHistoryLayer::removeCaveEffect() {
 
 bool LeaderboardHistoryLayer::ccMouseScroll(float x, float y) {
 #if !defined(GEODE_IS_WINDOWS)
-    // En no-Windows no hay mouse scroll, CCScrollView maneja touch nativo
+    // fuera de Windows esto ya lo maneja el scroll nativo
     return false;
 #else
     if (!m_scrollView) return false;
@@ -359,7 +359,7 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
                             }
                         }
                     }
-                    // total del servidor para paginacion
+                    // total real para saber cuantas paginas hay
                     int total = data["total"].asInt().unwrapOr(0);
                     if (total > 0) {
                         layer->m_totalServerItems = total;
@@ -373,7 +373,7 @@ void LeaderboardHistoryLayer::loadHistory(std::string type) {
         if (layer->m_loadingSpinner) layer->m_loadingSpinner->setVisible(false);
         layer->createList();
 
-        // resolver nombres desde GD server en batch
+        // resuelvo nombres faltantes en lote
         if (!layer->m_entries.empty()) {
             std::string idList;
             for (auto& e : layer->m_entries) {
@@ -416,10 +416,10 @@ void LeaderboardHistoryLayer::createList() {
         return;
     }
 
-    // los entries ya son solo los de esta pagina (cargados con offset/limit)
+    // aca ya vienen solo los de esta pagina
     int pageCount = (int)m_entries.size();
 
-    // area de scroll
+    // area scrolleable
     float listW = 380.f;
     float cellH = 55.f;
     float listH = winSize.height - 90.f;
@@ -451,7 +451,7 @@ void LeaderboardHistoryLayer::createList() {
         cell->setPosition({listW / 2, y});
         content->addChild(cell);
 
-        // fondo de celda alternado
+        // fondo alternado
         auto cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
         if (!cellBg) cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
         if (cellBg) {
@@ -499,7 +499,7 @@ void LeaderboardHistoryLayer::createList() {
 
         float textX = thumbSize * 1.6f + 12.f;
 
-        // numero de orden
+        // puesto global
         auto numLbl = CCLabelBMFont::create(fmt::format("#{}", globalIdx + 1).c_str(), "chatFont.fnt");
         numLbl->setScale(0.4f);
         numLbl->setColor({255, 200, 50});
@@ -544,7 +544,7 @@ void LeaderboardHistoryLayer::createList() {
             }
         }
 
-        // boton click
+        // click sobre toda la fila
         auto cellMenu = CCMenu::create();
         cellMenu->setPosition({0, 0});
         cellMenu->setContentSize(cell->getContentSize());

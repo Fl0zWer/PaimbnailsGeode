@@ -8,9 +8,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ════════════════════════════════════════════════════════════
 // Singleton
-// ════════════════════════════════════════════════════════════
 
 TransitionManager::TransitionManager() {
     m_globalConfig.type = TransitionType::Fade;
@@ -22,9 +20,7 @@ TransitionManager& TransitionManager::get() {
     return instance;
 }
 
-// ════════════════════════════════════════════════════════════
 // allTypes — lista ordenada para la UI
-// ════════════════════════════════════════════════════════════
 
 std::vector<TransitionType> const& TransitionManager::allTypes() {
     static const std::vector<TransitionType> types = {
@@ -62,9 +58,7 @@ std::vector<TransitionType> const& TransitionManager::allTypes() {
     return types;
 }
 
-// ════════════════════════════════════════════════════════════
 // String <-> Enum
-// ════════════════════════════════════════════════════════════
 
 TransitionType TransitionManager::typeFromString(std::string const& s) {
     if (s == "fade")             return TransitionType::Fade;
@@ -244,17 +238,13 @@ std::string TransitionManager::actionToString(CommandAction a) {
     return "wait";
 }
 
-// ════════════════════════════════════════════════════════════
 // Config path
-// ════════════════════════════════════════════════════════════
 
 std::filesystem::path TransitionManager::getConfigPath() const {
     return Mod::get()->getSaveDir() / "transitions.json";
 }
 
-// ════════════════════════════════════════════════════════════
 // JSON helpers
-// ════════════════════════════════════════════════════════════
 
 static TransitionCommand parseCommand(matjson::Value const& obj) {
     TransitionCommand cmd;
@@ -359,9 +349,7 @@ static matjson::Value configToJson(TransitionConfig const& cfg) {
     return obj;
 }
 
-// ════════════════════════════════════════════════════════════
 // Load / Save
-// ════════════════════════════════════════════════════════════
 
 void TransitionManager::loadConfig() {
     auto path = getConfigPath();
@@ -420,9 +408,7 @@ void TransitionManager::saveConfig() {
     else log::info("[TransitionManager] Config saved");
 }
 
-// ════════════════════════════════════════════════════════════
 // Level entry config
-// ════════════════════════════════════════════════════════════
 
 TransitionConfig TransitionManager::getLevelEntryConfig() const {
     return m_hasLevelEntryConfig ? m_levelEntryConfig : m_globalConfig;
@@ -438,9 +424,7 @@ void TransitionManager::clearLevelEntryConfig() {
     m_levelEntryConfig = TransitionConfig{};
 }
 
-// ════════════════════════════════════════════════════════════
 // createTransition
-// ════════════════════════════════════════════════════════════
 
 CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScene* dest) {
     if (!m_loaded) loadConfig();
@@ -464,14 +448,12 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
     return trans ? static_cast<CCScene*>(trans) : dest;
 }
 
-// ════════════════════════════════════════════════════════════
 // Convenience methods
 //
 // Estos metodos aplican la transicion global configurada por el usuario
 // al navegar a escenas propias del mod (PaiConfigLayer, LeaderboardLayer, etc.).
 // Si las transiciones estan deshabilitadas o no hay config cargada,
 // hacen la navegacion directa sin efectos.
-// ════════════════════════════════════════════════════════════
 
 void TransitionManager::replaceScene(CCScene* dest) {
     if (!dest) return;
@@ -497,9 +479,7 @@ void TransitionManager::pushScene(CCScene* dest) {
     }
 }
 
-// ════════════════════════════════════════════════════════════
 // Native transitions
-// ════════════════════════════════════════════════════════════
 
 CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig const& cfg, CCScene* dest) const {
     float dur = cfg.duration;
@@ -555,9 +535,7 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
     }
 }
 
-// ════════════════════════════════════════════════════════════
 // Script parser
-// ════════════════════════════════════════════════════════════
 
 std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string const& scriptPath) const {
     std::vector<TransitionCommand> commands;

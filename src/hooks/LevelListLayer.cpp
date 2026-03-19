@@ -39,10 +39,8 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         paimon::SessionState::get().currentListID = 0;
         if (!LevelBrowserLayer::init(p0)) return false;
 
-        // ── Aplicar fondo custom unificado ──
         LayerBackgroundManager::get().applyBackground(this, "browser");
 
-        // ── Boton engranaje en search-menu ──
         addSettingsGearButton();
 
         return true;

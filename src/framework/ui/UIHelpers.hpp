@@ -1,7 +1,6 @@
 #pragma once
 
-// UIHelpers.hpp — Funciones de fabrica para componentes UI reutilizables.
-// Reduce la repeticion de codigo de creacion de UI entre popups y capas.
+// util de UI para varias capas y popups
 
 #include <Geode/Geode.hpp>
 #include <cocos2d.h>
@@ -10,7 +9,7 @@ using namespace geode::prelude;
 
 namespace paimon::ui {
 
-// Crea un menu horizontal de pie de pagina (fila inferior de popup).
+// menu horizontal para el pie del popup
 inline cocos2d::CCMenu* makeFooterMenu(
     std::initializer_list<cocos2d::CCNode*> items,
     float gap = 10.f
@@ -31,7 +30,7 @@ inline cocos2d::CCMenu* makeFooterMenu(
     return menu;
 }
 
-// Crea un boton circular de icono (estilo GJ: circulo con sprite adentro).
+// boton circular con icono, estilo GD
 inline CCMenuItemSpriteExtra* makeCircleIconButton(
     char const* spriteName,
     cocos2d::CCObject* target,

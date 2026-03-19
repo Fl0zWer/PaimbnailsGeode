@@ -15,9 +15,6 @@ using namespace geode::prelude;
 using namespace cocos2d;
 using namespace Shaders;
 
-
-
-
 namespace {
     struct Header { int32_t w; int32_t h; int32_t fmt; };
 }
@@ -445,7 +442,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
     auto container = CCNode::create();
     container->setContentSize(cs);
 
-    // --- logica del fondo ---
     CCNode* bg = nullptr;
 
     // tipo de fondo final que se va a usar
@@ -460,7 +456,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
 
     if (bgType == "thumbnail") {
         if (gifSprite) {
-            // --- fondo con GIF (blur en tiempo real) ---
             auto bgSprite = AnimatedGIFSprite::createFromCache(config.gifKey);
             if (bgSprite) {
                 CCSize targetSize = cs;
@@ -587,7 +582,6 @@ CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig con
         return container;
     }
 
-    // --- sprite de perfil ---
     CCNode* mainSprite = nullptr;
     float contentW = 0, contentH = 0;
 

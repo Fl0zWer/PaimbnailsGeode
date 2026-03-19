@@ -17,10 +17,6 @@ using cocos2d::CCImage;
 using cocos2d::ccTexParams;
 using cocos2d::kCCTexture2DPixelFormat_RGBA8888;
 
-/**
- * helper pa cargar imagen desde disco y prepararla pa CapturePreviewPopup.
- * elimina codigo duplicado entre processProfileImage y processProfileImg.
- */
 namespace ImageLoadHelper {
 
     struct LoadedImage {
@@ -32,9 +28,6 @@ namespace ImageLoadHelper {
         std::string error;
     };
 
-    /**
-     * Crea textura + buffer desde datos RGBA crudos.
-     */
     inline LoadedImage createFromRGBA(uint8_t const* rgba, int w, int h) {
         LoadedImage result;
 
@@ -60,10 +53,6 @@ namespace ImageLoadHelper {
         return result;
     }
 
-    /**
-     * Fallback con stb_image desde memoria: decodifica JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
-     * Soporta mas formatos y perfiles de color que CCImage de cocos2d-x.
-     */
     inline LoadedImage loadWithSTBFromMemory(uint8_t const* fileData, size_t fileSize) {
         LoadedImage result;
 
@@ -91,10 +80,6 @@ namespace ImageLoadHelper {
         return result;
     }
 
-    /**
-     * Fallback con stb_image: decodifica JPEG, PNG, BMP, TGA, PSD, GIF, HDR, PIC.
-     * Soporta mas formatos y perfiles de color que CCImage de cocos2d-x.
-     */
     inline LoadedImage loadWithSTB(std::filesystem::path const& path) {
         LoadedImage result;
 
@@ -123,19 +108,6 @@ namespace ImageLoadHelper {
         return result;
     }
 
-    /**
-     * carga imagen estatica (png/jpg/bmp/tga/psd/etc) desde path.
-     * devuelve textura + buffer RGBA listo pa CapturePreviewPopup.
-     *
-     * Intenta en orden:
-     * 1. CCImage::initWithImageFile (rapido, nativo cocos2d)
-     * 2. CCImage::initWithImageData con bytes crudos
-     * 3. stb_image fallback (soporta BMP, TGA, PSD, JPEG CMYK, etc)
-     *
-     * @param path ruta al archivo
-     * @param maxSizeMB tamano maximo en MB (0 = sin limite)
-     * @return LoadedImage con los datos o error
-     */
     inline LoadedImage loadStaticImage(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         LoadedImage result;
 
@@ -203,13 +175,6 @@ namespace ImageLoadHelper {
         return result;
     }
 
-    /**
-     * lee archivo en binario (gif, png, etc).
-     *
-     * @param path ruta al archivo
-     * @param maxSizeMB tamano maximo en MB
-     * @return vector con datos o vacio si falla
-     */
     inline std::vector<uint8_t> readBinaryFile(std::filesystem::path const& path, size_t maxSizeMB = 10) {
         std::ifstream file(path, std::ios::binary);
         if (!file) return {};
@@ -223,9 +188,6 @@ namespace ImageLoadHelper {
         return data;
     }
 
-    /**
-     * verifica si la extension es gif (case insensitive)
-     */
     inline bool isGIF(std::filesystem::path const& path) {
         std::string ext = geode::utils::string::pathToString(path.extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);

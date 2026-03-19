@@ -11,18 +11,14 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ════════════════════════════════════════════════════════════
 // singleton
-// ════════════════════════════════════════════════════════════
 
 PetManager& PetManager::get() {
     static PetManager inst;
     return inst;
 }
 
-// ════════════════════════════════════════════════════════════
-// paths
-// ════════════════════════════════════════════════════════════
+// rutas
 
 std::filesystem::path PetManager::configPath() const {
     return Mod::get()->getSaveDir() / "pet_config.json";
@@ -37,9 +33,7 @@ std::filesystem::path PetManager::galleryDir() const {
     return dir;
 }
 
-// ════════════════════════════════════════════════════════════
-// config persistence
-// ════════════════════════════════════════════════════════════
+// persistencia
 
 void PetManager::loadConfig() {
     auto path = configPath();
@@ -95,7 +89,7 @@ void PetManager::loadConfig() {
         m_config.offsetX         = getF("offsetX", 0.0);
         m_config.offsetY         = getF("offsetY", 25.0);
 
-        // visible layers
+        // layers visibles
         if (j.contains("visibleLayers")) {
             m_config.visibleLayers.clear();
             auto arr = j["visibleLayers"];
@@ -109,7 +103,7 @@ void PetManager::loadConfig() {
                 }
             }
         }
-        // if key not present, keep the default (all PET_LAYER_OPTIONS active)
+        // si no existe la key, me quedo con el default
 }
 
 void PetManager::saveConfig() {
@@ -136,7 +130,7 @@ void PetManager::saveConfig() {
         j["offsetX"]         = static_cast<double>(m_config.offsetX);
         j["offsetY"]         = static_cast<double>(m_config.offsetY);
 
-        // visible layers
+        // layers visibles
         matjson::Value layers = matjson::Value::array();
         for (auto& l : m_config.visibleLayers) {
             layers.push(l);
@@ -152,15 +146,13 @@ void PetManager::saveConfig() {
         f << str;
 }
 
-// ════════════════════════════════════════════════════════════
-// layer visibility check
-// ════════════════════════════════════════════════════════════
+// visibilidad por escena
 
 bool PetManager::shouldShowOnCurrentScene() const {
-    // empty set = visible everywhere
+    // vacio = visible en todos lados
     if (m_config.visibleLayers.empty()) return true;
 
-    // if all layers are selected, treat as visible everywhere
+    // si estan todos marcados, es lo mismo que mostrar siempre
     bool allSelected = true;
     for (auto& opt : PET_LAYER_OPTIONS) {
         if (m_config.visibleLayers.count(opt) == 0) {
@@ -173,21 +165,20 @@ bool PetManager::shouldShowOnCurrentScene() const {
     auto scene = CCDirector::sharedDirector()->getRunningScene();
     if (!scene) return false;
 
-    // check all children of the scene for matching layer class names
+    // reviso los hijos de la escena
     auto children = scene->getChildren();
     if (!children) return false;
 
     for (auto* child : CCArrayExt<CCNode*>(children)) {
         if (!child) continue;
 
-        // get the class name from typeid
         std::string className = typeid(*child).name();
 
-        // MSVC prepends "class " to class names
+        // en MSVC viene con "class " adelante
         auto pos = className.find("class ");
         if (pos == 0) className = className.substr(6);
 
-        // also try Geode node ID
+        // tambien pruebo por node ID
         std::string nodeID = child->getID();
 
         for (auto& layer : m_config.visibleLayers) {
@@ -198,9 +189,7 @@ bool PetManager::shouldShowOnCurrentScene() const {
     return false;
 }
 
-// ════════════════════════════════════════════════════════════
-// gallery
-// ════════════════════════════════════════════════════════════
+// galeria
 
 std::vector<std::string> PetManager::getGalleryImages() const {
     std::vector<std::string> result;
@@ -224,7 +213,7 @@ std::string PetManager::addToGallery(std::filesystem::path const& srcPath) {
     auto dir = galleryDir();
     auto filename = geode::utils::string::pathToString(srcPath.filename());
 
-    // evitar colisiones de nombre
+    // evito pisar archivos con el mismo nombre
     auto dest = dir / filename;
     int counter = 1;
     std::error_code existsEc;
@@ -251,7 +240,7 @@ void PetManager::removeFromGallery(std::string const& filename) {
         std::filesystem::remove(path, rmEc);
     }
 
-    // si es la imagen actual, deseleccionar
+    // si era la actual, la saco
     if (m_config.selectedImage == filename) {
         m_config.selectedImage = "";
         saveConfig();
@@ -269,7 +258,7 @@ void PetManager::removeAllFromGallery() {
         }
     }
 
-    // deseleccionar imagen actual
+    // saco la imagen actual si hacia falta
     if (!m_config.selectedImage.empty()) {
         m_config.selectedImage = "";
         saveConfig();
@@ -286,7 +275,7 @@ int PetManager::cleanupInvalidImages() {
         std::error_code ec;
         if (!std::filesystem::exists(path, ec)) continue;
 
-        // leer primeros bytes para verificar magic bytes
+        // chequeo la cabecera real del archivo
         std::ifstream f(path, std::ios::binary);
         if (!f.is_open()) {
                 removeFromGallery(img);
@@ -342,9 +331,7 @@ CCTexture2D* PetManager::loadGalleryThumb(std::string const& filename) const {
     return nullptr;
 }
 
-// ════════════════════════════════════════════════════════════
-// init / lifecycle
-// ════════════════════════════════════════════════════════════
+// ciclo de vida
 
 void PetManager::init() {
     loadConfig();
@@ -365,7 +352,7 @@ void PetManager::createPetSprite() {
 
     auto pathStr = geode::utils::string::pathToString(path);
 
-    // check if GIF
+    // si es gif uso el sprite animado
     bool isGif = false;
     auto ext = geode::utils::string::pathToString(path.extension());
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -379,7 +366,7 @@ void PetManager::createPetSprite() {
         }
     }
 
-    // static image
+    // imagen normal
     auto img = ImageLoadHelper::loadStaticImage(path);
     if (img.success && img.texture) {
         auto spr = CCSprite::createWithTexture(img.texture);
@@ -391,7 +378,7 @@ void PetManager::createPetSprite() {
 }
 
 void PetManager::reloadSprite() {
-    // remove old sprite
+    // limpio lo viejo antes de volver a crear
     if (m_petSprite && m_petNode) {
         m_petSprite->removeFromParent();
         m_petSprite = nullptr;
@@ -417,7 +404,7 @@ void PetManager::reloadSprite() {
 void PetManager::attachToScene(CCScene* scene) {
     if (!scene) return;
 
-    // remove from old scene
+    // me salgo de la escena anterior
     detachFromScene();
 
     if (!m_config.enabled) return;
@@ -427,7 +414,7 @@ void PetManager::attachToScene(CCScene* scene) {
     m_petNode->setZOrder(99999); // always on top
     scene->addChild(m_petNode);
 
-    // init position to center
+    // arranco centrado
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     m_currentPos = ccp(winSize.width / 2.f, winSize.height / 2.f);
     m_targetPos = m_currentPos;
@@ -445,14 +432,12 @@ void PetManager::detachFromScene() {
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// update (called every frame)
-// ════════════════════════════════════════════════════════════
+// update
 
 void PetManager::update(float dt) {
     if (!m_config.enabled || !m_petNode || !m_petSprite) return;
 
-    // safety: if petNode lost its parent (scene transition), clean up
+    // si perdio el parent en un cambio de escena, limpio referencias
     if (!m_petNode->getParent()) {
         m_petNode = nullptr;
         m_petSprite = nullptr;
@@ -460,13 +445,12 @@ void PetManager::update(float dt) {
         return;
     }
 
-    // ── get cursor/touch position ──
     auto glView = CCEGLView::sharedOpenGLView();
     if (!glView) return;
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
 #if defined(GEODE_IS_WINDOWS)
-    // Desktop: seguir posicion del mouse
+    // en desktop sigo el mouse
     auto frameSize = glView->getFrameSize();
     float scaleX = winSize.width / frameSize.width;
     float scaleY = winSize.height / frameSize.height;
@@ -474,15 +458,13 @@ void PetManager::update(float dt) {
     m_targetPos.x = mousePos.x * scaleX + m_config.offsetX;
     m_targetPos.y = (frameSize.height - mousePos.y) * scaleY + m_config.offsetY;
 #else
-    // Movil: el pet deambula en idle alrededor de su posicion base
-    // (sin mouse, usa posicion fija con animacion idle)
+    // en movil se queda en una base fija con idle
     if (m_targetPos.x == 0.f && m_targetPos.y == 0.f) {
         m_targetPos.x = winSize.width * 0.85f + m_config.offsetX;
         m_targetPos.y = winSize.height * 0.15f + m_config.offsetY;
     }
 #endif
 
-    // ── smooth interpolation (lerp with sensitivity) ──
     float lerpFactor = 1.f - std::pow(1.f - m_config.sensitivity, dt * 60.f);
     lerpFactor = std::max(0.001f, std::min(1.f, lerpFactor));
 
@@ -495,22 +477,18 @@ void PetManager::update(float dt) {
 
     float speed = std::sqrt(m_velocity.x * m_velocity.x + m_velocity.y * m_velocity.y);
 
-    // ── walking detection ──
     m_wasWalking = m_walking;
     m_walking = speed > 8.f;
 
-    // ── squish on stop ──
     if (m_wasWalking && !m_walking && m_config.squishOnLand) {
         m_landSquishTimer = 0.2f; // 200ms squish
     }
 
-    // ── flip based on direction ──
     if (m_config.flipOnDirection && std::abs(m_velocity.x) > 5.f) {
         m_facingRight = m_velocity.x > 0;
     }
     m_petSprite->setFlipX(!m_facingRight);
 
-    // ── tilt based on horizontal velocity ──
     if (m_config.rotationDamping > 0.f) {
         float targetTilt = 0.f;
         if (m_walking) {
@@ -524,7 +502,6 @@ void PetManager::update(float dt) {
         m_petSprite->setRotation(0.f);
     }
 
-    // ── position with bounce ──
     CCPoint finalPos = m_currentPos;
 
     if (m_config.bounce && m_config.bounceHeight > 0.f) {
@@ -533,7 +510,7 @@ void PetManager::update(float dt) {
         if (m_walking) {
             finalPos.y += bounceOffset;
         } else {
-            // gentle idle bob
+            // mini bob en idle
             if (m_config.idleAnimation) {
                 m_idleTimer += dt * m_config.idleBreathSpeed;
                 finalPos.y += std::sin(m_idleTimer * 3.14159f) * m_config.bounceHeight * 0.3f;
@@ -544,16 +521,15 @@ void PetManager::update(float dt) {
         finalPos.y += std::sin(m_idleTimer * 3.14159f) * 2.f;
     }
 
-    // ── squish effect ──
     if (m_landSquishTimer > 0.f) {
         m_landSquishTimer -= dt;
-        float t = m_landSquishTimer / 0.2f; // 1 -> 0
+        float t = m_landSquishTimer / 0.2f;
         float squishX = 1.f + m_config.squishAmount * t;
         float squishY = 1.f - m_config.squishAmount * t;
         m_petSprite->setScaleX(m_config.scale * squishX);
         m_petSprite->setScaleY(m_config.scale * squishY);
     } else {
-        // idle breathing scale
+        // respiracion en idle
         if (m_config.idleAnimation && !m_walking) {
             float breath = 1.f + std::sin(m_idleTimer * 3.14159f * 2.f) * m_config.idleBreathScale;
             m_petSprite->setScaleX(m_config.scale * breath);
@@ -565,7 +541,6 @@ void PetManager::update(float dt) {
 
     m_petSprite->setPosition(finalPos);
 
-    // ── trail ──
     if (m_trail) {
         m_trail->setPosition(finalPos);
     }
@@ -582,7 +557,7 @@ void PetManager::applyConfigLive() {
 }
 
 void PetManager::updateTrail() {
-    // remove old trail
+    // primero saco el trail anterior
     if (m_trail && m_petNode) {
         m_trail->removeFromParent();
         m_trail = nullptr;
@@ -590,19 +565,17 @@ void PetManager::updateTrail() {
 
     if (!m_config.showTrail || !m_petNode || !m_petSprite) return;
 
-    // create a small white texture programmatically (2x2 RGBA white)
-    // this avoids depending on texture files that may not exist in GD
+    // textura blanca minima para no depender de assets externos
     static CCTexture2D* s_whiteTrailTex = nullptr;
     if (!s_whiteTrailTex) {
         const int sz = 2;
         uint8_t pixels[sz * sz * 4];
-        memset(pixels, 255, sizeof(pixels)); // all white, full alpha
+        memset(pixels, 255, sizeof(pixels));
         s_whiteTrailTex = new CCTexture2D();
         if (!s_whiteTrailTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
             s_whiteTrailTex->release();
             s_whiteTrailTex = nullptr;
         }
-        // keep retained forever (static singleton texture)
     }
 
     if (!s_whiteTrailTex) return;
@@ -621,26 +594,13 @@ void PetManager::updateTrail() {
         m_trail->setBlendFunc(blend);
         m_petNode->addChild(m_trail, 5);
     } else {
-        // trail was created but has no valid texture — don't add to scene
         m_trail = nullptr;
         log::warn("[PetManager] Failed to create trail with valid texture");
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// unused stubs (animations managed in update)
-// ════════════════════════════════════════════════════════════
+// stubs
 
 void PetManager::updateIdleAnimation(float dt) {}
 void PetManager::updateWalkAnimation(float dt) {}
-
-
-
-
-
-
-
-
-
-
 

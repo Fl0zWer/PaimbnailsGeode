@@ -11,10 +11,6 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ════════════════════════════════════════════════════════════
-// create
-// ════════════════════════════════════════════════════════════
-
 PetConfigPopup* PetConfigPopup::create() {
     auto ret = new PetConfigPopup();
     if (ret && ret->init()) {
@@ -25,10 +21,6 @@ PetConfigPopup* PetConfigPopup::create() {
     return nullptr;
 }
 
-// ════════════════════════════════════════════════════════════
-// init
-// ════════════════════════════════════════════════════════════
-
 bool PetConfigPopup::init() {
     if (!Popup::init(380.f, 270.f)) return false;
 
@@ -36,7 +28,6 @@ bool PetConfigPopup::init() {
 
     auto content = m_mainLayer->getContentSize();
 
-    // ── tab layers ──
     m_galleryTab = CCNode::create();
     m_galleryTab->setID("gallery-tab"_spr);
     m_galleryTab->setContentSize(content);
@@ -55,10 +46,6 @@ bool PetConfigPopup::init() {
     paimon::markDynamicPopup(this);
     return true;
 }
-
-// ════════════════════════════════════════════════════════════
-// tabs
-// ════════════════════════════════════════════════════════════
 
 void PetConfigPopup::createTabButtons() {
     auto content = m_mainLayer->getContentSize();
@@ -111,21 +98,17 @@ void PetConfigPopup::onTabSwitch(CCObject* sender) {
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// gallery tab
-// ════════════════════════════════════════════════════════════
-
 void PetConfigPopup::buildGalleryTab() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // auto-cleanup invalid/corrupt image files from gallery
+    // limpio basura vieja de la galeria
     int cleaned = PetManager::get().cleanupInvalidImages();
     if (cleaned > 0) {
         log::info("[PetConfig] Cleaned up {} invalid image files from gallery", cleaned);
     }
 
-    // preview area
+    // vista previa de la mascota
     auto previewBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
     previewBg->setContentSize({80, 80});
     previewBg->setOpacity(80);
@@ -137,33 +120,29 @@ void PetConfigPopup::buildGalleryTab() {
     m_selectedLabel->setPosition({cx, content.height - 145.f});
     m_galleryTab->addChild(m_selectedLabel);
 
-    // gallery scroll area
+    // contenedor de la galeria
     m_galleryContainer = CCNode::create();
     m_galleryContainer->setID("gallery-container"_spr);
     m_galleryContainer->setPosition({0, 0});
     m_galleryTab->addChild(m_galleryContainer);
 
-    // gallery menu
     m_galleryMenu = CCMenu::create();
     m_galleryMenu->setID("gallery-menu"_spr);
     m_galleryMenu->setPosition({0, 0});
     m_galleryTab->addChild(m_galleryMenu, 10);
 
-    // add button
     auto addSpr = ButtonSprite::create("+ Add", "goldFont.fnt", "GJ_button_01.png", 0.7f);
     addSpr->setScale(0.55f);
     auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(PetConfigPopup::onAddImage));
     addBtn->setPosition({cx - 90.f, 25.f});
     m_galleryMenu->addChild(addBtn);
 
-    // shop button
     auto shopSpr = ButtonSprite::create("Shop", "goldFont.fnt", "GJ_button_02.png", 0.7f);
     shopSpr->setScale(0.55f);
     auto shopBtn = CCMenuItemSpriteExtra::create(shopSpr, this, menu_selector(PetConfigPopup::onOpenShop));
     shopBtn->setPosition({cx - 15.f, 25.f});
     m_galleryMenu->addChild(shopBtn);
 
-    // delete all button
     auto delAllSpr = ButtonSprite::create("Delete All", "goldFont.fnt", "GJ_button_06.png", 0.7f);
     delAllSpr->setScale(0.55f);
     auto delAllBtn = CCMenuItemSpriteExtra::create(delAllSpr, this, menu_selector(PetConfigPopup::onDeleteAllImages));
@@ -174,13 +153,12 @@ void PetConfigPopup::buildGalleryTab() {
 }
 
 void PetConfigPopup::refreshGallery() {
-    // clear old gallery items (keep addBtn)
-    // remove non-button gallery children
+    // limpio lo que habia antes
     if (m_galleryContainer) {
         m_galleryContainer->removeAllChildren();
     }
 
-    // remove old gallery buttons from menu (but not the add button)
+    // limpio botones viejos del menu
     auto toRemove = std::vector<CCNode*>();
     if (m_galleryMenu && m_galleryMenu->getChildren()) {
         for (auto* child : CCArrayExt<CCNode*>(m_galleryMenu->getChildren())) {
@@ -207,7 +185,7 @@ void PetConfigPopup::refreshGallery() {
         float x = startX + col * (cellSize + padding) + cellSize / 2.f;
         float y = startY - row * (cellSize + padding);
 
-        // background
+        // fondo de la celda
         auto bg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
         bg->setContentSize({cellSize, cellSize});
         bg->setPosition({x, y});
@@ -216,7 +194,7 @@ void PetConfigPopup::refreshGallery() {
         bg->setOpacity(isSelected ? 180 : 100);
         m_galleryContainer->addChild(bg);
 
-        // thumbnail
+        // thumb
         auto tex = pet.loadGalleryThumb(images[i]);
         if (tex) {
             auto thumbSpr = CCSprite::createWithTexture(tex);
@@ -229,7 +207,7 @@ void PetConfigPopup::refreshGallery() {
             tex->release();
         }
 
-        // select button (invisible overlay)
+        // overlay invisible para seleccionar
         auto selectArea = CCSprite::create();
         selectArea->setContentSize({cellSize, cellSize});
         selectArea->setOpacity(0);
@@ -237,12 +215,12 @@ void PetConfigPopup::refreshGallery() {
         selectBtn->setContentSize({cellSize, cellSize});
         selectBtn->setPosition({x, y});
         selectBtn->setTag(100 + i);
-        // store filename as user data
+        // guardo el nombre en el user object
         auto* nameStr = CCString::create(images[i]);
         selectBtn->setUserObject(nameStr);
         m_galleryMenu->addChild(selectBtn);
 
-        // delete btn (small X)
+        // boton de borrar
         auto xSpr = CCSprite::createWithSpriteFrameName("GJ_deleteIcon_001.png");
         if (xSpr) {
             xSpr->setScale(0.35f);
@@ -255,10 +233,9 @@ void PetConfigPopup::refreshGallery() {
         }
     }
 
-    // update preview
+    // refresco preview
     auto& cfg = pet.config();
     if (!cfg.selectedImage.empty()) {
-        // remove old preview
         if (m_previewSprite) {
             m_previewSprite->removeFromParent();
             m_previewSprite = nullptr;
@@ -294,7 +271,7 @@ void PetConfigPopup::onAddImage(CCObject*) {
             auto filename = PetManager::get().addToGallery(result.value());
             if (!filename.empty()) {
                 PaimonNotify::create("Image added to gallery!", NotificationIcon::Success)->show();
-                // auto-select if no image selected
+                // si no habia una elegida, la dejo puesta
                 if (PetManager::get().config().selectedImage.empty()) {
                     PetManager::get().setImage(filename);
                 }
@@ -346,7 +323,7 @@ void PetConfigPopup::onDeleteAllImages(CCObject*) {
         [this](auto*, bool confirmed) {
             if (!confirmed) return;
 
-            // also clean up any invalid images
+            // tambien limpio imagenes invalidas
             int cleaned = PetManager::get().cleanupInvalidImages();
 
             PetManager::get().removeAllFromGallery();
@@ -373,9 +350,7 @@ void PetConfigPopup::onSelectImage(CCObject* sender) {
     refreshGallery();
 }
 
-// ════════════════════════════════════════════════════════════
-// settings tab
-// ════════════════════════════════════════════════════════════
+// ajustes
 
 void PetConfigPopup::buildSettingsTab() {
     auto content = m_mainLayer->getContentSize();
@@ -400,7 +375,7 @@ void PetConfigPopup::buildSettingsTab() {
 
     auto& cfg = PetManager::get().config();
 
-    // helpers
+    // helpers chicos pa armar la UI
     auto addTitle = [&](char const* text, char const* info = nullptr) {
         auto label = CCLabelBMFont::create(text, "goldFont.fnt");
         label->setScale(0.4f);
@@ -455,7 +430,6 @@ void PetConfigPopup::buildSettingsTab() {
         navMenu->addChild(toggle);
     };
 
-    // ── Enable ──
     addTitle("General");
     y -= 18.f;
     addToggle("Enable Pet", m_enableToggle, cfg.enabled,
@@ -463,7 +437,6 @@ void PetConfigPopup::buildSettingsTab() {
         "Turns the pet mascot <cg>ON</c> or <cr>OFF</c>.\nWhen enabled, the pet sprite follows your cursor across all screens.");
     y -= 22.f;
 
-    // ── Size & Movement ──
     addTitle("Size & Movement",
         "<cy>Scale</c>: size of the pet (0.1 = tiny, 3.0 = huge).\n"
         "<cy>Sensitivity</c>: how quickly the pet follows the cursor. Low = lazy, high = snappy.\n"
@@ -479,7 +452,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onOpacityChanged), "{:.0f}");
     y -= 22.f;
 
-    // ── Offset ──
     addTitle("Cursor Offset",
         "Offsets the pet position relative to the cursor.\n"
         "<cy>X</c>: horizontal offset (negative = left, positive = right).\n"
@@ -492,7 +464,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onOffsetYChanged), "{:.0f}");
     y -= 22.f;
 
-    // ── Bounce ──
     addTitle("Bounce & Animation",
         "Makes the pet bounce up and down as it moves.\n"
         "<cy>Height</c>: how high the bounce goes (pixels).\n"
@@ -509,7 +480,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onBounceSpeedChanged), "{:.1f}");
     y -= 22.f;
 
-    // ── Idle Animation ──
     addTitle("Idle Animation",
         "Subtle breathing animation when the pet is idle (cursor not moving).\n"
         "<cy>Breath Scale</c>: how much the pet grows/shrinks.\n"
@@ -526,7 +496,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onBreathSpeedChanged), "{:.1f}");
     y -= 22.f;
 
-    // ── Rotation ──
     addTitle("Tilt & Rotation",
         "Controls how the pet tilts when moving.\n"
         "<cy>Flip on Direction</c>: mirrors the pet horizontally based on movement direction.\n"
@@ -544,7 +513,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onMaxTiltChanged), "{:.0f}");
     y -= 22.f;
 
-    // ── Trail ──
     addTitle("Trail Effect",
         "Leaves a fading trail behind the pet as it moves.\n"
         "<cy>Length</c>: how long the trail persists.\n"
@@ -561,7 +529,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onTrailWidthChanged), "{:.1f}");
     y -= 22.f;
 
-    // ── Squish ──
     addTitle("Squish on Land",
         "When the pet stops moving, it briefly squishes (flattens) like landing.\n"
         "<cy>Amount</c>: how much it squishes (0 = none, 0.5 = extreme).");
@@ -574,7 +541,6 @@ void PetConfigPopup::buildSettingsTab() {
         menu_selector(PetConfigPopup::onSquishChanged), "{:.2f}");
     y -= 26.f;
 
-    // ── Visible Layers ──
     addTitle("Visible Layers",
         "Choose which screens the pet appears on.\n"
         "If <cg>all</c> are selected, the pet shows <cg>everywhere</c>.\n"
@@ -603,7 +569,7 @@ void PetConfigPopup::buildSettingsTab() {
 
     m_scrollLayer->moveToTop();
 
-    // scroll indicator arrow
+    // flecha de scroll
     auto scrollArrow = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
     if (scrollArrow) {
         scrollArrow->setRotation(-90.f);
@@ -641,15 +607,13 @@ void PetConfigPopup::checkScrollPosition(float dt) {
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// apply live
-// ════════════════════════════════════════════════════════════
+// aplicar al toque
 
 void PetConfigPopup::applyLive() {
     auto& pet = PetManager::get();
     pet.applyConfigLive();
 
-    // attach/detach based on enabled
+    // engancho o saco segun enabled
     auto scene = CCDirector::sharedDirector()->getRunningScene();
     if (pet.config().enabled) {
         if (!pet.isAttached() && scene) {
@@ -660,11 +624,9 @@ void PetConfigPopup::applyLive() {
     }
 }
 
-// ════════════════════════════════════════════════════════════
-// slider callbacks (all follow same pattern: read -> map -> store -> apply)
-// ════════════════════════════════════════════════════════════
+// sliders
 
-// slider helpers: read slider -> map to range -> store in config -> update label -> apply
+// leer sliders sin repetir formula
 static float readSlider(Slider* s, float minV, float maxV) {
     float v = s->getThumb()->getValue();
     return minV + v * (maxV - minV);
@@ -776,9 +738,7 @@ void PetConfigPopup::onOffsetYChanged(CCObject*) {
     applyLive();
 }
 
-// ════════════════════════════════════════════════════════════
-// toggle callbacks
-// ════════════════════════════════════════════════════════════
+// interruptores
 
 void PetConfigPopup::onEnableToggled(CCObject*) {
     PetManager::get().config().enabled = !m_enableToggle->isToggled();
@@ -817,7 +777,7 @@ void PetConfigPopup::onLayerToggled(CCObject* sender) {
     if (!nameStr) return;
 
     std::string layerName = nameStr->getCString();
-    bool nowOn = !toggle->isToggled(); // before toggle flips
+    bool nowOn = !toggle->isToggled(); // antes de que termine de cambiar
 
     auto& layers = PetManager::get().config().visibleLayers;
     if (nowOn) {
@@ -832,9 +792,4 @@ void PetConfigPopup::onOpenShop(CCObject*) {
     auto shop = PaimonShopPopup::create();
     if (shop) shop->show();
 }
-
-
-
-
-
 

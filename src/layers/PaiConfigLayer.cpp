@@ -28,7 +28,7 @@ extern void clearProfileImgCache();
 
 using namespace geode::prelude;
 
-// Available shaders for backgrounds
+// shaders disponibles pal fondo
 static std::vector<std::pair<std::string, std::string>> BG_SHADERS = {
     {"none",       "None"},
     {"grayscale",  "Grayscale"},
@@ -40,10 +40,6 @@ static std::vector<std::pair<std::string, std::string>> BG_SHADERS = {
     {"posterize",  "Posterize"},
     {"scanlines",  "Scanlines"},
 };
-
-// ═══════════════════════════════════════════════════════════
-// Factory
-// ═══════════════════════════════════════════════════════════
 
 PaiConfigLayer* PaiConfigLayer::create() {
     auto ret = new PaiConfigLayer();
@@ -58,10 +54,6 @@ CCScene* PaiConfigLayer::scene() {
     return scene;
 }
 
-// ═══════════════════════════════════════════════════════════
-// Init
-// ═══════════════════════════════════════════════════════════
-
 bool PaiConfigLayer::init() {
     if (!CCLayer::init()) return false;
     this->setKeypadEnabled(true);
@@ -71,7 +63,6 @@ bool PaiConfigLayer::init() {
     float cx = winSize.width / 2;
     float top = winSize.height;
 
-    // ── Background gradient ──
     auto bg = CCSprite::create("GJ_gradientBG.png");
     if (bg) {
         bg->setScaleX(winSize.width / bg->getContentWidth());
@@ -81,27 +72,22 @@ bool PaiConfigLayer::init() {
         this->addChild(bg, -2);
     }
 
-    // ── Main menu (for all buttons) ──
     m_mainMenu = CCMenu::create();
     m_mainMenu->setID("main-menu"_spr);
     m_mainMenu->setPosition({0, 0});
     this->addChild(m_mainMenu, 10);
 
-    // ── Title ──
     auto title = CCLabelBMFont::create("Paimon Settings", "goldFont.fnt");
     title->setPosition({cx, top - 20});
     title->setScale(0.65f);
     this->addChild(title);
 
-    // ── Back button ──
     auto backSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     auto backBtn = CCMenuItemSpriteExtra::create(backSpr, this, menu_selector(PaiConfigLayer::onBack));
     backBtn->setPosition({25, top - 20});
     m_mainMenu->addChild(backBtn);
 
-    // ═══════════════════════════════════════════
-    // 3 Main Tabs: Backgrounds | Profile | Extras
-    // ═══════════════════════════════════════════
+    // tabs principales
     float tabY = top - 46;
     std::vector<std::string> tabNames = {"Backgrounds", "Profile", "Extras"};
     float tabW = 120.f;
@@ -117,15 +103,11 @@ bool PaiConfigLayer::init() {
         m_mainTabBtns.push_back(btn);
     }
 
-    // ── Separator line ──
     auto sep = CCLayerColor::create({255, 255, 255, 40});
     sep->setContentSize({winSize.width - 30, 1});
     sep->setPosition({15, tabY - 14});
     this->addChild(sep, 5);
 
-    // ═══════════════════════════════════════════
-    // Tab content layers
-    // ═══════════════════════════════════════════
     m_bgTab = CCLayer::create();
     m_bgTab->setID("bg-tab"_spr);
     this->addChild(m_bgTab, 5);
@@ -158,26 +140,18 @@ bool PaiConfigLayer::init() {
     buildProfileTab();
     buildExtrasTab();
 
-    // ═══════════════════════════════════════════
-    // Apply button (always visible)
-    // ═══════════════════════════════════════════
     auto applySpr = ButtonSprite::create("Apply & Restart Menu", "goldFont.fnt", "GJ_button_01.png", .8f);
     applySpr->setScale(0.5f);
     auto applyBtn = CCMenuItemSpriteExtra::create(applySpr, this, menu_selector(PaiConfigLayer::onApply));
     applyBtn->setPosition({cx, 20});
     m_mainMenu->addChild(applyBtn);
 
-    // Init
     switchMainTab(0);
     updateLayerButtons();
     refreshForCurrentLayer();
 
     return true;
 }
-
-// ═══════════════════════════════════════════════════════════
-// Build Background Tab
-// ═══════════════════════════════════════════════════════════
 
 void PaiConfigLayer::buildBackgroundTab() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
@@ -186,13 +160,10 @@ void PaiConfigLayer::buildBackgroundTab() {
     float contentBot = 42;
     float contentH = contentTop - contentBot;
 
-    // ══════════════════════════════════════════
-    // LEFT SIDEBAR — Layer buttons vertical
-    // ══════════════════════════════════════════
+    // sidebar de layers
     float sidebarW = 95;
     float sidebarX = sidebarW / 2 + 8;
 
-    // Sidebar dark panel
     auto sidePanel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
     sidePanel->setContentSize({sidebarW, contentH});
     sidePanel->setColor({0, 0, 0});
@@ -215,20 +186,16 @@ void PaiConfigLayer::buildBackgroundTab() {
         m_layerBtns.push_back(btn);
     }
 
-    // Vertical separator line
     auto sepLine = CCLayerColor::create({255, 255, 255, 50});
     sepLine->setContentSize({1, contentH});
     sepLine->setPosition({sidebarW + 12, contentBot});
     m_bgTab->addChild(sepLine, 5);
 
-    // ══════════════════════════════════════════
-    // RIGHT SIDE — Controls + Preview
-    // ══════════════════════════════════════════
+    // controles + preview
     float rightX = sidebarW + 20; // left edge of right area
     float rightW = winSize.width - rightX - 8;
     float rightCx = rightX + rightW / 2;
 
-    // ── Controls panel (top-right) ──
     float ctrlPanelH = 80;
     float ctrlPanelY = contentTop - ctrlPanelH / 2 - 2;
 
@@ -239,7 +206,6 @@ void PaiConfigLayer::buildBackgroundTab() {
     ctrlPanel->setPosition({rightCx, ctrlPanelY});
     m_bgTab->addChild(ctrlPanel, 0);
 
-    // Title + info
     float titleY = ctrlPanelY + ctrlPanelH / 2 - 10;
     auto bgTitle = CCLabelBMFont::create("Background", "goldFont.fnt");
     bgTitle->setScale(0.35f);
@@ -258,7 +224,7 @@ void PaiConfigLayer::buildBackgroundTab() {
         }
     }
 
-    // Row 1: action buttons
+    // fila 1: acciones
     float row1 = titleY - 22;
     float btnSpacing = rightW / 5;
     float btnStart = rightX + btnSpacing / 2 + 5;
@@ -267,7 +233,7 @@ void PaiConfigLayer::buildBackgroundTab() {
     makeBtn("Same as...", {btnStart + btnSpacing * 2, row1}, menu_selector(PaiConfigLayer::onBgSameAs), m_bgMenu, 0.38f);
     makeBtn("Default", {btnStart + btnSpacing * 3, row1}, menu_selector(PaiConfigLayer::onBgDefault), m_bgMenu, 0.36f);
 
-    // Row 2: ID + Dark + Intensity
+    // fila 2: id + dark + intensidad
     float row2 = row1 - 22;
 
     auto inputBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
@@ -302,7 +268,7 @@ void PaiConfigLayer::buildBackgroundTab() {
     intLbl->setPosition({rightX + 250, row2 + 10});
     m_bgTab->addChild(intLbl, 1);
 
-    // Adaptive toggle (below controls, only for menu)
+    // adaptive solo aplica al menu
     float row3 = row2 - 18;
     m_adaptiveToggle = CCMenuItemToggler::createWithStandardSprites(this, menu_selector(PaiConfigLayer::onAdaptiveColors), 0.35f);
     m_adaptiveToggle->setPosition({rightX + 15, row3});
@@ -313,7 +279,7 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_adaptiveLabel->setPosition({rightX + 75, row3});
     m_bgTab->addChild(m_adaptiveLabel, 1);
 
-    // Shader selector (right side of row3)
+    // selector de shader
     auto shaderTitle = CCLabelBMFont::create("Shader:", "bigFont.fnt");
     shaderTitle->setScale(0.18f);
     shaderTitle->setPosition({rightX + 175, row3});
@@ -338,7 +304,6 @@ void PaiConfigLayer::buildBackgroundTab() {
     nextBtn->setPosition({rightX + 330, row3});
     m_bgMenu->addChild(nextBtn);
 
-    // ── Preview area (bottom-right) ──
     float previewH = contentH - ctrlPanelH - 12;
     float previewY = contentBot + previewH / 2 + 2;
 
@@ -354,14 +319,13 @@ void PaiConfigLayer::buildBackgroundTab() {
     prevTitle->setPosition({rightCx, previewY + previewH / 2 - 8});
     m_bgTab->addChild(prevTitle, 1);
 
-    // Status label (shows current type)
+    // texto con el estado actual
     m_bgStatusLabel = CCLabelBMFont::create("Default", "bigFont.fnt");
     m_bgStatusLabel->setScale(0.18f);
     m_bgStatusLabel->setColor({180, 180, 180});
     m_bgStatusLabel->setPosition({rightCx, previewY - previewH / 2 + 8});
     m_bgTab->addChild(m_bgStatusLabel, 1);
 
-    // Preview container
     float prevContW = rightW - 16;
     float prevContH = previewH - 24;
     m_bgPreview = CCNode::create();
@@ -370,7 +334,6 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_bgPreview->setAnchorPoint({0, 0});
     m_bgTab->addChild(m_bgPreview, 2);
 
-    // ── Blocked overlay (covers entire right side) ──
     m_blockedOverlay = CCLayerColor::create({0, 0, 0, 180});
     m_blockedOverlay->setContentSize({rightW + 4, contentH});
     m_blockedOverlay->setPosition({rightX - 2, contentBot});
@@ -386,16 +349,11 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_blockedOverlay->addChild(m_blockedLabel);
 }
 
-// ═══════════════════════════════════════════════════════════
-// Build Profile Tab
-// ═══════════════════════════════════════════════════════════
-
 void PaiConfigLayer::buildProfileTab() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     float cx = winSize.width / 2;
     float contentMid = (winSize.height - 64 + 40) / 2; // vertical center of content area
 
-    // ── Dark panel ──
     float panelW = 420;
     float panelH = 150;
     auto panel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
@@ -405,7 +363,6 @@ void PaiConfigLayer::buildProfileTab() {
     panel->setPosition({cx, contentMid});
     m_profileTab->addChild(panel, 0);
 
-    // Title
     auto profTitle = CCLabelBMFont::create("Profile Picture", "goldFont.fnt");
     profTitle->setScale(0.4f);
     profTitle->setPosition({cx - 60, contentMid + panelH / 2 - 12});
@@ -423,7 +380,6 @@ void PaiConfigLayer::buildProfileTab() {
         }
     }
 
-    // ── Left column: buttons ──
     float leftX = cx - 100;
     float btnTop = contentMid + 28;
 
@@ -445,7 +401,6 @@ void PaiConfigLayer::buildProfileTab() {
     shapeBtn->setPosition({leftX, btnTop - 60});
     m_profileMenu->addChild(shapeBtn);
 
-    // ── Right column: live preview ──
     float previewX = cx + 100;
     float previewY = contentMid;
 
@@ -454,14 +409,14 @@ void PaiConfigLayer::buildProfileTab() {
     previewLabel->setPosition({previewX, previewY + 48});
     m_profileTab->addChild(previewLabel, 1);
 
-    // Preview container — rebuilt dynamically
+    // este preview se rehace entero cada vez
     m_profilePreview = CCNode::create();
     m_profilePreview->setPosition({previewX - 40, previewY - 40});
     m_profilePreview->setContentSize({80, 80});
     m_profilePreview->setAnchorPoint({0, 0});
     m_profileTab->addChild(m_profilePreview, 5);
 
-    // Dark circle background for preview
+    // base oscura del preview
     auto previewBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
     previewBg->setContentSize({90, 90});
     previewBg->setColor({0, 0, 0});
@@ -472,16 +427,11 @@ void PaiConfigLayer::buildProfileTab() {
     rebuildProfilePreview();
 }
 
-// ═══════════════════════════════════════════════════════════
-// Build Extras Tab
-// ═══════════════════════════════════════════════════════════
-
 void PaiConfigLayer::buildExtrasTab() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     float cx = winSize.width / 2;
     float contentMid = (winSize.height - 64 + 40) / 2;
 
-    // ── Dark panel ──
     float panelW = 320;
     float panelH = 160;
     auto panel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
@@ -496,14 +446,12 @@ void PaiConfigLayer::buildExtrasTab() {
     extTitle->setPosition({cx, contentMid + panelH / 2 - 12});
     m_extrasTab->addChild(extTitle, 1);
 
-    // ── Pet Config button ──
     auto petSpr = ButtonSprite::create("Pet Config", "goldFont.fnt", "GJ_button_03.png", .8f);
     petSpr->setScale(0.55f);
     auto petBtn = CCMenuItemSpriteExtra::create(petSpr, this, menu_selector(PaiConfigLayer::onPetConfig));
     petBtn->setPosition({cx, contentMid + 20});
     m_extrasMenu->addChild(petBtn);
 
-    // BETA badge
     auto betaLabel = CCLabelBMFont::create("BETA", "bigFont.fnt");
     betaLabel->setScale(0.25f);
     betaLabel->setColor({255, 80, 80});
@@ -520,7 +468,6 @@ void PaiConfigLayer::buildExtrasTab() {
         }
     }
 
-    // ── Transitions button ──
     auto transSpr = ButtonSprite::create("Transitions", "goldFont.fnt", "GJ_button_04.png", .8f);
     transSpr->setScale(0.55f);
     auto transBtn = CCMenuItemSpriteExtra::create(transSpr, this, menu_selector(PaiConfigLayer::onTransitions));
@@ -539,7 +486,6 @@ void PaiConfigLayer::buildExtrasTab() {
         }
     }
 
-    // ── Clear All Cache button ──
     auto clearSpr = ButtonSprite::create("Clear All Cache", "goldFont.fnt", "GJ_button_06.png", .8f);
     clearSpr->setScale(0.55f);
     auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(PaiConfigLayer::onClearAllCache));
@@ -562,7 +508,7 @@ void PaiConfigLayer::buildExtrasTab() {
         }
     }
 
-    // Coming soon label
+    // texto de relleno por ahora
     auto comingSoon = CCLabelBMFont::create("More features coming soon...", "bigFont.fnt");
     comingSoon->setScale(0.2f);
     comingSoon->setColor({150, 150, 150});
@@ -570,9 +516,7 @@ void PaiConfigLayer::buildExtrasTab() {
     m_extrasTab->addChild(comingSoon, 1);
 }
 
-// ═══════════════════════════════════════════════════════════
-// Tab switching
-// ═══════════════════════════════════════════════════════════
+// tabs
 
 void PaiConfigLayer::onMainTabSwitch(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
@@ -589,20 +533,18 @@ void PaiConfigLayer::switchMainTab(int idx) {
     m_extrasTab->setVisible(idx == 2);
     m_extrasMenu->setVisible(idx == 2);
 
-    // Update main tab button colors
+    // repinto tabs
     for (int i = 0; i < (int)m_mainTabBtns.size(); i++) {
         auto spr = typeinfo_cast<ButtonSprite*>(m_mainTabBtns[i]->getNormalImage());
         if (!spr) continue;
         spr->setColor(i == idx ? ccColor3B{100, 255, 100} : ccColor3B{255, 255, 255});
     }
 
-    // Refresh profile preview when switching to profile tab
+    // si entro a profile, rehago el preview
     if (idx == 1) rebuildProfilePreview();
 }
 
-// ═══════════════════════════════════════════════════════════
-// Profile preview
-// ═══════════════════════════════════════════════════════════
+// vista previa del profile
 
 void PaiConfigLayer::rebuildProfilePreview() {
     if (!m_profilePreview) return;
@@ -622,7 +564,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
 
     std::error_code ecExists;
     if (type != "custom" || path.empty() || !std::filesystem::exists(path, ecExists)) {
-        // No image — show placeholder
+        // si no hay imagen, muestro placeholder
         auto placeholder = CCLayerColor::create({60, 60, 60, 200});
         placeholder->setContentSize({thumbSize, thumbSize});
         placeholder->setPosition({midX - thumbSize / 2, midY - thumbSize / 2});
@@ -637,7 +579,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
         return;
     }
 
-    // Load image — soportar GIF animado ademas de imagenes estaticas
+    // intento gif primero y si no, imagen normal
     bool isGif = path.ends_with(".gif") || path.ends_with(".GIF");
     CCNode* imageNode = nullptr;
 
@@ -664,7 +606,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
         return;
     }
 
-    // Create clipping node with shape stencil
+    // recorte con la forma elegida
     auto stencil = createShapeStencil(shapeName, thumbSize);
     if (!stencil) stencil = createShapeStencil("circle", thumbSize);
     if (!stencil) return;
@@ -688,7 +630,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
     container->setPosition({midX, midY});
     container->addChild(clipper);
 
-    // Border if enabled
+    // borde opcional
     if (picCfg.frameEnabled) {
         float borderSize = thumbSize + picCfg.frame.thickness * 2;
         auto border = createShapeBorder(shapeName, borderSize,
@@ -704,9 +646,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
     m_profilePreview->addChild(container);
 }
 
-// ═══════════════════════════════════════════════════════════
-// Navigation
-// ═══════════════════════════════════════════════════════════
+// navegacion
 
 void PaiConfigLayer::keyBackClicked() { onBack(nullptr); }
 
@@ -714,9 +654,7 @@ void PaiConfigLayer::onBack(CCObject*) {
     CCDirector::sharedDirector()->popSceneWithTransition(0.3f, PopTransition::kPopTransitionFade);
 }
 
-// ═══════════════════════════════════════════════════════════
-// Layer selector
-// ═══════════════════════════════════════════════════════════
+// selector de layer
 
 void PaiConfigLayer::onLayerSelect(CCObject* sender) {
     int idx = static_cast<CCNode*>(sender)->getTag();
@@ -762,14 +700,14 @@ void PaiConfigLayer::refreshForCurrentLayer() {
     }
     if (m_adaptiveLabel) m_adaptiveLabel->setVisible(isMenu);
 
-    // Update shader selector
+    // sincronizo shader
     m_shaderIndex = 0;
     for (int i = 0; i < (int)BG_SHADERS.size(); i++) {
         if (BG_SHADERS[i].first == bgCfg.shader) { m_shaderIndex = i; break; }
     }
     updateShaderLabel();
 
-    // Update status label
+    // sincronizo estado visible
     if (m_bgStatusLabel) {
         std::string status = "Default";
         if (bgCfg.type == "custom") status = "Custom Image";
@@ -777,7 +715,7 @@ void PaiConfigLayer::refreshForCurrentLayer() {
         else if (bgCfg.type == "id") status = "Level ID: " + std::to_string(bgCfg.levelId);
         else if (bgCfg.type == "menu") status = "Same as Menu";
         if (bgCfg.shader != "none" && !bgCfg.shader.empty()) {
-            // Find display name
+            // paso de key a nombre lindo
             for (auto& [k, v] : BG_SHADERS) {
                 if (k == bgCfg.shader) { status += " + " + v; break; }
             }
@@ -785,13 +723,9 @@ void PaiConfigLayer::refreshForCurrentLayer() {
         m_bgStatusLabel->setString(status.c_str());
     }
 
-    // Update preview
+    // refresco preview
     rebuildBgPreview();
 }
-
-// ═══════════════════════════════════════════════════════════
-// Background preview
-// ═══════════════════════════════════════════════════════════
 
 void PaiConfigLayer::rebuildBgPreview() {
     if (!m_bgPreview) return;
@@ -806,7 +740,6 @@ void PaiConfigLayer::rebuildBgPreview() {
     auto& mgr = LayerBackgroundManager::get();
     auto cfg = mgr.getConfig(m_selectedKey);
 
-    // ─── Helper: show a texture clipped to preview area ───
     auto addTextureToPreview = [&](CCTexture2D* tex) {
         if (!tex || !m_bgPreview) return;
         auto spr = CCSprite::createWithTexture(tex);
@@ -827,7 +760,6 @@ void PaiConfigLayer::rebuildBgPreview() {
         m_bgPreview->addChild(clipper, 1);
     };
 
-    // ─── Helper: add dark overlay ───
     auto addDarkOverlay = [&]() {
         if (!cfg.darkMode) return;
         auto darkOv = CCLayerColor::create({0, 0, 0, (GLubyte)(cfg.darkIntensity * 200)});
@@ -835,7 +767,6 @@ void PaiConfigLayer::rebuildBgPreview() {
         m_bgPreview->addChild(darkOv, 5);
     };
 
-    // ─── Helper: show placeholder ───
     auto showPlaceholder = [&](char const* text, ccColor3B color = {150, 150, 150}) {
         auto bg = CCLayerColor::create({40, 40, 60, 200});
         bg->setContentSize({pw, ph});
@@ -849,7 +780,6 @@ void PaiConfigLayer::rebuildBgPreview() {
         addDarkOverlay();
     };
 
-    // ─── Helper: show a loading spinner ───
     auto showLoading = [&]() {
         auto bg = CCLayerColor::create({35, 35, 55, 200});
         bg->setContentSize({pw, ph});
@@ -864,17 +794,11 @@ void PaiConfigLayer::rebuildBgPreview() {
         m_bgPreview->addChild(lbl, 1);
     };
 
-    // ══════════════════════════════════════
-    // Type: default
-    // ══════════════════════════════════════
     if (cfg.type == "default") {
         showPlaceholder("Default GD\nBackground");
         return;
     }
 
-    // ══════════════════════════════════════
-    // Type: custom image
-    // ══════════════════════════════════════
     if (cfg.type == "custom") {
         std::error_code ecCustom;
         if (cfg.customPath.empty() || !std::filesystem::exists(cfg.customPath, ecCustom)) {
@@ -885,7 +809,7 @@ void PaiConfigLayer::rebuildBgPreview() {
         for (auto& c : ext) c = (char)std::tolower(c);
 
         if (ext == ".gif") {
-            // Show actual animated GIF in preview
+            // en preview si muestro el GIF animado
             showLoading();
             std::string gifPath = cfg.customPath;
             std::string selectedKey = m_selectedKey;
@@ -928,7 +852,6 @@ void PaiConfigLayer::rebuildBgPreview() {
             return;
         }
 
-        // Static image
         CCTextureCache::sharedTextureCache()->removeTextureForKey(cfg.customPath.c_str());
         auto* tex = CCTextureCache::sharedTextureCache()->addImage(cfg.customPath.c_str(), false);
         if (tex) {
@@ -940,11 +863,9 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // ══════════════════════════════════════
-    // Type: level ID — async download
-    // ══════════════════════════════════════
+    // level ID: pruebo local y despues server
     if (cfg.type == "id" && cfg.levelId > 0) {
-        // Try local first (instant)
+        // primero local
         auto* localTex = LocalThumbs::get().loadTexture(cfg.levelId);
         if (localTex) {
             addTextureToPreview(localTex);
@@ -952,7 +873,7 @@ void PaiConfigLayer::rebuildBgPreview() {
             return;
         }
 
-        // Not local — show loading and download
+        // si no esta, muestro loading y lo pido
         showLoading();
         int levelId = cfg.levelId;
         std::string selectedKey = m_selectedKey;
@@ -1003,13 +924,10 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // ══════════════════════════════════════
-    // Type: random
-    // ══════════════════════════════════════
     if (cfg.type == "random") {
         auto ids = LocalThumbs::get().getAllLevelIDs();
         if (!ids.empty()) {
-            // Show a random one each time
+            // saco uno random cada vez
             static std::mt19937 rng(std::random_device{}());
             std::uniform_int_distribution<size_t> dist(0, ids.size() - 1);
             auto* tex = LocalThumbs::get().loadTexture(ids[dist(rng)]);
@@ -1023,16 +941,13 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // ══════════════════════════════════════
-    // Type: same as another layer — resolve and show
-    // ══════════════════════════════════════
-    // Resolve the reference chain to find the actual config
+    // si hereda de otro layer, sigo la referencia
     bool isLayerRef = false;
     for (auto& [k, n] : LayerBackgroundManager::LAYER_OPTIONS) {
         if (cfg.type == k) { isLayerRef = true; break; }
     }
     if (isLayerRef || cfg.type == "menu") {
-        // Resolve the reference chain (max 5 hops)
+        // corto a 5 saltos por si alguien arma un loop
         LayerBgConfig resolvedCfg = mgr.getConfig(cfg.type == "menu" ? "menu" : cfg.type);
         int resolveHops = 5;
         while (resolveHops-- > 0) {
@@ -1048,10 +963,10 @@ void PaiConfigLayer::rebuildBgPreview() {
                 resolvedCfg = mgr.getConfig(resolvedCfg.type);
                 continue;
             }
-            break; // resolved to a concrete type (custom, random, id)
+            break;
         }
 
-        // Now resolvedCfg is the actual config — render it
+        // con eso ya tengo el config final
         std::error_code ecResolved;
         if (resolvedCfg.type == "custom" && !resolvedCfg.customPath.empty() && std::filesystem::exists(resolvedCfg.customPath, ecResolved)) {
             auto ext = geode::utils::string::pathToString(std::filesystem::path(resolvedCfg.customPath).extension());
@@ -1122,13 +1037,9 @@ void PaiConfigLayer::rebuildBgPreview() {
         return;
     }
 
-    // Fallback
+    // ultimo recurso
     showPlaceholder("Unknown\ntype", {200, 150, 150});
 }
-
-// ═══════════════════════════════════════════════════════════
-// Background actions
-// ═══════════════════════════════════════════════════════════
 
 void PaiConfigLayer::onBgCustomImage(CCObject*) {
     Ref<PaiConfigLayer> self = this;
@@ -1242,9 +1153,7 @@ void PaiConfigLayer::updateShaderLabel() {
     }
 }
 
-// ═══════════════════════════════════════════════════════════
-// Profile actions
-// ═══════════════════════════════════════════════════════════
+// acciones de profile
 
 void PaiConfigLayer::onProfileImage(CCObject*) {
     this->setTouchEnabled(false);
@@ -1280,10 +1189,7 @@ void PaiConfigLayer::onProfilePhoto(CCObject*) {
     if (popup) popup->show();
 }
 
-// ═══════════════════════════════════════════════════════════
-// Extras
-// ═══════════════════════════════════════════════════════════
-
+// extras
 
 void PaiConfigLayer::onPetConfig(CCObject*) {
     auto popup = PetConfigPopup::create();
@@ -1306,30 +1212,30 @@ void PaiConfigLayer::onClearAllCache(CCObject*) {
         [this](auto*, bool confirmed) {
             if (!confirmed) return;
 
-            // 1) Parar musica de perfil si suena
+            // 1) paro cualquier musica de perfil
             ProfileMusicManager::get().stopProfileMusic();
             ProfileMusicManager::get().stopPreview();
 
-            // 2) Cache de thumbnails (RAM)
+            // 2) cache RAM de thumbs
             ThumbnailLoader::get().clearPendingQueue();
             ThumbnailLoader::get().clearCache();
 
-            // 3) Cache de thumbnails (disco: carpeta "cache/")
+            // 3) cache de thumbs en disco
             ThumbnailLoader::get().clearDiskCache();
 
-            // 4) Cache de perfiles (RAM: texturas + config + no-profile)
+            // 4) cache RAM de perfiles
             ProfileThumbs::get().clearAllCache();
 
-            // 5) Cache de profileimg (RAM + disco: carpeta "profileimg_cache/")
+            // 5) cache de profileimg
             clearProfileImgCache();
 
-            // 6) Cache de musica de perfiles (disco: carpeta "profile_music/")
+            // 6) cache de profile music
             ProfileMusicManager::get().clearCache();
 
-            // 7) Cache de GIFs animados (RAM)
+            // 7) gifs en RAM
             AnimatedGIFSprite::clearCache();
 
-            // 8) Cache de GIFs en disco (carpeta "gif_cache/")
+            // 8) gifs en disco
             {
                 std::error_code ec;
                 auto gifCacheDir = Mod::get()->getSaveDir() / "gif_cache";
@@ -1338,12 +1244,12 @@ void PaiConfigLayer::onClearAllCache(CCObject*) {
                 }
             }
 
-            // 9) Limpiar settings de imagen de perfil
+            // 9) settings de imagen de perfil
             Mod::get()->setSavedValue<std::string>("profile-bg-type", "none");
             Mod::get()->setSavedValue<std::string>("profile-bg-path", "");
             (void)Mod::get()->saveData();
 
-            // 10) Rebuild preview si estamos en tab profile
+            // 10) preview al dia
             rebuildProfilePreview();
 
             log::info("[PaiConfigLayer] All caches cleared by user");
@@ -1356,9 +1262,7 @@ void PaiConfigLayer::onApply(CCObject*) {
     TransitionManager::get().replaceScene(MenuLayer::scene(false));
 }
 
-// ═══════════════════════════════════════════════════════════
-// Helper
-// ═══════════════════════════════════════════════════════════
+// util
 
 CCMenuItemSpriteExtra* PaiConfigLayer::makeBtn(char const* text, CCPoint pos,
     SEL_MenuHandler handler, CCNode* parent, float scale) {
@@ -1369,17 +1273,4 @@ CCMenuItemSpriteExtra* PaiConfigLayer::makeBtn(char const* text, CCPoint pos,
     parent->addChild(btn);
     return btn;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
 

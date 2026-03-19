@@ -16,7 +16,6 @@
 
 using namespace geode::prelude;
 
-
 ModeratorsLayer* ModeratorsLayer::s_instance = nullptr;
 
 ModeratorsLayer* ModeratorsLayer::create() {

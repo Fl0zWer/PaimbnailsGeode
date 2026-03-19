@@ -16,7 +16,7 @@ class $modify(PaimonLevelListCell, LevelListCell) {
         int m_currentListID = 0;
     };
 
-    // removed init hook as it caused compilation errors
+    // quite el hook de init porque rompia la compilacion
 
     
     $override
@@ -31,22 +31,21 @@ class $modify(PaimonLevelListCell, LevelListCell) {
         m_fields->m_currentListID = list->m_listID;
         log::debug("PaimonLevelListCell: loadFromList called for list ID: {}", list->m_listID);
 
-        // remove existing carousel if any (for cell reuse)
+        // limpio carousel viejo por si la celda se reutiliza
         if (m_fields->m_carousel) {
             m_fields->m_carousel->removeFromParent();
             m_fields->m_carousel = nullptr;
         }
         
-        // remove existing list thumbnail if any
+        // limpio thumbnail viejo
         if (m_fields->m_listThumbnail) {
             m_fields->m_listThumbnail->removeFromParent();
             m_fields->m_listThumbnail = nullptr;
         }
 
-        // get level ids
+        // saco los IDs
         std::vector<int> levelIDs;
         
-        // check if m_levels is accessible
         log::debug("PaimonLevelListCell: m_levels size: {}", list->m_levels.size());
 
         for (int id : list->m_levels) {
@@ -59,32 +58,31 @@ class $modify(PaimonLevelListCell, LevelListCell) {
         auto size = this->getContentSize();
         // log::info("PaimonLevelListCell: Cell content size: {}, {}", size.width, size.height);
         
-        // fallback if size is 0
+        // respaldo si el size vino en 0
         if (size.width == 0 || size.height == 0) {
             size = CCSize(356, 50);
             this->setContentSize(size); // force update content size
         }
 
-        // force height to match LevelCell (approx 90)
-        // this ensures the thumbnail covers the entire cell and looks better
+        // subo la altura para que se vea como un LevelCell normal
         CCSize carouselSize = size;
         if (carouselSize.height < 90.0f) {
             carouselSize.height = 90.0f;
         }
         
-        // 1. Create carousel (Default behavior)
+        // creo el carousel
         if (!levelIDs.empty()) {
             auto carousel = ListThumbnailCarousel::create(levelIDs, carouselSize);
             if (carousel) {
                 carousel->setID("paimon-thumbnail-carousel"_spr);
 
-                // center the carousel in the cell and move up 20px (requested +5px more)
+                // lo centro y lo subo un poco
                 carousel->setPosition({size.width / 2, size.height / 2 + 20.0f});
                 
-                // z=-1 to be behind text/buttons
+                // detras del texto y los botones
                 carousel->setZOrder(-1);
                 
-                // attempt to push background behind the carousel
+                // intento mandar el fondo detras del carousel
                 // buscar fondo por tipo en vez de indice fragil
                 if (auto bg = this->getChildByType<CCLayerColor>(0)) {
                     bg->setZOrder(-2);

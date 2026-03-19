@@ -7,7 +7,7 @@ using namespace cocos2d;
 #define M_PI 3.14159265358979323846
 #endif
 
-// Helper: crea un CCDrawNode con un poligono regular de N lados
+// poligono regular de N lados
 static CCDrawNode* drawRegularPolygon(int sides, float radius, CCPoint center) {
     auto draw = CCDrawNode::create();
     std::vector<CCPoint> verts;
@@ -23,7 +23,7 @@ static CCDrawNode* drawRegularPolygon(int sides, float radius, CCPoint center) {
     return draw;
 }
 
-// Helper: estrella de N puntas
+// estrella de N puntas
 static CCDrawNode* drawStar(int points, float outerR, float innerR, CCPoint center) {
     auto draw = CCDrawNode::create();
     int totalVerts = points * 2;
@@ -41,20 +41,20 @@ static CCDrawNode* drawStar(int points, float outerR, float innerR, CCPoint cent
     return draw;
 }
 
-// Helper: corazon aproximado con poligono
+// corazon aproximado con poligono
 static CCDrawNode* drawHeart(float size, CCPoint center) {
     auto draw = CCDrawNode::create();
-    // Corazon parametrico
+    // corazon parametrico
     const int segments = 60;
     std::vector<CCPoint> verts;
     verts.reserve(segments);
     for (int i = 0; i < segments; i++) {
         float t = static_cast<float>(2.0 * M_PI * i / segments);
-        // Formula parametrica del corazon
+        // formula parametrica del corazon
         float x = 16.0f * powf(sinf(t), 3.0f);
         float y = 13.0f * cosf(t) - 5.0f * cosf(2*t) - 2.0f * cosf(3*t) - cosf(4*t);
-        // Normalizar a [-1, 1] y escalar
-        float scale = size / 36.0f; // 16+13+5+2+1 ~ 36 max range
+        // normalizo y escalo
+        float scale = size / 36.0f;
         verts.push_back(ccp(
             center.x + x * scale,
             center.y + y * scale
@@ -64,7 +64,7 @@ static CCDrawNode* drawHeart(float size, CCPoint center) {
     return draw;
 }
 
-// Helper: circulo con muchos segmentos
+// circulo con muchos segmentos
 static CCDrawNode* drawCircle(float radius, CCPoint center) {
     return drawRegularPolygon(64, radius, center);
 }
@@ -116,8 +116,7 @@ CCNode* createShapeStencil(std::string const& shapeName, float size) {
     
     if (draw) {
         draw->setContentSize({size, size});
-        // NO setPosition ni setAnchorPoint: los vertices ya estan dibujados
-        // en coordenadas absolutas centradas en (half, half) dentro del nodo.
+        // no hace falta moverlo: los vertices ya salen centrados
         
         auto container = CCNode::create();
         container->setContentSize({size, size});
@@ -125,7 +124,7 @@ CCNode* createShapeStencil(std::string const& shapeName, float size) {
         return container;
     }
 
-    // Fallback: intentar como Scale9Sprite
+    // fallback: intento con Scale9Sprite
     auto* tex = CCTextureCache::sharedTextureCache()->addImage(shapeName.c_str(), false);
     if (tex) {
         auto s9 = cocos2d::extension::CCScale9Sprite::create(shapeName.c_str());
@@ -144,9 +143,9 @@ CCNode* createShapeStencil(std::string const& shapeName, float size) {
     return nullptr;
 }
 
-// === BORDER: dibuja solo el contorno de la forma ===
+// borde
 
-// Helper: genera vertices de un poligono regular
+// vertices de poligono regular
 static std::vector<CCPoint> getRegularPolygonVerts(int sides, float radius, CCPoint center) {
     std::vector<CCPoint> verts;
     verts.reserve(sides);
@@ -160,7 +159,7 @@ static std::vector<CCPoint> getRegularPolygonVerts(int sides, float radius, CCPo
     return verts;
 }
 
-// Helper: genera vertices de estrella
+// vertices de estrella
 static std::vector<CCPoint> getStarVerts(int points, float outerR, float innerR, CCPoint center) {
     int totalVerts = points * 2;
     std::vector<CCPoint> verts;
@@ -176,7 +175,7 @@ static std::vector<CCPoint> getStarVerts(int points, float outerR, float innerR,
     return verts;
 }
 
-// Helper: genera vertices de corazon
+// vertices de corazon
 static std::vector<CCPoint> getHeartVerts(float size, CCPoint center) {
     const int segments = 60;
     std::vector<CCPoint> verts;
@@ -191,7 +190,7 @@ static std::vector<CCPoint> getHeartVerts(float size, CCPoint center) {
     return verts;
 }
 
-// Obtener vertices de la forma por nombre
+// vertices segun nombre
 static std::vector<CCPoint> getShapeVerts(std::string const& shapeName, float half, CCPoint center) {
     if (shapeName == "circle") return getRegularPolygonVerts(64, half, center);
     if (shapeName == "square" || shapeName == "rectangle") {

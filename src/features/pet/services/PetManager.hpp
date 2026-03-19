@@ -6,11 +6,9 @@
 #include <set>
 #include <functional>
 
-// ────────────────────────────────────────────────────────────
-// PetConfig: all pet settings, serializable to JSON
-// ────────────────────────────────────────────────────────────
+// config de la mascota
 
-// Supported layer names for pet visibility
+// layers donde se puede mostrar
 inline std::vector<std::string> PET_LAYER_OPTIONS = {
     "MenuLayer", "LevelBrowserLayer", "LevelInfoLayer",
     "CreatorLayer", "LevelSearchLayer", "GauntletSelectLayer",
@@ -52,15 +50,13 @@ struct PetConfig {
     };
 };
 
-// ────────────────────────────────────────────────────────────
 // PetManager: singleton
-// ────────────────────────────────────────────────────────────
 
 class PetManager {
 public:
     static PetManager& get();
 
-    // lifecycle
+    // ciclo de vida
     void init();
     void update(float dt);
     void attachToScene(cocos2d::CCScene* scene);
@@ -72,11 +68,11 @@ public:
     void saveConfig();
     void applyConfigLive();   // push current config to sprite
 
-    // image
+    // imagen
     void setImage(std::string const& galleryFilename);
     void reloadSprite();
 
-    // gallery
+    // galeria
     std::vector<std::string> getGalleryImages() const;
     std::string addToGallery(std::filesystem::path const& srcPath);   // returns filename
     void removeFromGallery(std::string const& filename);
@@ -85,7 +81,7 @@ public:
     std::filesystem::path galleryDir() const;
     cocos2d::CCTexture2D* loadGalleryThumb(std::string const& filename) const;
 
-    // state (read-only)
+    // estado
     bool isAttached() const { return m_petNode != nullptr && m_petNode->getParent() != nullptr; }
     bool isWalking() const { return m_walking; }
     bool shouldShowOnCurrentScene() const;
@@ -95,12 +91,12 @@ private:
 
     PetConfig m_config;
 
-    // scene node tree: hostNode -> petSprite / trailNode
+    // host -> sprite / trail
     geode::Ref<cocos2d::CCNode> m_petNode = nullptr;        // host node added to scene
     cocos2d::CCSprite* m_petSprite = nullptr;     // the actual image (child of m_petNode)
     cocos2d::CCMotionStreak* m_trail = nullptr;   // child of m_petNode
 
-    // physics state
+    // estado de movimiento
     cocos2d::CCPoint m_currentPos;
     cocos2d::CCPoint m_targetPos;
     cocos2d::CCPoint m_velocity;
@@ -112,14 +108,11 @@ private:
     float m_landSquishTimer = 0.f;  // >0 while squishing
     bool  m_wasWalking = false;
 
-    // helpers
+    // util
     std::filesystem::path configPath() const;
     void createPetSprite();
     void updateIdleAnimation(float dt);
     void updateWalkAnimation(float dt);
     void updateTrail();
 };
-
-
-
 

@@ -5,10 +5,6 @@
 #include <string>
 #include <vector>
 
-/**
- * ThumbnailSubmissionService — sugerencias, updates y descargas de
- * contenido pendiente.  Extraido de ThumbnailAPI.
- */
 class ThumbnailSubmissionService {
 public:
     using UploadCallback   = geode::CopyableFunction<void(bool success, std::string const& message)>;

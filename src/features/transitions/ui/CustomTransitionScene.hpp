@@ -5,14 +5,9 @@
 #include <unordered_map>
 #include "../services/TransitionManager.hpp"
 
-// ════════════════════════════════════════════════════════════
-// CustomTransitionScene — escena que ejecuta una transicion
-// personalizada definida por una secuencia de comandos.
-// Mantiene ambas capas (origen y destino) simultaneamente
-// y ejecuta los comandos secuencialmente.
-// ════════════════════════════════════════════════════════════
+// escena que corre la transicion custom
 
-// Saved node state for proper restoration after transition
+// estado original para restaurar al final
 struct NodeState {
     cocos2d::CCPoint position;
     float scale = 1.f;
@@ -61,6 +56,6 @@ private:
     bool m_isPush = false;
     bool m_finished = false;
 
-    // Original node states for restoration
+    // estados originales
     std::unordered_map<cocos2d::CCNode*, NodeState> m_originalStates;
 };

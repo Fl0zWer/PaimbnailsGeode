@@ -38,7 +38,7 @@ bool ProfileMusicPopup::init(int accountID) {
     createWaveformDisplay();
     createControlButtons();
 
-    // Cargar configuracion existente si la hay
+    // cargo lo que ya estaba guardado
     loadExistingConfig();
 
     paimon::markDynamicPopup(this);
@@ -48,14 +48,14 @@ bool ProfileMusicPopup::init(int accountID) {
 void ProfileMusicPopup::createSongIdInput() {
     auto winSize = m_mainLayer->getContentSize();
 
-    // Label "Song ID:"
+    // label del ID
     auto idLabel = CCLabelBMFont::create("Newgrounds Song ID:", "bigFont.fnt");
     idLabel->setScale(0.4f);
     idLabel->setAnchorPoint({0, 0.5f});
     idLabel->setPosition({20.f, winSize.height - 50.f});
     m_mainLayer->addChild(idLabel);
 
-    // Input field usando TextInput de Geode (maneja touch correctamente)
+    // input del ID
     m_songIdInput = TextInput::create(120.f, "Enter ID...");
     m_songIdInput->setPosition({230.f, winSize.height - 50.f});
     m_songIdInput->setFilter("0123456789");
@@ -63,13 +63,13 @@ void ProfileMusicPopup::createSongIdInput() {
     m_songIdInput->setID("song-id-input"_spr);
     m_mainLayer->addChild(m_songIdInput, 11);
 
-    // Load button
+    // cargar
     auto loadSpr = ButtonSprite::create("Load", 60, true, "bigFont.fnt", "GJ_button_01.png", 25.f, 0.6f);
     auto loadBtn = CCMenuItemSpriteExtra::create(loadSpr, this, menu_selector(ProfileMusicPopup::onLoadSong));
     loadBtn->setPosition({350.f, winSize.height - 50.f});
     m_mainMenu->addChild(loadBtn);
 
-    // Song info label
+    // texto con la info de la cancion
     m_songInfoLabel = CCLabelBMFont::create("No song loaded", "goldFont.fnt");
     m_songInfoLabel->setScale(0.4f);
     m_songInfoLabel->setPosition({winSize.width / 2, winSize.height - 80.f});
@@ -79,13 +79,13 @@ void ProfileMusicPopup::createSongIdInput() {
 void ProfileMusicPopup::createWaveformDisplay() {
     auto winSize = m_mainLayer->getContentSize();
 
-    // Waveform container
+    // area del waveform
     m_waveformWidth = 360.f;
     m_waveformHeight = 50.f; 
     m_waveformX = (winSize.width - m_waveformWidth) / 2;
     m_waveformY = winSize.height - 140.f;
 
-    // Fondo estilo GD
+    // fondo
     auto waveformBg = CCScale9Sprite::create("square02b_001.png", {0, 0, 80, 80});
     waveformBg->setContentSize({m_waveformWidth + 10.f, m_waveformHeight + 10.f});
     waveformBg->setColor({0, 0, 0});
@@ -93,20 +93,19 @@ void ProfileMusicPopup::createWaveformDisplay() {
     waveformBg->setPosition({winSize.width / 2, m_waveformY + m_waveformHeight / 2});
     m_mainLayer->addChild(waveformBg);
 
-    // Waveform container
     m_waveformContainer = CCNode::create();
     m_waveformContainer->setPosition({m_waveformX, m_waveformY});
     m_waveformContainer->setContentSize({m_waveformWidth, m_waveformHeight});
     m_mainLayer->addChild(m_waveformContainer);
 
-    // Selection overlay
+    // overlay de seleccion
     m_selectionOverlay = CCLayerColor::create({100, 255, 255, 30}); 
     m_selectionOverlay->setContentSize({m_waveformWidth, m_waveformHeight});
     m_selectionOverlay->setPosition({0, 0});
     m_selectionOverlay->setVisible(false); 
     m_waveformContainer->addChild(m_selectionOverlay, 1);
 
-    // Start handle
+    // handle inicial
     m_startHandle = CCSprite::createWithSpriteFrameName("edit_rightBtn_001.png");
     if (!m_startHandle) m_startHandle = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     if (m_startHandle) {
@@ -117,7 +116,7 @@ void ProfileMusicPopup::createWaveformDisplay() {
         m_waveformContainer->addChild(m_startHandle, 3);
     }
 
-    // End handle
+    // handle final
     m_endHandle = CCSprite::createWithSpriteFrameName("edit_leftBtn_001.png");
     if (!m_endHandle) m_endHandle = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
     if (m_endHandle) {
@@ -134,13 +133,13 @@ void ProfileMusicPopup::createWaveformDisplay() {
     m_selectionLabel->setPosition({winSize.width / 2, m_waveformY - 18.f});
     m_mainLayer->addChild(m_selectionLabel);
 
-    // Duration label
+    // duracion
     m_durationLabel = CCLabelBMFont::create("Duration: --:--", "bigFont.fnt");
     m_durationLabel->setScale(0.32f);
     m_durationLabel->setPosition({winSize.width / 2, m_waveformY - 35.f});
     m_mainLayer->addChild(m_durationLabel);
 
-    // Placeholder text
+    // placeholder
     auto placeholderLabel = CCLabelBMFont::create("Enter song ID and press Load", "chatFont.fnt");
     placeholderLabel->setScale(0.75f);
     placeholderLabel->setOpacity(160);
@@ -154,17 +153,17 @@ void ProfileMusicPopup::createWaveformDisplay() {
 void ProfileMusicPopup::createControlButtons() {
     auto winSize = m_mainLayer->getContentSize();
 
-    // Primera fila de botones - controles de reproduccion (mas arriba)
+    // fila de arriba
     float row1Y = 80.f;
 
-    // Play preview
+    // reproducir preview
     auto playSpr = CCSprite::createWithSpriteFrameName("GJ_playBtn2_001.png");
     playSpr->setScale(0.5f);
     auto playBtn = CCMenuItemSpriteExtra::create(playSpr, this, menu_selector(ProfileMusicPopup::onPlayPreview));
     playBtn->setPosition({winSize.width / 2 - 80.f, row1Y});
     m_mainMenu->addChild(playBtn);
 
-    // Stop preview
+    // frenar preview
     auto stopSpr = CCSprite::createWithSpriteFrameName("GJ_stopMusicBtn_001.png");
     if (!stopSpr) stopSpr = CCSprite::createWithSpriteFrameName("GJ_deleteBtn_001.png");
     stopSpr->setScale(0.5f);
@@ -172,17 +171,17 @@ void ProfileMusicPopup::createControlButtons() {
     stopBtn->setPosition({winSize.width / 2 - 20.f, row1Y});
     m_mainMenu->addChild(stopBtn);
 
-    // Download song button
+    // bajar cancion
     auto downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
     downloadSpr->setScale(0.55f);
     auto downloadBtn = CCMenuItemSpriteExtra::create(downloadSpr, this, menu_selector(ProfileMusicPopup::onDownloadSong));
     downloadBtn->setPosition({winSize.width / 2 + 40.f, row1Y});
     m_mainMenu->addChild(downloadBtn);
 
-    // Segunda fila de botones - Save y Delete (mas abajo)
+    // fila de abajo
     float row2Y = 45.f;
 
-    // Save button
+    // guardar
     auto saveSpr = ButtonSprite::create("Save", 70, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.65f);
     auto saveBtn = CCMenuItemSpriteExtra::create(saveSpr, this, menu_selector(ProfileMusicPopup::onSave));
     saveBtn->setPosition({winSize.width / 2 - 50.f, row2Y});
@@ -194,7 +193,6 @@ void ProfileMusicPopup::createControlButtons() {
     deleteBtn->setPosition({winSize.width / 2 + 50.f, row2Y});
     m_mainMenu->addChild(deleteBtn);
 }
-
 
 void ProfileMusicPopup::onLoadSong(CCObject*) {
     std::string idStr = m_songIdInput->getString();
@@ -232,7 +230,7 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
         popup->m_artistName = artist;
         popup->m_songDurationMs = durationMs;
 
-        // Actualizar UI
+        // refresco UI
         std::string infoText = fmt::format("{} - {}", popup->m_artistName, popup->m_songName);
         if (infoText.length() > 50) {
             infoText = infoText.substr(0, 47) + "...";
@@ -243,13 +241,13 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
         int secs = (popup->m_songDurationMs % 60000) / 1000;
         popup->m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
 
-        // Ajustar seleccion si excede la duracion
+        // ajusto la seleccion si se pasa
         if (popup->m_endMs > popup->m_songDurationMs) {
             popup->m_endMs = std::min(popup->m_songDurationMs, MAX_FRAGMENT_MS);
             popup->m_startMs = std::max(0, popup->m_endMs - MAX_FRAGMENT_MS);
         }
 
-        // Cargar waveform
+        // cargo waveform
         popup->loadWaveform();
     });
 }
@@ -257,7 +255,7 @@ void ProfileMusicPopup::onLoadSong(CCObject*) {
 void ProfileMusicPopup::loadWaveform() {
     WeakRef<ProfileMusicPopup> self = this;
 
-    // Primero descargar la cancion para preview
+    // primero bajo la cancion para poder previsualizarla
     ProfileMusicManager::get().downloadSongForPreview(m_songID, [self](bool success, std::string const& path) {
         auto popup = self.lock();
         if (!popup) return;
@@ -268,10 +266,10 @@ void ProfileMusicPopup::loadWaveform() {
             return;
         }
 
-        // Guardar path para preview
+        // guardo el path del preview
         popup->m_previewPath = path;
 
-        // Ahora obtener el waveform
+        // ahora saco el waveform
         ProfileMusicManager::get().getWaveformPeaks(popup->m_songID, [self](bool success, std::vector<float> const& peaks, int durationMs) {
             auto popup = self.lock();
             if (!popup) return;
@@ -285,28 +283,27 @@ void ProfileMusicPopup::loadWaveform() {
 
             popup->m_peaks = peaks;
 
-            // Set duration from waveform analysis
+            // me quedo con la duracion real del analisis
             if (durationMs > 0) {
                 popup->m_songDurationMs = durationMs;
 
-                // Update duration label
                 int mins = popup->m_songDurationMs / 60000;
                 int secs = (popup->m_songDurationMs % 60000) / 1000;
                 popup->m_durationLabel->setString(fmt::format("Duration: {}:{:02d}", mins, secs).c_str());
 
-                // Set default selection to first 20 seconds (or less if song is shorter)
+                // arranco con los primeros 20 s, o menos si no da
                 popup->m_startMs = 0;
                 popup->m_endMs = std::min(popup->m_songDurationMs, MAX_FRAGMENT_MS);
             }
 
-            // Eliminar placeholder
+            // saco el placeholder
             if (auto placeholder = popup->m_waveformContainer->getChildByTag(999)) {
                 placeholder->removeFromParent();
             }
 
             popup->renderWaveform();
 
-            // Mostrar overlay y handles ahora que tenemos el waveform
+            // ahora si muestro la seleccion y los handles
             if (popup->m_selectionOverlay) {
                 popup->m_selectionOverlay->setVisible(true);
             }
@@ -324,13 +321,13 @@ void ProfileMusicPopup::loadWaveform() {
 }
 
 void ProfileMusicPopup::renderWaveform() {
-    // Limpiar barras anteriores
+    // limpio lo anterior
     for (auto bar : m_waveformBars) {
         bar->removeFromParent();
     }
     m_waveformBars.clear();
 
-    // En lugar del waveform, crear una barra de progreso simple
+    // por ahora uso una barra simple
     auto progressBar = CCSprite::create("square.png");
     if (!progressBar) progressBar = CCSprite::createWithSpriteFrameName("whiteSquare60_001.png");
     if (!progressBar) {
@@ -340,7 +337,7 @@ void ProfileMusicPopup::renderWaveform() {
 
     if (progressBar) {
         progressBar->setScaleX(m_waveformWidth);
-        progressBar->setScaleY(4.f); // Linea delgada
+        progressBar->setScaleY(4.f);
         progressBar->setAnchorPoint({0.5f, 0.5f});
         progressBar->setPosition({m_waveformWidth / 2, m_waveformHeight / 2});
         progressBar->setColor({100, 100, 110}); // Gris
@@ -356,11 +353,11 @@ void ProfileMusicPopup::updateSelectionOverlay() {
     float startX = msToPosition(m_startMs);
     float endX = msToPosition(m_endMs);
 
-    // Actualizar posicion y tamano del overlay
+    // overlay
     m_selectionOverlay->setPosition({startX, 0});
     m_selectionOverlay->setContentSize({endX - startX, m_waveformHeight});
 
-    // Actualizar handles
+    // handles
     if (m_startHandle) {
         m_startHandle->setPosition({startX, m_waveformHeight / 2});
     }
@@ -381,7 +378,7 @@ void ProfileMusicPopup::updateSelectionLabel() {
 
     m_selectionLabel->setString(text.c_str());
 
-    // Color rojo si excede 20 segundos
+    // si se pasa de 20 s lo marco en rojo
     if (durationSecs > 20) {
         m_selectionLabel->setColor({255, 100, 100});
     } else {
@@ -401,11 +398,11 @@ float ProfileMusicPopup::msToPosition(int ms) {
 }
 
 void ProfileMusicPopup::clampSelection() {
-    // Asegurar que no exceda la duracion de la cancion
+    // no me paso del audio
     if (m_startMs < 0) m_startMs = 0;
     if (m_endMs > m_songDurationMs) m_endMs = m_songDurationMs;
 
-    // Asegurar minimo de 5 segundos
+    // minimo 5 s
     if (m_endMs - m_startMs < MIN_FRAGMENT_MS) {
         if (m_endMs + MIN_FRAGMENT_MS - (m_endMs - m_startMs) <= m_songDurationMs) {
             m_endMs = m_startMs + MIN_FRAGMENT_MS;
@@ -414,48 +411,47 @@ void ProfileMusicPopup::clampSelection() {
         }
     }
 
-    // Asegurar maximo de 20 segundos
+    // maximo 20 s
     if (m_endMs - m_startMs > MAX_FRAGMENT_MS) {
         m_endMs = m_startMs + MAX_FRAGMENT_MS;
     }
 
-    // Re-clampar despues de ajustes
+    // clampo otra vez por las dudas
     if (m_startMs < 0) m_startMs = 0;
     if (m_endMs > m_songDurationMs) m_endMs = m_songDurationMs;
 }
 
 bool ProfileMusicPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
-    // Let the parent handle it first
+    // primero dejo pasar el toque base del popup
     if (!Popup::ccTouchBegan(touch, event)) return false;
 
-    // Don't handle waveform touches if no song loaded
+    // sin cancion no hay nada que mover
     if (m_songDurationMs <= 0) return true;
 
     auto touchPos = touch->getLocation();
     auto localPos = m_waveformContainer->convertToNodeSpace(touchPos);
 
-    // Check if touch is inside waveform area
+    // si cae afuera no arrastro nada
     if (localPos.x < -20 || localPos.x > m_waveformWidth + 20 ||
         localPos.y < -20 || localPos.y > m_waveformHeight + 20) {
-        // Outside waveform - don't handle dragging
         return true;
     }
 
     float startX = msToPosition(m_startMs);
     float endX = msToPosition(m_endMs);
 
-    // Check handles (with tolerance) - prioritize the closest one
+    // reviso handles con tolerancia
     float tolerance = 20.f;
 
     float distToStart = std::abs(localPos.x - startX);
     float distToEnd = std::abs(localPos.x - endX);
 
-    // Check if touching either handle
+    // veo si toque algun handle
     bool touchingStart = distToStart < tolerance;
     bool touchingEnd = distToEnd < tolerance;
 
     if (touchingStart && touchingEnd) {
-        // Both handles are close, pick the closest one
+        // si pego en ambos, elijo el mas cercano
         if (distToStart < distToEnd) {
             m_isDraggingStart = true;
             m_dragStartX = localPos.x;
@@ -479,7 +475,7 @@ bool ProfileMusicPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
         return true;
     }
 
-    // Check if inside selection (to move entire selection)
+    // si cae adentro muevo todo el bloque
     if (localPos.x >= startX && localPos.x <= endX) {
         m_isDraggingSelection = true;
         m_dragStartX = localPos.x;
@@ -496,22 +492,20 @@ void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
     auto touchPos = touch->getLocation();
     auto localPos = m_waveformContainer->convertToNodeSpace(touchPos);
 
-    // Clampar dentro del area
+    // lo dejo dentro del area
     localPos.x = std::max(0.f, std::min(m_waveformWidth, localPos.x));
 
     if (m_isDraggingStart) {
         int newStartMs = positionToMs(localPos.x);
         int duration = m_endMs - m_startMs;
 
-        // Si la flecha verde intenta pasar la roja, mover ambas juntas
+        // si la verde se cruza, muevo ambas juntas
         if (newStartMs > m_endMs - MIN_FRAGMENT_MS) {
-            // Mover ambas flechas manteniendo la distancia
             newStartMs = std::min(newStartMs, m_songDurationMs - duration);
             newStartMs = std::max(0, newStartMs);
             m_startMs = newStartMs;
             m_endMs = newStartMs + duration;
         } else {
-            // Movimiento normal
             newStartMs = std::max(newStartMs, m_endMs - MAX_FRAGMENT_MS);
             newStartMs = std::max(0, newStartMs);
             m_startMs = newStartMs;
@@ -521,15 +515,13 @@ void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
         int newEndMs = positionToMs(localPos.x);
         int duration = m_endMs - m_startMs;
 
-        // Si la flecha roja intenta pasar la verde, mover ambas juntas
+        // si la roja se cruza, muevo ambas juntas
         if (newEndMs < m_startMs + MIN_FRAGMENT_MS) {
-            // Mover ambas flechas manteniendo la distancia
             newEndMs = std::max(newEndMs, duration);
             newEndMs = std::min(newEndMs, m_songDurationMs);
             m_endMs = newEndMs;
             m_startMs = newEndMs - duration;
         } else {
-            // Movimiento normal
             newEndMs = std::min(newEndMs, m_startMs + MAX_FRAGMENT_MS);
             newEndMs = std::min(newEndMs, m_songDurationMs);
             m_endMs = newEndMs;
@@ -542,7 +534,7 @@ void ProfileMusicPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
         int duration = m_endMs - m_startMs;
         int newStartMs = m_dragStartMs + deltaMs;
 
-        // Clampar
+        // clampo
         if (newStartMs < 0) newStartMs = 0;
         if (newStartMs + duration > m_songDurationMs) newStartMs = m_songDurationMs - duration;
 
@@ -645,7 +637,7 @@ void ProfileMusicPopup::onSave(CCObject*) {
 void ProfileMusicPopup::onDelete(CCObject*) {
     WeakRef<ProfileMusicPopup> self = this;
 
-    // Create a simple confirmation
+    // confirm simple
     geode::createQuickPopup(
         "Delete Music",
         "Are you sure you want to remove your profile music?",
@@ -697,10 +689,10 @@ void ProfileMusicPopup::loadExistingConfig() {
         popup->m_songName = config.songName;
         popup->m_artistName = config.artistName;
 
-        // Actualizar UI
+        // refresco UI
         popup->m_songIdInput->setString(std::to_string(popup->m_songID));
 
-        // Cargar info y waveform
+        // recargo info y waveform
         popup->onLoadSong(nullptr);
     });
 }

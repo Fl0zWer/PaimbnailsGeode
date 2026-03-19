@@ -15,19 +15,6 @@
 #include <optional>
 #include <chrono>
 
-/**
- * ThumbnailAPI — fachada de compatibilidad.
- *
- * Toda la logica de negocio se ha movido a servicios por dominio:
- *   - ThumbnailTransportClient  (features/thumbnails/services/)
- *   - ThumbnailSubmissionService (features/thumbnails/services/)
- *   - ModerationService          (features/moderation/services/)
- *   - ProfileImageService        (features/profiles/services/)
- *
- * Las llamadas via ThumbnailAPI::get().foo() siguen funcionando
- * pero delegan al servicio correspondiente.  Los consumidores nuevos
- * deben llamar al servicio directamente.
- */
 class ThumbnailAPI {
 public:
     using UploadCallback = geode::CopyableFunction<void(bool success, std::string const& message)>;
@@ -48,34 +35,12 @@ public:
 
     // funciones principales de la API
     
-    /**
-     * obtener lista miniaturas nivel
-     * @param levelId Level ID
-     * @param callback Callback with list of thumbnails
-     */
     void getThumbnails(int levelId, ThumbnailListCallback callback);
 
-    /**
-     * obtener informacion completa miniaturas nivel
-     * @param levelId Level ID
-     * @param callback Callback with raw json response
-     */
     void getThumbnailInfo(int levelId, ActionCallback callback);
 
-    /**
-     * obtener url miniatura nivel
-     * @param levelId Level ID
-     * @return URL string
-     */
     std::string getThumbnailURL(int levelId);
 
-    /**
-     * subir miniatura a servidor
-     * @param levelId Level ID
-     * @param pngData PNG image data
-     * @param username Username of uploader
-     * @param callback Callback with success status and message
-     */
     void uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback);
 
     // subir miniatura GIF (solo mod/admin)
@@ -104,7 +69,6 @@ public:
     // descargar solo los datos binarios de una imagen desde una URL
     void downloadFromUrlData(std::string const& url, DownloadDataCallback callback);
 
-
     
     // subir config de perfil
     void uploadProfileConfig(int accountID, ProfileConfig const& config, ActionCallback callback);
@@ -122,131 +86,46 @@ public:
     // descargar background de perfil pendiente (para moderadores en centro de verificacion)
     void downloadPendingProfile(int accountID, DownloadCallback callback);
 
-
     // sistema de votos
     void getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback);
     void submitVote(int levelId, int stars, std::string const& username, std::string const& thumbnailId, ActionCallback callback);
 
-    /**
-     * descargar miniatura desde servidor (con cache)
-     * @param levelId Level ID
-     * @param callback Callback with success status and texture
-     */
     void downloadThumbnail(int levelId, DownloadCallback callback);
     
-    /**
-     * verificar si existe miniatura en servidor
-     * @param levelId Level ID
-     * @param callback Callback with exists status
-     */
     void checkExists(int levelId, ExistsCallback callback);
     
-    /**
-     * verificar si usuario es moderador
-     * @param username Username to check
-     * @param callback Callback with moderator status
-     */
     void checkModerator(std::string const& username, ModeratorCallback callback);
     // chequeo de moderador “seguro” con accountID > 0 obligatorio
     void checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback);
     
-    /**
-     * confirmar estado mod de cualquier usuario (publico)
-     * no hace chequeo seguridad usuario actual.
-     */
     void checkUserStatus(std::string const& username, ModeratorCallback callback);
 
-    /**
-     * obtener textura miniatura (prueba cache, local, luego servidor)
-     * @param levelId Level ID
-     * @param callback Callback with texture (or nullptr if not found)
-     */
     void getThumbnail(int levelId, DownloadCallback callback);
     
-    /**
-     * sincronizar cola verificacion con servidor
-     * @param category Category to sync (Verify, Update, Report)
-     * @param callback Callback with items from server
-     */
     void syncVerificationQueue(PendingCategory category, QueueCallback callback);
     
-    /**
-     * reclamar item cola verificacion (marcar en revision)
-     * @param levelId Level ID
-     * @param category Category
-     * @param username Moderator username
-     * @param callback Callback with success status
-     */
     void claimQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& type = "");
     
-    /**
-     * aceptar item cola verificacion
-     * @param levelId Level ID
-     * @param category Category
-     * @param username Moderator username
-     * @param callback Callback with success status
-     */
     void acceptQueueItem(int levelId, PendingCategory category, std::string const& username, ActionCallback callback, std::string const& targetFilename = "", std::string const& type = "");
     
-    /**
-     * rechazar item cola verificacion
-     * @param levelId Level ID
-     * @param category Category
-     * @param username Moderator username
-     * @param reason Rejection reason
-     * @param callback Callback with success status
-     */
     void rejectQueueItem(int levelId, PendingCategory category, std::string const& username, std::string const& reason, ActionCallback callback, std::string const& type = "");
     
-    /**
-     * enviar reporte al servidor
-     * @param levelId Level ID
-     * @param username Reporter username
-     * @param note Report reason
-     * @param callback Callback with success status
-     */
     void submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback);
     
-    /**
-     * aÃ±adir moderador (solo admin)
-     * @param username Username to add
-     * @param adminUser Admin username
-     * @param callback Callback with success status
-     */
     void addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback);
     
-    /**
-     * quitar moderador (solo admin) - reutiliza endpoint add-moderator con action=remove
-     * @param username Username to remove
-     * @param adminUser Admin username
-     * @param callback Callback with success status
-     */
     void removeModerator(std::string const& username, std::string const& adminUser, ActionCallback callback);
 
-    /**
-     * obtener top 100 creadores de miniaturas
-     * @param callback Callback with raw json response
-     */
     void getTopCreators(ActionCallback callback);
 
-    /**
-     * obtener top 100 mejores miniaturas rateadas
-     * @param callback Callback with raw json response
-     */
     void getTopThumbnails(ActionCallback callback);
     
-    /**
-     * borrar miniatura servidor (solo moderador)
-     * @param levelId Level ID
-     * @param username Moderator username
-     * @param callback Callback with success status
-     */
     void deleteThumbnail(int levelId, std::string const& username, int accountID, ActionCallback callback);
     
     // configuracion
     void setServerEnabled(bool enabled);
 
-    // helper pa convertir datos a CCTexture2D
+    // paso datos a CCTexture2D
     cocos2d::CCTexture2D* webpToTexture(std::vector<uint8_t> const& webpData);
 
 private:

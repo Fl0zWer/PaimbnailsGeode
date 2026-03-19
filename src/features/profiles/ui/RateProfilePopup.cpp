@@ -29,7 +29,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // --- average display ---
     m_averageLabel = CCLabelBMFont::create("...", "bigFont.fnt");
     m_averageLabel->setScale(0.5f);
     m_averageLabel->setPosition({centerX, contentSize.height - 52.f});
@@ -44,7 +43,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_countLabel->setID("count-label"_spr);
     m_mainLayer->addChild(m_countLabel);
 
-    // --- star buttons 1-5 ---
     auto starMenu = CCMenu::create();
     starMenu->setID("stars-menu"_spr);
     starMenu->setPosition({centerX, contentSize.height - 100.f});
@@ -75,7 +73,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_selectedLabel->setID("selected-label"_spr);
     m_mainLayer->addChild(m_selectedLabel);
 
-    // --- message input ---
     m_messageInput = TextInput::create(280.f, "Leave a message (optional)", "chatFont.fnt");
     m_messageInput->setID("message-input"_spr);
     m_messageInput->setPosition({centerX, contentSize.height - 160.f});
@@ -83,7 +80,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_messageInput->setScale(0.8f);
     m_mainLayer->addChild(m_messageInput);
 
-    // --- submit button ---
     auto submitMenu = CCMenu::create();
     submitMenu->setID("submit-menu"_spr);
     submitMenu->setPosition({centerX, contentSize.height - 195.f});
@@ -95,7 +91,6 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     submitBtn->setPosition({0, 0});
     submitMenu->addChild(submitBtn);
 
-    // --- report button ---
     auto reportSpr = ButtonSprite::create("Report", "bigFont.fnt", "GJ_button_06.png", 0.6f);
     reportSpr->setScale(0.65f);
     auto reportBtn = CCMenuItemSpriteExtra::create(reportSpr, this, menu_selector(RateProfilePopup::onReport));
@@ -103,7 +98,7 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     reportBtn->setPosition({0, -30.f});
     submitMenu->addChild(reportBtn);
 
-    // load existing rating data
+    // cargo el rating que ya tenia
     loadExistingRating();
 
     paimon::markDynamicPopup(this);
@@ -184,7 +179,7 @@ void RateProfilePopup::loadExistingRating() {
             }
         }
 
-        // Restore user's existing vote if any
+        // si ya habia voto, lo repongo
         if (root["userVote"].isObject()) {
             auto uv = root["userVote"];
             if (uv["stars"].isNumber()) {
@@ -214,7 +209,7 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
         username = gm->m_playerName;
     }
 
-    // loading
+    // spinner mientras manda la nota
     auto spinner = geode::LoadingSpinner::create(30.f);
     spinner->setPosition(m_mainLayer->getContentSize() / 2);
     spinner->setID("paimon-loading-spinner"_spr);
@@ -225,7 +220,7 @@ void RateProfilePopup::onSubmit(CCObject* sender) {
 
     std::string message = m_messageInput ? m_messageInput->getString() : "";
 
-    // Build JSON body safely (matjson handles escaping)
+    // armo el JSON con matjson
     matjson::Value bodyObj = matjson::makeObject({
         {"accountID", m_accountID},
         {"stars", m_rating},

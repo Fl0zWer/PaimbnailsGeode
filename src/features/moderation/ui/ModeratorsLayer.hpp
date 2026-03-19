@@ -30,7 +30,6 @@ protected:
 
     void onAPIKeyParams(cocos2d::CCObject*);
 
-
     virtual ~ModeratorsLayer();
 
 public:

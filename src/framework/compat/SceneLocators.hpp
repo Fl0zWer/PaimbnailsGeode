@@ -11,7 +11,6 @@ using namespace geode::prelude;
 
 namespace paimon::compat {
 
-// ── LevelBrowserLocator ─────────────────────────────────────────────
 // Para LevelListLayer, LevelSearchLayer, y capas similares de busqueda.
 
 struct LevelBrowserLocator {
@@ -51,7 +50,6 @@ struct LevelBrowserLocator {
     }
 };
 
-// ── GauntletLocator ─────────────────────────────────────────────────
 // Para GauntletLayer.
 
 struct GauntletLocator {
@@ -68,7 +66,6 @@ struct GauntletLocator {
     }
 };
 
-// ── InfoLayerLocator ────────────────────────────────────────────────
 // Para InfoLayer (popup de info de nivel).
 
 struct InfoLayerLocator {
@@ -108,7 +105,6 @@ struct InfoLayerLocator {
     }
 };
 
-// ── LevelSelectLocator ──────────────────────────────────────────────
 // Para LevelSelectLayer (los main levels).
 
 struct LevelSelectLocator {

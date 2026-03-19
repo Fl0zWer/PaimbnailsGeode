@@ -151,4 +151,3 @@ CCGLProgram* getBgShaderProgram(std::string const& shaderName) {
 
 } // namespace Shaders
 
-

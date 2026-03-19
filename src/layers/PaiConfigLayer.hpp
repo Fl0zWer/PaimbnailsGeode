@@ -4,12 +4,6 @@
 #include <Geode/binding/Slider.hpp>
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 
-/**
- * PaiConfigLayer — Full-screen settings with 3 main tabs:
- *   1. Backgrounds  — per-layer bg config, left sidebar + right preview
- *   2. Profile      — profile picture image/shape with live preview
- *   3. Extras       — Pet config (beta) and future features
- */
 class PaiConfigLayer : public cocos2d::CCLayer {
 protected:
     bool init() override;
@@ -20,14 +14,12 @@ protected:
     cocos2d::CCMenu* m_profileMenu = nullptr;
     cocos2d::CCMenu* m_extrasMenu = nullptr;
 
-    // ── Main tabs ──
     int m_currentMainTab = 0;
     std::vector<CCMenuItemSpriteExtra*> m_mainTabBtns;
     cocos2d::CCLayer* m_bgTab = nullptr;
     cocos2d::CCLayer* m_profileTab = nullptr;
     cocos2d::CCLayer* m_extrasTab = nullptr;
 
-    // ── Background tab ──
     std::string m_selectedKey = "menu";
     std::vector<CCMenuItemSpriteExtra*> m_layerBtns;
     geode::TextInput* m_bgIdInput = nullptr;
@@ -42,25 +34,24 @@ protected:
     cocos2d::CCLabelBMFont* m_shaderLabel = nullptr;
     int m_shaderIndex = 0;
 
-    // ── Profile tab ──
     cocos2d::CCNode* m_profilePreview = nullptr;
 
-    // Tab switching
+    // cambio de tabs
     void onMainTabSwitch(cocos2d::CCObject* sender);
     void switchMainTab(int idx);
 
-    // Build tabs
+    // armado de tabs
     void buildBackgroundTab();
     void buildProfileTab();
     void buildExtrasTab();
 
-    // Layer selector (Background tab)
+    // selector de layer en fondos
     void onLayerSelect(cocos2d::CCObject* sender);
     void updateLayerButtons();
     void refreshForCurrentLayer();
     void rebuildBgPreview();
 
-    // Background actions
+    // acciones del fondo
     void onBgCustomImage(cocos2d::CCObject*);
     void onBgRandom(cocos2d::CCObject*);
     void onBgSetID(cocos2d::CCObject*);
@@ -73,18 +64,18 @@ protected:
     void onShaderNext(cocos2d::CCObject*);
     void updateShaderLabel();
 
-    // Profile actions
+    // acciones del perfil
     void onProfileImage(cocos2d::CCObject*);
     void onProfileImageClear(cocos2d::CCObject*);
     void onProfilePhoto(cocos2d::CCObject*);
     void rebuildProfilePreview();
 
-    // Extras
+    // extras
     void onPetConfig(cocos2d::CCObject*);
     void onTransitions(cocos2d::CCObject*);
     void onClearAllCache(cocos2d::CCObject*);
 
-    // Common
+    // comun
     void onApply(cocos2d::CCObject*);
     void onBack(cocos2d::CCObject*);
     CCMenuItemSpriteExtra* makeBtn(char const* text, cocos2d::CCPoint pos,
@@ -94,5 +85,4 @@ public:
     static PaiConfigLayer* create();
     static cocos2d::CCScene* scene();
 };
-
 

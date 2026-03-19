@@ -89,7 +89,6 @@ LayerBgConfig LayerBackgroundManager::resolveConfig(std::string const& layerKey)
     return resolvedCfg;
 }
 
-// ── Music per-layer ──
 LayerMusicConfig LayerBackgroundManager::getMusicConfig(std::string const& key) const {
     LayerMusicConfig cfg;
     cfg.mode        = Mod::get()->getSavedValue<std::string>("layermusic-" + key + "-mode", "default");
@@ -115,7 +114,6 @@ void LayerBackgroundManager::saveMusicConfig(std::string const& key, LayerMusicC
     (void)Mod::get()->saveData();
 }
 
-// ── Global music (one config for ALL layers) ──
 LayerMusicConfig LayerBackgroundManager::getGlobalMusicConfig() const {
     return getMusicConfig("global");
 }
@@ -124,7 +122,6 @@ void LayerBackgroundManager::saveGlobalMusicConfig(LayerMusicConfig const& cfg) 
     saveMusicConfig("global", cfg);
 }
 
-// ── Migracion de saved values legacy al nuevo formato unificado ──
 void LayerBackgroundManager::migrateFromLegacy() {
     if (Mod::get()->getSavedValue<bool>("layerbg-migrated-v2", false)) return;
 
@@ -162,7 +159,6 @@ void LayerBackgroundManager::migrateFromLegacy() {
     (void)Mod::get()->saveData();
     log::info("[LayerBackgroundManager] Legacy settings migrated to v2 format");
 
-    // ── Migrate per-layer music → global music config ──
     migrateToGlobalMusic();
 }
 
@@ -188,13 +184,11 @@ void LayerBackgroundManager::migrateToGlobalMusic() {
     (void)Mod::get()->saveData();
 }
 
-// ── ocultar fondo original de GD ──
 void LayerBackgroundManager::hideOriginalBg(CCLayer* layer) {
-    // Geode node-ids: cada layer tiene un ID distinto para su fondo
-    // MenuLayer = "main-menu-bg", la mayoria de layers = "background"
+    // cada layer usa IDs distintos para el fondo
     static char const* bgNodeIDs[] = {
-        "main-menu-bg",   // MenuLayer
-        "background",     // CreatorLayer, LevelSearchLayer, LeaderboardsLayer, LevelBrowserLayer, etc.
+        "main-menu-bg",   // menu
+        "background",     // casi todos los demas
         nullptr
     };
 
@@ -204,14 +198,14 @@ void LayerBackgroundManager::hideOriginalBg(CCLayer* layer) {
         }
     }
 
-    // Tambien ocultar el GJGroundLayer si existe (corners/ground decorativos)
+    // tambien oculto el GJGroundLayer si anda por ahi
     if (auto children = layer->getChildren()) {
         auto ws = CCDirector::sharedDirector()->getWinSize();
         bool foundByID = false;
         for (int j = 0; bgNodeIDs[j]; j++) {
             if (layer->getChildByID(bgNodeIDs[j])) { foundByID = true; break; }
         }
-        // Si no encontramos por ID, fallback: ocultar primer sprite grande (fondo GD)
+        // si no lo encuentro por ID, oculto el primer sprite grande
         if (!foundByID) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 auto* sprite = typeinfo_cast<CCSprite*>(child);
@@ -228,17 +222,16 @@ void LayerBackgroundManager::hideOriginalBg(CCLayer* layer) {
     }
 }
 
-// ── cargar textura segun config (optimizado: cache-first) ──
 CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& cfg) {
     if (cfg.type == "custom" && !cfg.customPath.empty()) {
         std::error_code ec;
         if (std::filesystem::exists(cfg.customPath, ec)) {
-            // no GIF aqui — GIF se maneja aparte
+            // los GIF van por otro lado
             auto ext = geode::utils::string::pathToString(std::filesystem::path(cfg.customPath).extension());
             for (auto& c : ext) c = (char)std::tolower(c);
-            if (ext == ".gif") return nullptr; // senal para usar applyGifBg
+            if (ext == ".gif") return nullptr;
 
-            // Intentar cache primero; si no hay, cargar
+            // primero pruebo cache
             auto* cached = CCTextureCache::sharedTextureCache()->textureForKey(cfg.customPath.c_str());
             if (cached) return cached;
 
@@ -262,24 +255,23 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
             return LocalThumbs::get().loadTexture(ids[dist(rng)]);
         }
     } else if (cfg.type == "menu") {
-        // usar la misma config que el menu principal (nuevo formato unificado)
+        // uso la config del menu principal
         LayerBgConfig menuCfg = getConfig("menu");
         if (menuCfg.type == "default") {
-            // fallback a legacy keys si la migracion aun no corrio
+            // si la migracion no corrio, caigo a las legacy
             std::string menuType = Mod::get()->getSavedValue<std::string>("bg-type", "default");
             if (menuType == "default" || menuType.empty()) return nullptr;
             menuCfg.type = (menuType == "thumbnails") ? "random" : menuType;
             menuCfg.customPath = Mod::get()->getSavedValue<std::string>("bg-custom-path", "");
             menuCfg.levelId = Mod::get()->getSavedValue<int>("bg-id", 0);
         }
-        menuCfg.darkMode = cfg.darkMode; // usar dark mode del layer, no del menu
+        menuCfg.darkMode = cfg.darkMode;
         menuCfg.darkIntensity = cfg.darkIntensity;
         return loadTextureForConfig(menuCfg);
     }
     return nullptr;
 }
 
-// ── aplicar fondo estatico ──
 void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, LayerBgConfig const& cfg) {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -294,7 +286,7 @@ void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
     CCSprite* sprite = nullptr;
 
     if (useShader) {
-        // Usar ShaderBgSprite que re-aplica uniforms en draw()
+        // ShaderBgSprite vuelve a meter uniforms en draw()
         auto shaderSpr = ShaderBgSprite::createWithTexture(tex);
         if (!shaderSpr) return;
 
@@ -305,7 +297,7 @@ void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
             shaderSpr->m_screenW = winSize.width;
             shaderSpr->m_screenH = winSize.height;
             shaderSpr->m_shaderTime = 0.f;
-            // Schedule para shaders animados (scanlines, etc.)
+            // update para shaders animados
             shaderSpr->schedule(schedule_selector(ShaderBgSprite::updateShaderTime));
         }
 
@@ -321,7 +313,6 @@ void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
     sprite->setPosition(winSize / 2);
     sprite->setAnchorPoint({0.5f, 0.5f});
 
-
     container->addChild(sprite);
 
     if (cfg.darkMode) {
@@ -335,7 +326,6 @@ void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
     layer->addChild(container);
 }
 
-// ── aplicar fondo GIF ──
 void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path, LayerBgConfig const& cfg) {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -368,7 +358,7 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
         anim->setPosition(winSize / 2);
         anim->setScale(sc);
 
-        // Aplicar shader al GIF (AnimatedGIFSprite ya re-aplica uniforms en draw())
+        // shader sobre el GIF
         if (!shaderName.empty() && shaderName != "none") {
             auto* program = getBgShaderProgram(shaderName);
             if (program) {
@@ -390,18 +380,17 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
     });
 }
 
-// ── API principal ──
 bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& layerKey) {
     auto cfg = getConfig(layerKey);
 
-    // Siempre limpiar container previo si existe
+    // siempre limpio el container previo
     if (auto oldContainer = layer->getChildByID("paimon-layerbg-container"_spr)) {
         oldContainer->removeFromParent();
     }
 
-    if (cfg.type == "default") return false; // no tocar
+    if (cfg.type == "default") return false;
 
-    // resolver referencias a otros layers (evitar ciclos, max 5 saltos)
+    // resuelvo referencias a otros layers
     std::string resolvedPath = cfg.customPath;
     std::string resolvedType = cfg.type;
     LayerBgConfig resolvedCfg = cfg;
@@ -409,7 +398,7 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
 
     while (maxHops-- > 0) {
         if (resolvedType == "menu") {
-            // Check unified config first
+            // primero pruebo el config unificado
             LayerBgConfig menuCfg = getConfig("menu");
             if (menuCfg.type != "default") {
                 resolvedType = menuCfg.type;
@@ -417,10 +406,10 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
                 resolvedCfg.type = menuCfg.type;
                 resolvedCfg.customPath = menuCfg.customPath;
                 resolvedCfg.levelId = menuCfg.levelId;
-                // Keep original dark mode / shader settings
-                continue; // keep resolving in case menu points to another layer ref
+                // conservo dark mode y shader del layer actual
+                continue;
             } else {
-                // Fallback to legacy keys (for pre-migration compat)
+                // si no, caigo a las keys legacy
                 std::string menuType = Mod::get()->getSavedValue<std::string>("bg-type", "default");
                 if (menuType == "custom") {
                     resolvedPath = Mod::get()->getSavedValue<std::string>("bg-custom-path", "");
@@ -435,19 +424,19 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
                     resolvedCfg.type = "id";
                     resolvedCfg.levelId = Mod::get()->getSavedValue<int>("bg-id", 0);
                 } else {
-                    return false; // menu is default
+                    return false;
                 }
                 break;
             }
         }
 
-        // ¿es referencia a otro layer? (creator, browser, search, leaderboards)
+        // si apunta a otro layer, sigo la cadena
         bool isLayerRef = false;
         for (auto& [k, n] : LAYER_OPTIONS) {
             if (resolvedType == k) { isLayerRef = true; break; }
         }
         if (isLayerRef) {
-            // cargar config del layer referenciado
+            // cargo config del layer referenciado
             resolvedCfg = getConfig(resolvedType);
             resolvedCfg.darkMode = cfg.darkMode; // mantener dark mode del original
             resolvedCfg.darkIntensity = cfg.darkIntensity;
@@ -495,5 +484,4 @@ bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& 
 
     return false;
 }
-
 

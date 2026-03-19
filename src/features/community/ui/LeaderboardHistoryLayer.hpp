@@ -29,7 +29,7 @@ protected:
     void createList();
     void updatePageButtons();
 
-    // LevelManagerDelegate
+    // callbacks del level manager
     void loadLevelsFinished(cocos2d::CCArray* levels, char const* key) override;
     void loadLevelsFailed(char const* key) override;
     void setupPageInfo(gd::string, char const*) override;
@@ -39,7 +39,7 @@ protected:
     std::vector<CCMenuItemToggler*> m_tabs;
     std::string m_currentType = "daily";
 
-    // datos del historial
+    // filas del historial
     struct HistoryEntry {
         int levelID = 0;
         long long setAt = 0;
@@ -61,7 +61,7 @@ protected:
     cocos2d::CCNode* m_listContainer = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
 
-    // musica cueva (efecto sobre musica de menu)
+    // efecto cueva en la musica del menu
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
     float m_savedBgVolume = 1.0f;

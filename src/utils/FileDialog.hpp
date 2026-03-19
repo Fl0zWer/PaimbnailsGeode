@@ -8,16 +8,16 @@
 namespace pt {
     using FileCallback = std::function<void(std::optional<std::filesystem::path>)>;
 
-    // Open a cross-platform file picker to select an image file
+    // abre un selector de archivos para imagen
     void openImageFileDialog(FileCallback callback);
 
-    // Open a cross-platform file picker to select an audio file
+    // abre un selector de archivos para audio
     void openAudioFileDialog(FileCallback callback);
 
-    // Save dialog for images (defaults to PNG)
+    // dialogo para guardar imagen, por defecto PNG
     void saveImageFileDialog(std::string const& defaultName, FileCallback callback);
 
-    // Open a cross-platform folder picker
+    // abre un selector de carpetas
     void openFolderDialog(FileCallback callback);
 }
 

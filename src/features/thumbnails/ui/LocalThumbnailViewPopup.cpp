@@ -25,6 +25,7 @@
 #include "../../../utils/Assets.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/Constants.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include "../../../utils/ImageConverter.hpp"
 #include "../../../utils/RenderTexture.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -36,7 +37,6 @@
 
 using namespace geode::prelude;
 using namespace cocos2d;
-
 
 void LocalThumbnailViewPopup::onPrev(CCObject*) {
     if (m_thumbnails.empty()) return;
@@ -124,7 +124,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     std::string username = "Unknown";
     if (auto gm = GameManager::get()) username = gm->m_playerName;
 
-    // update rating ui
+    // refrescar la nota
     Ref<LocalThumbnailViewPopup> self = this;
     ThumbnailAPI::get().getRating(m_levelID, username, thumb.id, [self](bool success, float average, int count, int userVote) {
         if (success && self->m_ratingLabel) {
@@ -214,7 +214,6 @@ void LocalThumbnailViewPopup::onPrevSuggestion(CCObject*) {
     loadCurrentSuggestion();
 }
 
-
 void LocalThumbnailViewPopup::onExit() {
     log::info("[ThumbnailViewPopup] onExit() comenzando");
 
@@ -243,7 +242,6 @@ void LocalThumbnailViewPopup::onExit() {
     log::info("[ThumbnailViewPopup] Llamando a parent onExit");
     Popup::onExit();
 }
-
 
 void LocalThumbnailViewPopup::setupRating() {
     if (auto node = m_mainLayer->getChildByID("rating-container"_spr)) {
@@ -514,7 +512,6 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     setupRating();
 }
 
-
 // Carga desde multiples fuentes
 
 void LocalThumbnailViewPopup::loadFromVerificationQueue(PendingCategory category, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
@@ -653,20 +650,14 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
         if (success && !data.empty()) {
             log::info("[ThumbnailViewPopup] ✓ Datos descargados del servidor ({} bytes)", data.size());
 
-            auto image = new CCImage();
-            if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-                auto tex = new CCTexture2D();
-                if (tex->initWithImage(image)) {
-                    log::info("[ThumbnailViewPopup] ✓ Textura creada desde servidor ({}x{})",
-                        tex->getPixelsWide(), tex->getPixelsHigh());
-                    safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, openedFromReport);
-                    tex->release();
-                    image->release();
-                    return;
-                }
-                tex->release();
+            auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size());
+            if (loaded.success && loaded.texture) {
+                log::info("[ThumbnailViewPopup] ✓ Textura creada desde servidor ({}x{})",
+                    loaded.width, loaded.height);
+                safeRef->displayThumbnail(loaded.texture, maxWidth, maxHeight, content, openedFromReport);
+                loaded.texture->release();
+                return;
             }
-            image->release();
             log::error("[ThumbnailViewPopup] ✗ Error creando textura desde datos del servidor");
         } else {
             log::warn("[ThumbnailViewPopup] ✗ Descarga del servidor fallo");
@@ -677,8 +668,7 @@ void LocalThumbnailViewPopup::tryDirectServerDownload(float maxWidth, float maxH
     });
 }
 
-
-// Display / UI
+// mostrar thumb y botones
 
 void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth, float maxHeight, CCSize content, bool openedFromReport) {
     log::info("[ThumbnailViewPopup] === MOSTRANDO THUMBNAIL ===");
@@ -828,7 +818,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         m_rightArrow->setVisible(m_suggestions.size() > 1);
     }
 
-    // menu botones
+    // menu de botones
     m_buttonMenu = CCMenu::create();
     auto buttonMenu = m_buttonMenu;
 
@@ -969,7 +959,6 @@ void LocalThumbnailViewPopup::showNoThumbnail(CCSize content) {
 }
 
 // Acciones de botones
-
 
 void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
     if (m_isDownloading) return;

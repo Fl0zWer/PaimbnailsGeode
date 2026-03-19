@@ -150,13 +150,13 @@ void HttpClient::performBinaryRequest(
         int statusCode = res.code();
         PaimonDebug::log("[HttpClient] Binary GET {} -> status={}, size={}", urlCopy, statusCode, data.size());
 
-        // Check Content-Type: if server returned JSON/HTML error, treat as failure
+        // si el server devolvio JSON o HTML, lo tomo como error
         if (success && !data.empty()) {
             auto ct = res.header("Content-Type");
             std::string contentType = ct.has_value() ? std::string(ct.value()) : "";
             PaimonDebug::log("[HttpClient] Binary response Content-Type: {}", contentType);
 
-            // If content-type is JSON or HTML, it's an error response, not binary data
+            // si viene JSON o HTML, no era binario real
             if (contentType.find("application/json") != std::string::npos ||
                 contentType.find("text/html") != std::string::npos) {
                 std::string body(data.begin(), data.begin() + std::min(data.size(), (size_t)500));
@@ -165,7 +165,7 @@ void HttpClient::performBinaryRequest(
                 data.clear();
             }
 
-            // Also validate magic bytes: PNG, JPEG, GIF, WEBP, BMP
+            // tambien valido magic bytes
             if (success && data.size() >= 4) {
                 bool validImage = false;
                 // PNG: 89 50 4E 47
@@ -872,14 +872,14 @@ void HttpClient::checkModeratorAccount(std::string const& username, int accountI
                         log::warn("[HttpClient] Server respondio newModCode vacio para {}#{}", username, accountID);
                     }
                 } else if (isMod || isAdmin) {
-                    // Check if GDBrowser verification failed
+                    // reviso si fallo GDBrowser
                     bool gdFailed = false;
                     if (json.contains("gdVerificationFailed")) {
                         gdFailed = json["gdVerificationFailed"].asBool().unwrapOr(false);
                     }
                     if (gdFailed) {
                         log::warn("[HttpClient] Mod/admin {}#{} verificado pero GDBrowser fallo — no se pudo generar mod-code. Reintenta mas tarde.", username, accountID);
-                        // Store gdVerificationFailed as saved value so UI can detect it
+                        // guardo la flag para que la UI lo note
                         Mod::get()->setSavedValue<bool>("gd-verification-failed", true);
                     } else {
                         log::warn("[HttpClient] Server NO devolvio newModCode para mod/admin {}#{}. El mod-code actual puede estar desactualizado.", username, accountID);
@@ -1186,9 +1186,7 @@ void HttpClient::postWithoutModCode(std::string const& endpoint, std::string con
     performRequest(url, "POST", data, headers, callback, false);
 }
 
-// ════════════════════════════════════════════════════════════
 // Pet Shop API
-// ════════════════════════════════════════════════════════════
 
 void HttpClient::getPetShopList(GenericCallback callback) {
     get("/api/pet-shop/list", callback);
@@ -1219,9 +1217,7 @@ void HttpClient::uploadPetShopItem(std::string const& name, std::string const& c
     performUpload(url, "image", filename, imageData, fields, headers, callback, ct);
 }
 
-// ════════════════════════════════════════════════════════════
 // Whitelist API
-// ════════════════════════════════════════════════════════════
 
 void HttpClient::getWhitelist(std::string const& type, GenericCallback callback) {
     std::string username = GJAccountManager::get()->m_username;
@@ -1279,9 +1275,7 @@ void HttpClient::removeFromWhitelist(std::string const& targetUsername, std::str
     performRequest(m_serverURL + "/api/whitelist/remove", "POST", json.dump(), headers, callback);
 }
 
-// ════════════════════════════════════════════════════════════
 // SSRF prevention
-// ════════════════════════════════════════════════════════════
 
 bool HttpClient::isUrlSafe(std::string const& url) {
     if (url.empty()) return false;

@@ -31,7 +31,7 @@ bool PaimonShopPopup::init() {
     auto content = m_mainLayer->getContentSize();
     float cx = content.width / 2.f;
 
-    // info button
+    // info
     auto infoMenu = CCMenu::create();
     infoMenu->setPosition({0, 0});
     m_mainLayer->addChild(infoMenu, 15);
@@ -46,7 +46,7 @@ bool PaimonShopPopup::init() {
         infoMenu->addChild(iBtn);
     }
 
-    // admin upload button (only visible to moderators)
+    // upload solo para mods
     if (PaimonUtils::isUserModerator()) {
         auto uploadSpr = ButtonSprite::create("Upload", "goldFont.fnt", "GJ_button_04.png", 0.6f);
         uploadSpr->setScale(0.6f);
@@ -56,14 +56,14 @@ bool PaimonShopPopup::init() {
         infoMenu->addChild(uploadBtn);
     }
 
-    // status label
+    // estado
     m_statusLabel = CCLabelBMFont::create("Loading shop...", "chatFont.fnt");
     m_statusLabel->setScale(0.6f);
     m_statusLabel->setColor({200, 200, 200});
     m_statusLabel->setPosition({cx, content.height / 2.f});
     m_mainLayer->addChild(m_statusLabel, 5);
 
-    // scroll area
+    // scroll
     float scrollW = content.width - 16.f;
     float scrollH = content.height - 50.f;
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
@@ -152,20 +152,20 @@ void PaimonShopPopup::buildList() {
     float y = totalH - 30.f;
 
     for (auto& item : m_items) {
-        // background stripe
+        // franja de fondo
         auto stripe = CCLayerColor::create({0, 0, 0, 40});
         stripe->setContentSize({scrollW - 4.f, rowH - 4.f});
         stripe->setPosition({2.f, y - rowH / 2.f + 2.f});
         sc->addChild(stripe);
 
-        // name
+        // nombre
         auto nameLbl = CCLabelBMFont::create(item.name.c_str(), "bigFont.fnt");
         nameLbl->setScale(0.3f);
         nameLbl->setAnchorPoint({0.f, 0.5f});
         nameLbl->setPosition({10.f, y + 8.f});
         sc->addChild(nameLbl);
 
-        // creator + size
+        // creador y peso
         std::string meta = "by " + item.creator + " | " + formatFileSize(item.fileSize) + " | " + item.format;
         auto metaLbl = CCLabelBMFont::create(meta.c_str(), "chatFont.fnt");
         metaLbl->setScale(0.45f);
@@ -174,7 +174,7 @@ void PaimonShopPopup::buildList() {
         metaLbl->setPosition({10.f, y - 10.f});
         sc->addChild(metaLbl);
 
-        // download button or "Downloaded" label
+        // boton de bajar o texto de ya esta
         std::string filename = item.id + "." + item.format;
         if (isAlreadyInGallery(filename)) {
             auto checkLbl = CCLabelBMFont::create("Downloaded", "bigFont.fnt");
@@ -208,7 +208,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
     if (!dataStr) return;
 
     std::string raw = dataStr->getCString();
-    // parse "id|format|name"
+    // parseo "id|format|name"
     auto pos1 = raw.find('|');
     auto pos2 = raw.find('|', pos1 + 1);
     if (pos1 == std::string::npos || pos2 == std::string::npos) return;
@@ -217,7 +217,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
     std::string format = raw.substr(pos1 + 1, pos2 - pos1 - 1);
     std::string name = raw.substr(pos2 + 1);
 
-    if (m_downloading.count(itemId)) return; // already downloading
+    if (m_downloading.count(itemId)) return;
     m_downloading.insert(itemId);
 
     PaimonNotify::create("Downloading " + name + "...", NotificationIcon::Info)->show();
@@ -238,7 +238,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
 
             log::info("[PetShop] Downloaded '{}': {} bytes", name, data.size());
 
-            // save to pet gallery
+            // guardo en la galeria
             std::string filename = itemId + "." + format;
             auto path = PetManager::get().galleryDir() / filename;
             {
@@ -253,7 +253,7 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
                 f.write(reinterpret_cast<char const*>(data.data()), data.size());
                 f.close();
 
-                // verify write
+                // verifico que si se haya escrito
                 std::error_code verifyEc;
                 if (f.fail() || !std::filesystem::exists(path, verifyEc) || std::filesystem::file_size(path, verifyEc) != data.size()) {
                     log::error("[PetShop] File write verification failed for: {}", geode::utils::string::pathToString(path));
@@ -266,13 +266,13 @@ void PaimonShopPopup::onDownload(CCObject* sender) {
 
                 PaimonNotify::create(name + " added to gallery!", NotificationIcon::Success)->show();
 
-                // auto-select if no pet selected
+                // si no habia mascota elegida, la dejo puesta
                 if (PetManager::get().config().selectedImage.empty()) {
                     PetManager::get().setImage(filename);
                 }
             }
 
-            // refresh list so button changes to "Downloaded"
+            // refresco la lista para cambiar el boton
             popup->fetchShopList();
         });
 }
@@ -289,14 +289,14 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
         std::error_code ec;
         if (!std::filesystem::exists(filepath, ec)) return;
 
-        // detect format
+        // detecto formato
         auto ext = geode::utils::string::pathToString(filepath.extension());
         for (auto& c : ext) c = (char)std::tolower(c);
         std::string format = "png";
         if (ext == ".gif") format = "gif";
         else if (ext == ".jpg" || ext == ".jpeg") format = "png"; // will be sent as png
 
-        // read file
+        // leo el archivo
         std::ifstream f(filepath, std::ios::binary);
         if (!f) {
             PaimonNotify::create("Failed to read file", NotificationIcon::Error)->show();
@@ -310,8 +310,7 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
             return;
         }
 
-        // ask for pet name with a simple alert input approach
-        // use the filename (without extension) as default name
+        // por ahora uso el nombre del archivo
         std::string defaultName = geode::utils::string::pathToString(filepath.stem());
         std::string creator = GJAccountManager::get()->m_username;
 
@@ -321,8 +320,8 @@ void PaimonShopPopup::onUploadPet(CCObject*) {
             [self, defaultName](bool success, std::string const& response) {
                 if (success) {
                     PaimonNotify::create(defaultName + " uploaded to shop!", NotificationIcon::Success)->show();
-                // refresh list
-                self->fetchShopList();
+                    // refresco la lista
+                    self->fetchShopList();
             } else {
                 PaimonNotify::create("Upload failed: " + response, NotificationIcon::Error)->show();
             }

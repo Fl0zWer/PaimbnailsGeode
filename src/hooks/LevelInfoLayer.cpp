@@ -81,7 +81,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         log::info("[LevelInfoLayer] Aplicando fondo del thumbnail");
         
-        // reset animacion de shader previo
+        // reinicio el shader anterior
         m_fields->m_animatedShader = false;
         m_fields->m_shaderTime = 0.0f;
         
@@ -118,7 +118,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             {"crt",             "crt"_spr,             fragmentShaderCRT,              true, false, true},
         };
 
-        // helper: buscar shader por nombre en la tabla
+        // busco el shader en la tabla
         auto lookupShader = [&](std::string const& style) -> std::tuple<CCGLProgram*, float, bool, bool> {
             for (auto& e : kShaderTable) {
                 if (style == e.name) {
@@ -497,31 +497,31 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 }, 5);
             }
 
-            // load layouts botones
+            // cargo layouts de botones
             ButtonLayoutManager::get().load();
             
-            // menu izq
+            // menu izquierdo
             auto leftMenu = this->getChildByID("left-side-menu");
             if (!leftMenu) {
                 log::warn("Left side menu not found");
                 return true;
             }
 
-            // ref menu pa buttoneditoverlay
+            // guardo el menu para ButtonEditOverlay
             m_fields->m_extraMenu = static_cast<CCMenu*>(leftMenu);
             
-            // sprite icono btn (con fallbacks)
+            // icono del boton
             CCSprite* iconSprite = CCSprite::create("paim_BotonMostrarThumbnails.png"_spr);
             if (!iconSprite) iconSprite = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
             if (!iconSprite) iconSprite = CCSprite::createWithSpriteFrameName("GJ_plusBtn_001.png");
             if (!iconSprite) return true;
 
-            // rotar 90
+            // lo giro 90
             iconSprite->setRotation(-90.0f);
-            // reducir el icono un 20%
+            // lo achico un poco
             iconSprite->setScale(0.8f);
 
-            // CircleButtonSprite verde
+            // boton base
             auto btnSprite = CircleButtonSprite::create(
                 iconSprite,
                 CircleBaseColor::Green,
@@ -548,7 +548,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             button->setID("thumbnail-view-button"_spr);
             m_fields->m_thumbnailButton = button;
 
-            // thumbs galeria
+            // galeria de thumbs
             Ref<LevelInfoLayer> selfGallery = this;
             ThumbnailAPI::get().getThumbnails(level->m_levelID.value(), [selfGallery](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
                 auto* self = static_cast<PaimonLevelInfoLayer*>(selfGallery.data());
@@ -560,7 +560,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     self->m_fields->m_thumbnails = thumbs;
                 }
                 
-                // vacio -> default
+                // si no viene nada, dejo el default
                 if (self->m_fields->m_thumbnails.empty()) {
                      ThumbnailAPI::ThumbnailInfo mainThumb;
                      mainThumb.id = "0";
@@ -578,7 +578,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 }
             });
 
-            // add primero pa layout default
+            // lo agrego primero para agarrar el layout base
             leftMenu->addChild(button);
             leftMenu->updateLayout();
 
@@ -588,7 +588,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             defaultLayout.opacity = 1.0f;
             ButtonLayoutManager::get().setDefaultLayoutIfAbsent("LevelInfoLayer", "thumbnail-view-button", defaultLayout);
 
-            // load layout guardado
+            // aplico el layout guardado
             auto savedLayout = ButtonLayoutManager::get().getLayout("LevelInfoLayer", "thumbnail-view-button");
             if (savedLayout) {
                 button->setPosition(savedLayout->position);
@@ -596,7 +596,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 button->setOpacity(static_cast<GLubyte>(savedLayout->opacity * 255));
             }
 
-            // admin? -> btn daily/weekly
+            // si es admin, muestro daily/weekly
             if (auto gm = GameManager::get()) {
                 auto username = gm->m_playerName;
                 auto accountID = 0;
@@ -609,18 +609,18 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         return;
                     }
                     if (isAdmin) {
-                        // btn daily
-                        // icono estrella/tiempo
+                        // boton daily
+                        // icono de tiempo
                         CCSprite* iconSpr = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
 
                         if (!iconSpr) {
                             iconSpr = CCSprite::createWithSpriteFrameName("GJ_starBtn_001.png");
                         }
                         
-                        // reducir el icono un 20%
+                        // lo achico un poco
                         iconSpr->setScale(0.8f);
 
-                        // CircleButtonSprite verde
+                        // boton base
                         auto btnSprite = CircleButtonSprite::create(
                             iconSpr,
                             CircleBaseColor::Green,
@@ -650,14 +650,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             log::info("Thumbnail button added successfully");
 
-            // cola verify -> guardar categoria
+            // si viene de verify, guardo la categoria
             if (fromVerificationQueue && verificationQueueLevelID == level->m_levelID.value()) {
                 log::info("Nivel abierto desde verificacion (categoria: {}) - boton listo para usar", verificationQueueCategory);
-                // categoria pa thumbnailviewpopup
+                // categoria para ThumbnailViewPopup
                 paimon::SessionState::get().verification.verificationCategory = verificationQueueCategory;
             }
 
-            // apply layouts to left menu to restore any vanilla button customizations
+            // reaplico el layout del left menu por si ya tenia cambios
             if (auto menu = static_cast<CCMenu*>(leftMenu)) {
                 ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", menu);
             }
@@ -735,7 +735,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             return;
         }
         
-        // load local -> png
+        // cargo el local a png
         auto pathOpt = LocalThumbs::get().getThumbPath(levelID);
         if (!pathOpt) {
             PaimonNotify::create("No se pudo encontrar la miniatura", NotificationIcon::Error)->show();
@@ -750,7 +750,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         WeakRef<PaimonLevelInfoLayer> self = this;
 
-        // check mod
+        // reviso si es mod
         ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self, levelID, pngData, username](bool isMod, bool isAdmin) {
             auto layer = self.lock();
             if (!layer) return;
@@ -786,7 +786,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     }
                 });
             } else {
-                // user: existe thumb? suggestion vs update
+                // user normal: suggestion o update
                 log::info("[LevelInfoLayer] Regular user upload for level {}", levelID);
 
                 ThumbnailAPI::get().checkExists(levelID, [self, levelID, pngData, username](bool exists) {
@@ -794,7 +794,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     if (!layer) return;
 
                     if (exists) {
-                        // existe -> update
+                        // si existe, va como update
                         log::info("[LevelInfoLayer] Uploading as update for level {}", levelID);
                         PaimonNotify::create(Localization::get().getString("capture.uploading_suggestion").c_str(), NotificationIcon::Info)->show();
 
@@ -930,13 +930,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (index < 0 || index >= m_fields->m_thumbnails.size()) return;
         
         auto& thumb = m_fields->m_thumbnails[index];
-        // load desde url â€” use Ref<> for safe prevent use-after-free
+        // cargo desde URL con Ref<> para no colgarme
         Ref<LevelInfoLayer> safeRef = this;
         ThumbnailAPI::get().downloadFromUrl(thumb.url, [safeRef, index](bool success, CCTexture2D* tex) {
             auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
             if (!self->getParent()) return;
             if (success && tex) {
-                // update sprite btn thumb
+                // refresco el sprite del boton
                 if (self->m_fields->m_thumbnailButton) {
                     auto spr = (CCSprite*)self->m_fields->m_thumbnailButton->getNormalImage();
                     if (spr) {
@@ -944,7 +944,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         spr->setTextureRect({0, 0, tex->getContentSize().width, tex->getContentSize().height});
                     }
                 }
-                // update bg
+                // refresco el fondo
                 int32_t levelID = (index == 0 && self->m_level) ? self->m_level->m_levelID.value() : 0;
                 self->applyThumbnailBackground(tex, levelID);
             }
@@ -977,7 +977,7 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
             oldOverlay->removeFromParent();
         }
 
-        // resetear la ref interna para evitar double-remove dentro de applyThumbnailBackground
+        // limpio la ref interna antes de reaplicar
         auto paimon = static_cast<PaimonLevelInfoLayer*>(layer);
         paimon->m_fields->m_pixelBg = nullptr;
 

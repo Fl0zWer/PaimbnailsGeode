@@ -5,16 +5,12 @@
 #include <vector>
 #include <optional>
 
-// ════════════════════════════════════════════════════════════
 // TransitionManager — sistema de transiciones personalizables
 //
 // Diseno simple:
 //   - UNA transicion global para TODA navegacion (push/replace/pop)
 //   - UNA transicion opcional separada para entrada a nivel (PlayLayer)
 //   - 20+ tipos de transicion nativos + custom DSL
-// ════════════════════════════════════════════════════════════
-
-// ── Tipos de transicion (20+) ───────────────────────────────
 
 enum class TransitionType {
     // Fades
@@ -60,8 +56,6 @@ enum class TransitionType {
     None                // Instant, no animation
 };
 
-// ── Acciones para transiciones Custom ───────────────────────
-
 enum class CommandAction {
     FadeOut,
     FadeIn,
@@ -78,8 +72,6 @@ enum class CommandAction {
     Bounce      // Bounce easing
 };
 
-// ── Comando individual de una transicion Custom ─────────────
-
 struct TransitionCommand {
     CommandAction action = CommandAction::Wait;
     std::string target = "from";  // "from", "to", or "overlay"
@@ -95,8 +87,6 @@ struct TransitionCommand {
     float intensity = 5.f;     // for Shake: amplitude
 };
 
-// ── Configuracion de una transicion ─────────────────────────
-
 struct TransitionConfig {
     TransitionType type = TransitionType::Fade;
     float duration = 0.5f;
@@ -107,8 +97,6 @@ struct TransitionConfig {
     std::string scriptPath;
 };
 
-// ── TransitionManager (singleton) ───────────────────────────
-
 class TransitionManager {
 public:
     static TransitionManager& get();
@@ -116,28 +104,22 @@ public:
     void loadConfig();
     void saveConfig();
 
-    // ── Configuracion global (aplica a TODO) ──
     TransitionConfig getGlobalConfig() const { return m_globalConfig; }
     void setGlobalConfig(TransitionConfig const& cfg) { m_globalConfig = cfg; }
 
-    // ── Configuracion de entrada a nivel (opcional) ──
     TransitionConfig getLevelEntryConfig() const;
     void setLevelEntryConfig(TransitionConfig const& cfg);
     bool hasLevelEntryConfig() const { return m_hasLevelEntryConfig; }
     void clearLevelEntryConfig();
 
-    // ── Crea transicion sin llamar a CCDirector (para el hook) ──
     cocos2d::CCScene* createTransition(TransitionConfig const& cfg, cocos2d::CCScene* dest);
 
-    // ── Conveniencia (llaman a CCDirector directamente) ──
     void replaceScene(cocos2d::CCScene* dest);
     void pushScene(cocos2d::CCScene* dest);
 
-    // ── Enable/disable ──
     bool isEnabled() const { return m_enabled; }
     void setEnabled(bool v) { m_enabled = v; }
 
-    // ── Utilidades de conversion ──
     static TransitionType typeFromString(std::string const& s);
     static std::string typeToString(TransitionType t);
     static std::string typeDisplayName(TransitionType t);
@@ -145,10 +127,8 @@ public:
     static CommandAction actionFromString(std::string const& s);
     static std::string actionToString(CommandAction a);
 
-    // ── Tipos disponibles para UI ──
     static std::vector<TransitionType> const& allTypes();
 
-    // ── Crear transicion nativa ──
     cocos2d::CCTransitionScene* createNativeTransition(TransitionConfig const& cfg, cocos2d::CCScene* dest) const;
 
 private:

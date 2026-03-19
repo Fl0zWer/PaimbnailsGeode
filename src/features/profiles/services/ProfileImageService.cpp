@@ -1,6 +1,7 @@
 #include "ProfileImageService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include "ProfileThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
 #include <Geode/loader/Log.hpp>
@@ -8,8 +9,6 @@
 #include <fstream>
 
 using namespace geode::prelude;
-
-// ── banner (profile background) uploads ─────────────────────────────
 
 void ProfileImageService::uploadProfile(int accountID, std::vector<uint8_t> const& pngData,
                                         std::string const& username, UploadCallback callback) {
@@ -47,8 +46,6 @@ void ProfileImageService::uploadProfileGIF(int accountID, std::vector<uint8_t> c
         });
 }
 
-// ── banner download ─────────────────────────────────────────────────
-
 void ProfileImageService::downloadProfile(int accountID, std::string const& username,
                                           DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
@@ -82,8 +79,6 @@ void ProfileImageService::downloadProfile(int accountID, std::string const& user
         });
 }
 
-// ── profileimg uploads ──────────────────────────────────────────────
-
 void ProfileImageService::uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData,
                                            std::string const& username,
                                            std::string const& contentType,
@@ -106,8 +101,6 @@ void ProfileImageService::uploadProfileImgGIF(int accountID, std::vector<uint8_t
     uploadProfileImg(accountID, gifData, username, "image/gif", callback);
 }
 
-// ── profileimg download ─────────────────────────────────────────────
-
 void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
@@ -129,27 +122,16 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
 
             auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
             queueInMainThread([accountID, callback, dataCopy]() {
-                auto* img = new CCImage();
-                if (!img->initWithImageData(const_cast<uint8_t*>(dataCopy->data()), dataCopy->size())) {
-                    img->release();
+                auto loaded = ImageLoadHelper::loadWithSTBFromMemory(dataCopy->data(), dataCopy->size());
+                if (!loaded.success || !loaded.texture) {
                     callback(false, nullptr);
                     return;
                 }
-                auto* tex = new CCTexture2D();
-                if (!tex->initWithImage(img)) {
-                    tex->release();
-                    img->release();
-                    callback(false, nullptr);
-                    return;
-                }
-                img->release();
-                tex->autorelease();
-                callback(true, tex);
+                loaded.texture->autorelease();
+                callback(true, loaded.texture);
             });
         }, isSelf);
 }
-
-// ── pending profile (moderadores) ───────────────────────────────────
 
 void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
@@ -164,8 +146,6 @@ void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback
             callback(texture != nullptr, texture);
         });
 }
-
-// ── profile config ──────────────────────────────────────────────────
 
 void ProfileImageService::uploadProfileConfig(int accountID, ProfileConfig const& config,
                                               ActionCallback callback) {

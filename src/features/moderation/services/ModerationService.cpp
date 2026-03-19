@@ -7,8 +7,6 @@
 
 using namespace geode::prelude;
 
-// ── cache helpers ───────────────────────────────────────────────────
-
 bool ModerationService::tryModCache(ModeratorCallback& callback) {
     if (!m_modCache.has_value()) return false;
     auto elapsed = std::chrono::steady_clock::now() - m_modCache->timestamp;
@@ -23,8 +21,6 @@ bool ModerationService::tryModCache(ModeratorCallback& callback) {
 void ModerationService::updateModCache(bool isMod, bool isAdmin) {
     m_modCache = ModCacheEntry{isMod || isAdmin, isAdmin, std::chrono::steady_clock::now()};
 }
-
-// ── moderator checks ───────────────────────────────────────────────
 
 void ModerationService::checkModerator(std::string const& username, ModeratorCallback callback) {
     if (!m_serverEnabled) { callback(false, false); return; }
@@ -89,8 +85,6 @@ void ModerationService::checkUserStatus(std::string const& username, ModeratorCa
     HttpClient::get().checkModerator(username, callback);
 }
 
-// ── admin ops ───────────────────────────────────────────────────────
-
 void ModerationService::addModerator(std::string const& username, std::string const& adminUser, ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
 
@@ -120,8 +114,6 @@ void ModerationService::removeModerator(std::string const& username, std::string
             callback(success, success ? "moderador eliminado con exito" : response);
         });
 }
-
-// ── queue operations ────────────────────────────────────────────────
 
 void ModerationService::syncVerificationQueue(PendingCategory category, QueueCallback callback) {
     if (!m_serverEnabled) {

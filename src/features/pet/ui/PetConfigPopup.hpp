@@ -4,13 +4,13 @@
 
 class PetConfigPopup : public geode::Popup {
 protected:
-    // gallery
+    // galeria
     cocos2d::CCNode* m_galleryContainer = nullptr;
     cocos2d::CCMenu* m_galleryMenu = nullptr;
     cocos2d::CCSprite* m_previewSprite = nullptr;
     cocos2d::CCLabelBMFont* m_selectedLabel = nullptr;
 
-    // scroll for settings
+    // scroll de ajustes
     geode::ScrollLayer* m_scrollLayer = nullptr;
     cocos2d::CCSprite* m_scrollArrow = nullptr;
 
@@ -44,7 +44,7 @@ protected:
     Slider* m_offsetYSlider = nullptr;
     cocos2d::CCLabelBMFont* m_offsetYLabel = nullptr;
 
-    // toggles
+    // interruptores
     CCMenuItemToggler* m_enableToggle = nullptr;
     CCMenuItemToggler* m_flipToggle = nullptr;
     CCMenuItemToggler* m_trailToggle = nullptr;
@@ -52,7 +52,7 @@ protected:
     CCMenuItemToggler* m_bounceToggle = nullptr;
     CCMenuItemToggler* m_squishToggle = nullptr;
 
-    // tabs
+    // pestañas
     int m_currentTab = 0; // 0 = gallery, 1 = settings
     cocos2d::CCNode* m_galleryTab = nullptr;
     cocos2d::CCNode* m_settingsTab = nullptr;
@@ -62,7 +62,7 @@ protected:
     void createTabButtons();
     void onTabSwitch(cocos2d::CCObject* sender);
 
-    // gallery
+    // galeria
     void buildGalleryTab();
     void refreshGallery();
     void onAddImage(cocos2d::CCObject*);
@@ -70,11 +70,11 @@ protected:
     void onDeleteAllImages(cocos2d::CCObject*);
     void onSelectImage(cocos2d::CCObject*);
 
-    // settings
+    // ajustes
     void buildSettingsTab();
     void checkScrollPosition(float dt);
 
-    // slider callbacks
+    // sliders
     void onScaleChanged(cocos2d::CCObject*);
     void onSensitivityChanged(cocos2d::CCObject*);
     void onOpacityChanged(cocos2d::CCObject*);
@@ -90,7 +90,7 @@ protected:
     void onOffsetXChanged(cocos2d::CCObject*);
     void onOffsetYChanged(cocos2d::CCObject*);
 
-    // toggle callbacks
+    // interruptores
     void onEnableToggled(cocos2d::CCObject*);
     void onFlipToggled(cocos2d::CCObject*);
     void onTrailToggled(cocos2d::CCObject*);

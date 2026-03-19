@@ -9,7 +9,7 @@
 #include <limits>
 
 namespace {
-    // helpers de conversion de espacio de color
+    // conversiones de espacio de color
     
     struct LABColor {
         double L;  // luminosidad [0, 100]

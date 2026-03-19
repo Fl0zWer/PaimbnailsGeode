@@ -551,7 +551,6 @@ void ProfileMusicManager::finishPlayback() {
     m_musicChannel->setPosition(static_cast<unsigned int>(startMs), FMOD_TIMEUNIT_MS);
 
     if (dynamicIsActive) {
-        // ═══ Crossfade DynamicSong ↓ ProfileMusic ↑ (no tocar BG) ═══
         float dynVol = dsm->getDynamicVolume();
 
         m_musicChannel->setVolume(0.0f);
@@ -568,7 +567,6 @@ void ProfileMusicManager::finishPlayback() {
         executeCrossfadeWithDynamic(0, FADE_STEPS, 0.0f, gameVolume, dynVol);
 
     } else if (useCrossfade) {
-        // ═══ Crossfade normal con BG ═══
         m_musicChannel->setVolume(0.0f);
         m_musicChannel->setPaused(false);
 
@@ -582,7 +580,6 @@ void ProfileMusicManager::finishPlayback() {
         fadeInProfileMusic(gameVolume);
 
     } else {
-        // ═══ Sin crossfade ═══
         m_musicChannel->setVolume(gameVolume);
         m_musicChannel->setPaused(false);
 
@@ -711,7 +708,7 @@ void ProfileMusicManager::executeFadeStep(int step, int totalSteps, float profil
 
     std::thread([this, step, totalSteps, profileFrom, profileTo, bgFrom, bgTo, stopAfter, stepDelayMs]() {
         for (int s = step; s <= totalSteps; s++) {
-            // sleep between steps (skip first)
+            // esperar entre pasos, menos el primero
             if (s > step) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepDelayMs)));
             }
@@ -719,7 +716,7 @@ void ProfileMusicManager::executeFadeStep(int step, int totalSteps, float profil
             int currentStep = s;
             Loader::get()->queueInMainThread([this, currentStep, totalSteps, profileFrom, profileTo,
                                                bgFrom, bgTo, stopAfter]() {
-                // check cancellation
+                // si alguien cancelo el fade, me salgo
                 if (stopAfter && !m_isFadingOut) return;
                 if (!stopAfter && !m_isFadingIn) return;
 
@@ -908,18 +905,18 @@ void ProfileMusicManager::getSongInfo(int songID, SongInfoCallback callback) {
     if (songInfo) {
         std::string name = songInfo->m_songName;
         std::string artist = songInfo->m_artistName;
-        // Duration will be determined when loading the audio file
-        // For now we return 0 and let the waveform analysis determine it
+        // la duracion real la saco cuando se cargue el audio
+        // por ahora devuelvo 0 y luego la rellena el waveform
         callback(true, name, artist, 0);
         return;
     }
 
-    // Request song info from GD servers
+    // pedir la info a los servidores de GD
     mdm->getSongInfo(songID, true);
 
-    // Use a delayed callback via Loader
+    // hago una segunda vuelta un poco despues
     Loader::get()->queueInMainThread([songID, callback]() {
-        // Wait a bit and then check again
+        // esperar un rato y volver a revisar
         std::thread([songID, callback]() {
             std::this_thread::sleep_for(std::chrono::seconds(2));
 
@@ -953,7 +950,7 @@ void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback ca
 
     mdm->downloadSong(songID);
 
-    // Use a thread to poll for download completion
+    // hilo simple para esperar a que termine la descarga
     std::thread([songID, callback]() {
         auto mdm = MusicDownloadManager::sharedState();
         int attempts = 0;
@@ -1010,7 +1007,7 @@ std::vector<float> ProfileMusicManager::analyzeWaveform(std::string const& fileP
         return peaks;
     }
 
-    // Get duration in milliseconds
+    // sacar la duracion en ms
     unsigned int lengthMs = 0;
     sound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
     outDurationMs = static_cast<int>(lengthMs);
@@ -1132,7 +1129,7 @@ void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, 
 
     m_musicChannel->setPosition(startMs, FMOD_TIMEUNIT_MS);
 
-    // Usar el volumen del juego
+    // usar el volumen global del juego
     m_musicChannel->setVolume(gameVolume);
 
     m_isPlaying = true;
@@ -1158,18 +1155,18 @@ void ProfileMusicManager::clearCache() {
 }
 
 void ProfileMusicManager::invalidateCache(int accountID) {
-    // Limpiar config de RAM
+    // sacar la config de RAM
     m_configCache.erase(accountID);
 
     std::error_code ec;
 
-    // Borrar archivo .mp3 cacheado
+    // borrar el .mp3 cacheado
     auto cachePath = getCachePath(accountID);
     if (std::filesystem::exists(cachePath, ec)) {
         std::filesystem::remove(cachePath, ec);
     }
 
-    // Borrar archivo .meta asociado
+    // borrar su .meta
     auto metaPath = getMetaPath(accountID);
     if (std::filesystem::exists(metaPath, ec)) {
         std::filesystem::remove(metaPath, ec);
@@ -1187,8 +1184,8 @@ void ProfileMusicManager::saveMetaFile(int accountID, ProfileMusicConfig const& 
     std::error_code ec;
     std::filesystem::create_directories(metaPath.parent_path(), ec);
 
-    // Guardar songID|startMs|endMs|updatedAt para comparacion.
-    // updatedAt permite detectar re-uploads de la misma cancion con el mismo rango.
+    // guardo songID|startMs|endMs|updatedAt para comparar despues.
+    // updatedAt me deja notar reuploads con el mismo rango.
     std::ofstream file(metaPath);
     if (file) {
         file << config.songID << "|" << config.startMs << "|" << config.endMs << "|" << config.updatedAt;
@@ -1202,7 +1199,7 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
     auto metaPath = getMetaPath(accountID);
     std::error_code ec;
     if (!std::filesystem::exists(metaPath, ec)) {
-        // No hay .meta — cache es legacy o invalido
+        // sin .meta lo trato como cache viejo o invalido
         log::info("[ProfileMusic] No meta file for account {}, cache is invalid", accountID);
         return false;
     }
@@ -1467,8 +1464,4 @@ float ProfileMusicManager::getCurrentAmplitude() const {
     }
     return peak;
 }
-
-
-
-
 

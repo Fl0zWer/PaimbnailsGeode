@@ -88,7 +88,7 @@ void RatePopup::onSubmit(CCObject* sender) {
         username = gm->m_playerName;
     }
     
-    // loading
+    // spinner mientras manda el voto
     auto spinner = geode::LoadingSpinner::create(30.f);
     spinner->setPosition(m_mainLayer->getContentSize() / 2);
     spinner->setID("paimon-loading-spinner"_spr);

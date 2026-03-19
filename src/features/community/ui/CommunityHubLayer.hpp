@@ -28,18 +28,18 @@ protected:
     void onBack(cocos2d::CCObject* sender);
     void onTab(cocos2d::CCObject* sender);
 
-    // data loading
+    // carga
     void loadTab(Tab tab);
     void loadModerators();
     void loadTopCreators();
     void loadTopThumbnails();
 
-    // list building
+    // armado de listas
     void buildModeratorsList();
     void buildCreatorsList();
     void buildThumbnailsList();
 
-    // GDBrowser profile fetch (for moderators)
+    // perfiles via GDBrowser
     void fetchGDBrowserProfile(std::string const& username, std::string const& role);
     void onProfileFetched(std::string const& username, std::string const& jsonData, std::string const& role);
     void onAllProfilesFetched();
@@ -47,19 +47,19 @@ protected:
     void clearList();
     void ensureBgSilenced();
 
-    // tab state
+    // estado de tabs
     Tab m_currentTab = Tab::Moderators;
     cocos2d::CCMenu* m_tabsMenu = nullptr;
     std::vector<CCMenuItemToggler*> m_tabs;
 
-    // loading
+    // carga
     geode::LoadingSpinner* m_loadingSpinner = nullptr;
 
-    // list container
+    // contenedor de lista
     cocos2d::CCNode* m_listContainer = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
 
-    // moderators data
+    // datos de mods
     struct ModEntry {
         std::string username;
         std::string role; // "admin" or "mod"
@@ -68,7 +68,7 @@ protected:
     geode::Ref<cocos2d::CCArray> m_modScores;
     int m_pendingProfiles = 0;
 
-    // creators data
+    // datos de creadores
     struct CreatorEntry {
         std::string username;
         int accountID = 0;
@@ -77,7 +77,7 @@ protected:
     };
     std::vector<CreatorEntry> m_creatorEntries;
 
-    // thumbnails data
+    // datos de thumbs
     struct ThumbnailEntry {
         int levelId = 0;
         float rating = 0.f;
@@ -87,7 +87,7 @@ protected:
     };
     std::vector<ThumbnailEntry> m_thumbnailEntries;
 
-    // FMOD efecto cueva sobre musica de menu
+    // efecto cueva sobre la musica del menu
     FMOD::DSP* m_lowpassDSP = nullptr;
     FMOD::DSP* m_reverbDSP = nullptr;
     float m_savedBgVolume = 1.0f;

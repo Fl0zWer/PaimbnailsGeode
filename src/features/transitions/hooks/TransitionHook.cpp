@@ -1,4 +1,4 @@
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // TransitionHook: intercepta las transiciones del juego
 //
 // Hookea CCDirector::replaceScene, pushScene y popSceneWithTransition
@@ -10,7 +10,7 @@
 //   - Detecta PlayLayer para aplicar levelEntryConfig si esta configurada.
 //   - Guard de reentrada robusto con RAII para evitar doble intercepcion
 //     (especialmente desde CustomTransitionScene::onTransitionFinished).
-// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCDirector.hpp>
@@ -47,13 +47,11 @@ static bool shouldIntercept() {
     return true;
 }
 
-// â”€â”€ Detecta si la escena destino contiene un PlayLayer â”€â”€â”€â”€â”€â”€
 // Esto permite aplicar levelEntryConfig cuando el usuario navega hacia un nivel.
 static bool destContainsPlayLayer(CCScene* scene) {
     return scene && scene->getChildByType<PlayLayer>(0);
 }
 
-// â”€â”€ Selecciona la configuracion de transicion apropiada â”€â”€â”€â”€â”€
 // Si la escena destino contiene PlayLayer y hay una config de nivel configurada,
 // usa esa; de lo contrario usa la global.
 static TransitionConfig selectConfig(CCScene* destScene) {
@@ -72,7 +70,6 @@ class $modify(PaimonDirector, CCDirector) {
         (void)self.setHookPriorityPre("cocos2d::CCDirector::popScene", geode::Priority::Last);
     }
 
-    // â”€â”€ replaceScene â”€â”€
     bool replaceScene(CCScene* scene) {
         if (!scene) return CCDirector::replaceScene(scene);
 
@@ -113,7 +110,6 @@ class $modify(PaimonDirector, CCDirector) {
         return CCDirector::replaceScene(ourTrans ? ourTrans : realDest);
     }
 
-    // â”€â”€ pushScene â”€â”€
     bool pushScene(CCScene* scene) {
         if (!scene || !shouldIntercept()) return CCDirector::pushScene(scene);
 
@@ -134,7 +130,6 @@ class $modify(PaimonDirector, CCDirector) {
         return CCDirector::pushScene(ourTrans ? ourTrans : realDest);
     }
 
-    // â”€â”€ popSceneWithTransition (cubre la mayoria de "back" en GD) â”€â”€
     bool popSceneWithTransition(float duration, PopTransition type) {
         if (!shouldIntercept()) {
             return CCDirector::popSceneWithTransition(duration, type);
@@ -170,7 +165,6 @@ class $modify(PaimonDirector, CCDirector) {
         return true;
     }
 
-    // â”€â”€ popScene (sin transicion nativa) â”€â”€
     void popScene() {
         if (!shouldIntercept()) {
             CCDirector::popScene();

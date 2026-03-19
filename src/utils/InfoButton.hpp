@@ -1,13 +1,11 @@
 #pragma once
 #include <Geode/Geode.hpp>
 
-// ────────────────────────────────────────────────────────────
-// InfoButton: small "i" button that shows an FLAlertLayer
-// with a description when clicked. Reusable across all popups.
-// ────────────────────────────────────────────────────────────
+// boton info reutilizable
+// al click abre un alert con el texto que le pases
 
-// Helper node that receives the info button click callback.
-// Implementation in InfoButton.cpp
+// nodo helper que recibe el click
+// la implementacion vive en InfoButton.cpp
 class PaimonInfoTarget : public cocos2d::CCNode {
 public:
     void onInfo(cocos2d::CCObject* sender);
@@ -17,11 +15,11 @@ public:
 
 namespace PaimonInfo {
 
-    // Creates a small "i" info button. Add to a CCMenu.
-    // @param title   Alert popup title
-    // @param desc    Multi-line description text
-    // @param parent  Unused (kept for API compat)
-    // @param scale   Icon scale (default 0.56)
+    // crea el boton info para meterlo en un CCMenu
+    // title: titulo del popup
+    // desc: texto que se ve en el popup
+    // parent: no se usa, se queda por compat
+    // scale: escala del icono, por defecto 0.56
     inline CCMenuItemSpriteExtra* createInfoBtn(
         std::string const& title,
         std::string const& desc,
@@ -42,7 +40,7 @@ namespace PaimonInfo {
         );
         if (!btn) return nullptr;
 
-        // encode title + desc into user object
+        // guardo title + desc en el user object
         auto data = CCString::createWithFormat("%s\n---\n%s", title.c_str(), desc.c_str());
         btn->setUserObject(data);
 
@@ -50,7 +48,4 @@ namespace PaimonInfo {
     }
 
 } // namespace PaimonInfo
-
-
-
 

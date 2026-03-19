@@ -111,7 +111,6 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     bool init(LeaderboardType type, LeaderboardStat stat) {
         if (!LeaderboardsLayer::init(type, stat)) return false;
         
-        // â”€â”€ Aplicar fondo custom unificado â”€â”€
         LayerBackgroundManager::get().applyBackground(this, "leaderboards");
 
         createPaimonButtons();
@@ -292,7 +291,6 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
         int accountID = GJAccountManager::get()->m_accountID;
         std::string username = GJAccountManager::get()->m_username;
-
 
         auto popup = ProfilePreviewPopup::create(rawData, username, [rawData, accountID, username]() {
             PaimonNotify::create(Localization::get().getString("capture.uploading").c_str(), NotificationIcon::Info)->show();

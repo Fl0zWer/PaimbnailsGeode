@@ -31,9 +31,7 @@ using namespace cocos2d;
 #define GL_BLEND_DST_RGB 0x80C8
 #endif
 
-// ─────────────────────────────────────────────────────────────
 // inicializacion miembros estaticos
-// ─────────────────────────────────────────────────────────────
 FramebufferCapture::CaptureRequest FramebufferCapture::s_request;
 std::vector<FramebufferCapture::DeferredCallback> FramebufferCapture::s_deferredCallbacks;
 bool FramebufferCapture::s_isCapturing = false;
@@ -57,9 +55,7 @@ int FramebufferCapture::getMaxTextureSize() {
     return s_maxTextureSize;
 }
 
-// ─────────────────────────────────────────────────────────────
 // captureguard - raii: establece isCapturing + captureSize
-// ─────────────────────────────────────────────────────────────
 FramebufferCapture::CaptureGuard::CaptureGuard(int w, int h) {
     s_isCapturing = true;
     s_captureW    = w;
@@ -73,9 +69,7 @@ FramebufferCapture::CaptureGuard::~CaptureGuard() {
     log::debug("[FramebufferCapture] CaptureGuard OFF");
 }
 
-// ─────────────────────────────────────────────────────────────
 // glstateguard - raii: guarda y restaura estado gl critico
-// ─────────────────────────────────────────────────────────────
 FramebufferCapture::GLStateGuard::GLStateGuard() {
     GLint vp[4] = {};
     glGetIntegerv(GL_VIEWPORT, vp);
@@ -104,9 +98,7 @@ FramebufferCapture::GLStateGuard::~GLStateGuard() {
     if (m_stencilTest) glEnable(GL_STENCIL_TEST); else glDisable(GL_STENCIL_TEST);
 }
 
-// ─────────────────────────────────────────────────────────────
 // auxiliar configuracion calidad
-// ─────────────────────────────────────────────────────────────
 static CaptureQualitySettings getQualitySettings() {
     CaptureQualitySettings settings;
     settings.targetWidth        = 1920;
@@ -128,9 +120,7 @@ static CaptureQualitySettings getQualitySettings() {
     return settings;
 }
 
-// ─────────────────────────────────────────────────────────────
 // api publica
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::requestCapture(
     int levelID,
     geode::CopyableFunction<void(bool, CCTexture2D*, std::shared_ptr<uint8_t>, int, int)> callback,
@@ -166,7 +156,6 @@ bool FramebufferCapture::hasPendingCapture() {
     return s_request.active;
 }
 
-// ─────────────────────────────────────────────────────────────
 // executeIfPending - despacho principal
 //
 // estrategia manejo shaders:
@@ -186,7 +175,6 @@ bool FramebufferCapture::hasPendingCapture() {
 //       doCaptureRerender si falla lectura back-buffer.
 //     • sin shaders activos, usamos doCaptureRerender
 //       para captura alta resolucion.
-// ─────────────────────────────────────────────────────────────
 
 // auxiliar: detecta si shaderlayer tiene shaders activos
 static bool hasActiveShaders() {
@@ -205,20 +193,16 @@ static bool hasActiveShaders() {
     return false;
 }
 
-// ─────────────────────────────────────────────────────────────
 // executeIfPending
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::executeIfPending() {
     if (!s_request.active) return;
 
-    // ── captura nodo (caso especial) ──────────────────────────
     if (s_request.nodeToCapture) {
         doCaptureNode(s_request.nodeToCapture);
         s_request.active = false;
         return;
     }
 
-    // ── configuracion ────────────────────────────────────────
     auto quality = getQualitySettings();
     int targetW  = quality.targetWidth;
 
@@ -242,7 +226,6 @@ void FramebufferCapture::executeIfPending() {
         vpH = static_cast<int>(frameSize.height);
     }
 
-    // ── elige estrategia segun shaders activos ──────
     bool shadersActive = hasActiveShaders();
 
     if (shadersActive) {
@@ -258,9 +241,7 @@ void FramebufferCapture::executeIfPending() {
     s_request.active = false;
 }
 
-// ─────────────────────────────────────────────────────────────
 // procesa callbacks diferidos
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::processDeferredCallbacks() {
     if (s_deferredCallbacks.empty()) return;
 
@@ -283,9 +264,7 @@ void FramebufferCapture::processDeferredCallbacks() {
     s_deferredCallbacks.clear();
 }
 
-// ─────────────────────────────────────────────────────────────
 // auxiliar: crea buffer rgba, alpha->255
-// ─────────────────────────────────────────────────────────────
 static std::shared_ptr<uint8_t> makeRGBABuffer(const unsigned char* data, int W, int H) {
     size_t pixelCount = static_cast<size_t>(W) * static_cast<size_t>(H);
     size_t bytes      = pixelCount * 4;
@@ -302,10 +281,8 @@ static std::shared_ptr<uint8_t> makeRGBABuffer(const unsigned char* data, int W,
     return buf;
 }
 
-// ─────────────────────────────────────────────────────────────
 // auxiliar: crea y retiene cctexture2d de buffer rgba
 // devuelve nullptr si falla
-// ─────────────────────────────────────────────────────────────
 static CCTexture2D* createTextureFromRGBA(const uint8_t* data, int W, int H) {
     auto* tex = new CCTexture2D();
     if (!tex->initWithData(data, kCCTexture2DPixelFormat_RGBA8888, W, H,
@@ -319,10 +296,8 @@ static CCTexture2D* createTextureFromRGBA(const uint8_t* data, int W, int H) {
     return tex;
 }
 
-// ─────────────────────────────────────────────────────────────
 // auxiliar: chequea si buffer es color uniforme
 // devuelve true si imagen tiene contenido variado
-// ─────────────────────────────────────────────────────────────
 static bool pixelBufferHasContent(std::vector<uint8_t> const& pixels, int width, int height) {
     if (pixels.size() < 4) return false;
 
@@ -338,7 +313,6 @@ static bool pixelBufferHasContent(std::vector<uint8_t> const& pixels, int width,
     return false;
 }
 
-// ─────────────────────────────────────────────────────────────
 // doCaptureDirectWithScale
 //
 // lee pixeles del back-buffer en swapBuffers
@@ -349,7 +323,6 @@ static bool pixelBufferHasContent(std::vector<uint8_t> const& pixels, int width,
 //   1. intenta leer fbo actual (lo que mostrara swapBuffers)
 //   2. si uniforme, prueba fbo 0 (framebuffer estandar)
 //   3. si sigue uniforme, recurre a rerender
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
     auto* director = CCDirector::sharedDirector();
         if (!director) {
@@ -360,7 +333,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 
         auto* scene = director->getRunningScene();
 
-        // ── oculta overlays UI antes de re-renderizar ────────────
         // El back-buffer puede tener UI si el timing no fue perfecto,
         // asi que forzamos un re-render limpio al back-buffer.
         PlayLayer* playLayer = PlayLayer::get();
@@ -416,7 +388,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 
         log::info("[FramebufferCapture] Direct capture: hidden {} UI overlay nodes", hiddenNodes.size());
 
-        // ── fuerza re-render de la escena al back-buffer ─────────
         // Esto asegura que los pixeles que leemos NO tengan UI,
         // independientemente del estado del back-buffer previo.
         if (scene) {
@@ -425,7 +396,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             scene->visit();
         }
 
-        // ── reune valores tamano para diagnostico ──
         auto* glView = director->getOpenGLView();
         CCSize frameSize = glView ? glView->getFrameSize() : CCSize(0, 0);
         CCSize winPixels = director->getWinSizeInPixels();
@@ -444,7 +414,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         log::info("  GL viewport    = ({},{}) {}x{}", currentViewport[0], currentViewport[1], currentViewport[2], currentViewport[3]);
         log::info("  current FBO    = {}", currentFBO);
 
-        // ── determina dimensiones lectura ────────────────────────
         // usa tamano frame (dimensiones reales ventana)
         // viewport en swapBuffers puede no coincidir
         // pero tamano frame es lo que ventana contiene
@@ -468,7 +437,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 
         log::info("[FramebufferCapture] Reading {}x{} pixels", glWidth, glHeight);
 
-        // ── intento 1: lee fbo actual ─────
         // en swapBuffers, suele ser framebuffer
         // a presentar. en algunos setups (angle,
         // shader mods) puede no ser fbo 0.
@@ -486,7 +454,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             log::warn("[FramebufferCapture] GL error reading from FBO {}: 0x{:X}", currentFBO, err);
         }
 
-        // ── intento 2: si fbo no era 0, prueba fbo 0 ───────────
         if (!hasContent && currentFBO != 0) {
             log::info("[FramebufferCapture] Current FBO {} had no content, trying FBO 0", currentFBO);
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -503,7 +470,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             glBindFramebuffer(GL_FRAMEBUFFER, currentFBO);
         }
 
-        // ── intento 3: prueba lectura tamano viewport fbo 0 ────
         // en algunos sistemas, viewport es menor que frame
         // y contenido juego solo esta en region viewport
         if (!hasContent && (currentViewport[2] != glWidth || currentViewport[3] != glHeight)
@@ -543,7 +509,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             return;
         }
 
-        // ── restaura nodos ocultos tras lectura pixeles ──────────
         for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
 
         // NOTE: Auto-crop of black borders was removed.
@@ -551,10 +516,8 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         // "Crop Borders" button in CapturePreviewPopup / CaptureEditPopup.
         // This ensures captures always return the full unmodified frame.
 
-        // ── voltea (opengl origen abajo-izq -> arriba-izq) ──────
         flipVertical(pixels, glWidth, glHeight, 4);
 
-        // ── escala abajo a ancho objetivo ────────────────────────
         double aspect = static_cast<double>(glWidth) / static_cast<double>(glHeight);
         int outW = targetWidth;
         int outH = static_cast<int>(std::round(outW / aspect));
@@ -577,7 +540,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
             return;
         }
 
-        // ── crea textura ───────────────────────────────────
         auto* texture = createTextureFromRGBA(outBuffer.get(), outW, outH);
         if (!texture) {
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
@@ -591,7 +553,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
         }
 }
 
-// ─────────────────────────────────────────────────────────────
 // doCaptureRerender
 //
 // re-renderiza escena en ccrendertexture separado a
@@ -606,7 +567,6 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 //   • glstateguard guarda/restaura viewport, fbo y mezcla.
 //   • chequeo limite gpu via gl_max_texture_size.
 //   • glfinish() antes de leer asegura renderizado listo.
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int viewportH, CaptureQualitySettings const& quality) {
     auto* director = CCDirector::sharedDirector();
         if (!director) {
@@ -622,7 +582,6 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
             return;
         }
 
-        // ── calcula dimensiones ─────────────────────────────
         auto winSize = director->getWinSize();
         double aspect = winSize.height > 0
             ? (static_cast<double>(winSize.width) / static_cast<double>(winSize.height))
@@ -631,7 +590,6 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         int renderW = std::max(1, targetWidth);
         int renderH = std::max(1, static_cast<int>(std::round(renderW / aspect)));
 
-        // ── limita a tamano maximo textura gpu ────────────────
         int maxTex = getMaxTextureSize();
         if (renderW > maxTex || renderH > maxTex) {
             log::warn("[FramebufferCapture] Requested {}x{} exceeds GL_MAX_TEXTURE_SIZE={}, clamping",
@@ -649,7 +607,6 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         log::info("[FramebufferCapture] Rerender: winSize={}x{}, renderSize={}x{}, aspect={:.4f}, maxTex={}",
                   winSize.width, winSize.height, renderW, renderH, aspect, maxTex);
 
-        // ── oculta overlays ui (no shaderlayer!) ──────────
         PlayLayer* playLayer = PlayLayer::get();
         std::vector<std::pair<CCNode*, bool>> hiddenNodes;
 
@@ -705,10 +662,8 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
             }
         }
 
-        // ── guarda estado gl (restaurado auto al salir ambito) ──
         GLStateGuard glGuard;
 
-        // ── crea textura render ────────────────────────────
         auto* rt = CCRenderTexture::create(renderW, renderH, kCCTexture2DPixelFormat_RGBA8888);
         if (!rt) {
             log::warn("[FramebufferCapture] FBO at {}x{} failed – trying half resolution", renderW, renderH);
@@ -723,11 +678,9 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
             log::info("[FramebufferCapture] FBO fallback succeeded at {}x{}", renderW, renderH);
         }
 
-        // ── activa flag captura tras saber dimensiones finales ──
         // shaderlayerhook lee esto para redimensionar fbo interno.
         CaptureGuard capGuard(renderW, renderH);
 
-        // ── renderiza ───────────────────────────────────────────
         rt->begin();
         glClearColor(0, 0, 0, 1);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
@@ -751,10 +704,8 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         kmGLPopMatrix();
         rt->end();
 
-        // ── restaura nodos ocultos ─────────────────────────────
         for (auto& pair : hiddenNodes) pair.first->setVisible(pair.second);
 
-        // ── sincroniza gpu antes leer pixeles ────────────────
         glFinish();
 
         GLenum glErr = glGetError();
@@ -782,11 +733,9 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
 
         log::info("[FramebufferCapture] Got image: {}x{}", W, H);
 
-        // ── construye buffer rgba ────────────────────────────────
         auto rgbaBuffer = makeRGBABuffer(data, W, H);
         img->release();
 
-        // ── crea textura ───────────────────────────────────
         auto* texture = createTextureFromRGBA(rgbaBuffer.get(), W, H);
         if (!texture) {
             if (s_request.callback) s_request.callback(false, nullptr, nullptr, 0, 0);
@@ -800,9 +749,7 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
         }
 }
 
-// ─────────────────────────────────────────────────────────────
 // doCaptureNode - renderiza nodo unico a fbo
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::doCaptureNode(CCNode* node) {
     log::info("[FramebufferCapture] Capturing specific node");
 
@@ -879,9 +826,7 @@ void FramebufferCapture::doCaptureNode(CCNode* node) {
         }
 }
 
-// ─────────────────────────────────────────────────────────────
 // flipVertical
-// ─────────────────────────────────────────────────────────────
 void FramebufferCapture::flipVertical(std::vector<uint8_t>& pixels, int width, int height, int channels) {
     int rowSize = width * channels;
     std::vector<uint8_t> temp(rowSize);
@@ -895,9 +840,7 @@ void FramebufferCapture::flipVertical(std::vector<uint8_t>& pixels, int width, i
     }
 }
 
-// ─────────────────────────────────────────────────────────────
 // escalado lanczos-3 (rgba, dos pasos separable)
-// ─────────────────────────────────────────────────────────────
 static constexpr double PI_VAL = 3.14159265358979323846;
 
 static inline double lanczos3(double x) {
@@ -920,7 +863,6 @@ std::shared_ptr<uint8_t> FramebufferCapture::lanczosDownscale(
 
     const int A = 3; // ventana lanczos-3
 
-    // ── paso 1: horizontal srcW×srcH → dstW×srcH ───────────
     std::vector<float> hPass(static_cast<size_t>(dstW) * srcH * 4, 0.0f);
     {
         double ratioX  = static_cast<double>(srcW) / dstW;
@@ -958,7 +900,6 @@ std::shared_ptr<uint8_t> FramebufferCapture::lanczosDownscale(
         }
     }
 
-    // ── paso 2: vertical dstW×srcH → dstW×dstH ─────────────
     size_t outBytes = static_cast<size_t>(dstW) * dstH * 4;
     std::shared_ptr<uint8_t> out(new uint8_t[outBytes], std::default_delete<uint8_t[]>());
     uint8_t* outPtr = out.get();

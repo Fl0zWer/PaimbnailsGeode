@@ -8,6 +8,7 @@
 #include <Geode/ui/Notification.hpp>
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <filesystem>
 #include <fstream>
@@ -15,10 +16,9 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// CCScale9Sprite::create crashea si el sprite no existe (no retorna nullptr).
-// Esta funcion verifica primero que la textura sea valida.
+// valido la textura antes para no comerme el crash de Scale9
 static CCScale9Sprite* safeCreateScale9(char const* file) {
-    // Intentar cargar la textura sin crear el Scale9
+    // primero pruebo la textura sola
     auto* tex = CCTextureCache::sharedTextureCache()->addImage(file, false);
     if (!tex) return nullptr;
     auto spr = CCScale9Sprite::create(file);
@@ -39,20 +39,20 @@ bool ProfilePicEditorPopup::init() {
     if (!Popup::init(460.f, 320.f)) return false;
     this->setTitle("Profile Photo Editor");
 
-    // Cargar config actual
+    // arranco desde lo guardado
     m_editConfig = ProfilePicCustomizer::get().getConfig();
 
     auto winSize = m_mainLayer->getContentSize();
     float centerX = winSize.width / 2;
 
-    // === Preview area (izquierda) ===
+    // vista previa
     m_previewContainer = CCNode::create();
     m_previewContainer->setContentSize({140, 140});
     m_previewContainer->setAnchorPoint({0.5f, 0.5f});
     m_previewContainer->setPosition({85, winSize.height / 2});
     m_mainLayer->addChild(m_previewContainer, 10);
 
-    // Fondo del preview
+    // fondo de la vista previa
     auto previewBg = safeCreateScale9("square02_001.png");
     if (!previewBg) previewBg = safeCreateScale9("GJ_square01.png");
     if (!previewBg) return false;
@@ -68,11 +68,9 @@ bool ProfilePicEditorPopup::init() {
     previewLabel->setPosition({85, winSize.height / 2 + 85});
     m_mainLayer->addChild(previewLabel, 10);
 
-    // === Panel de controles (derecha) ===
     float panelX = 290;
     float panelW = 300;
 
-    // Fondo del panel
     auto panelBg = safeCreateScale9("square02_001.png");
     if (!panelBg) panelBg = safeCreateScale9("GJ_square01.png");
     if (!panelBg) return false;
@@ -83,10 +81,10 @@ bool ProfilePicEditorPopup::init() {
     panelBg->setPosition({panelX, winSize.height / 2 + 5});
     m_mainLayer->addChild(panelBg, 5);
 
-    // === Tabs ===
+    // tabs
     createTabs();
 
-    // === Crear contenido de cada tab ===
+    // contenido de tabs
     m_frameTab = CCLayer::create();
     m_frameTab->setContentSize(winSize);
     m_frameTab->addChild(createFrameTab());
@@ -104,7 +102,7 @@ bool ProfilePicEditorPopup::init() {
     m_decoTab->setVisible(false);
     m_mainLayer->addChild(m_decoTab, 10);
 
-    // === Botones Save / Reset abajo ===
+    // guardar y reiniciar
     auto bottomMenu = CCMenu::create();
     bottomMenu->setPosition({0, 0});
     m_mainLayer->addChild(bottomMenu, 15);
@@ -123,14 +121,14 @@ bool ProfilePicEditorPopup::init() {
     resetBtn->setPosition({centerX + 50, 25});
     bottomMenu->addChild(resetBtn);
 
-    // Build initial preview
+    // primera vista previa
     rebuildPreview();
 
     paimon::markDynamicPopup(this);
     return true;
 }
 
-// === TABS ===
+// tabs
 
 void ProfilePicEditorPopup::createTabs() {
     auto winSize = m_mainLayer->getContentSize();
@@ -181,7 +179,7 @@ void ProfilePicEditorPopup::switchTab(int tab) {
     }
 }
 
-// === FRAME TAB ===
+// borde
 
 CCNode* ProfilePicEditorPopup::createFrameTab() {
     auto node = CCNode::create();
@@ -192,7 +190,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     menu->setPosition({0, 0});
     node->addChild(menu);
 
-    // Toggle "Enable Border"
+    // activar borde
     auto frameToggle = CCMenuItemToggler::createWithStandardSprites(
         this, menu_selector(ProfilePicEditorPopup::onFrameToggle), 0.6f);
     frameToggle->toggle(m_editConfig.frameEnabled);
@@ -205,7 +203,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     enableLbl->setPosition({panelX - 85, startY});
     node->addChild(enableLbl);
 
-    // Thickness slider
+    // grosor
     float sliderY = startY - 35;
 
     auto thkLbl = CCLabelBMFont::create("Thickness", "bigFont.fnt");
@@ -224,7 +222,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     m_thicknessLabel->setPosition({panelX + 110, sliderY});
     node->addChild(m_thicknessLabel);
 
-    // Color palette
+    // paleta de color
     float colorY = sliderY - 35;
 
     auto colorLbl = CCLabelBMFont::create("Border Color", "bigFont.fnt");
@@ -232,7 +230,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     colorLbl->setPosition({panelX - 60, colorY + 12});
     node->addChild(colorLbl);
 
-    // Paleta de colores: blanco, negro, rojo, verde, azul, amarillo, naranja, rosa, cyan, morado
+    // colores rapidos
     struct ColorOption { ccColor3B color; char const* name; };
     std::vector<ColorOption> colors = {
         {{255, 255, 255}, "White"},
@@ -259,11 +257,9 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
     for (size_t i = 0; i < colors.size(); i++) {
         auto& co = colors[i];
 
-        // Cuadrito de color
         auto colorNode = CCLayerColor::create(ccc4(co.color.r, co.color.g, co.color.b, 255));
         colorNode->setContentSize({cellSize - 2, cellSize - 2});
 
-        // Borde fino para que se vean los colores claros
         auto borderBg = CCLayerColor::create(ccc4(80, 80, 80, 255));
         borderBg->setContentSize({cellSize, cellSize});
         colorNode->setPosition({1, 1});
@@ -274,7 +270,7 @@ CCNode* ProfilePicEditorPopup::createFrameTab() {
         btnContainer->addChild(borderBg);
         btnContainer->addChild(colorNode);
 
-        // Highlight si es el color seleccionado
+        // marco el color activo
         if (m_editConfig.frame.color.r == co.color.r &&
             m_editConfig.frame.color.g == co.color.g &&
             m_editConfig.frame.color.b == co.color.b) {
@@ -337,7 +333,7 @@ void ProfilePicEditorPopup::onBorderColorSelect(CCObject* sender) {
         m_editConfig.frameEnabled = true;
         rebuildPreview();
 
-        // Reconstruir el tab para actualizar el highlight
+        // rehago el tab para que se vea el color activo
         if (m_frameTab) {
             m_frameTab->removeAllChildren();
             m_frameTab->addChild(createFrameTab());
@@ -355,7 +351,7 @@ void ProfilePicEditorPopup::onThicknessChanged(CCObject*) {
     rebuildPreview();
 }
 
-// === SHAPE TAB ===
+// forma
 
 CCNode* ProfilePicEditorPopup::createShapeTab() {
     auto node = CCNode::create();
@@ -366,7 +362,7 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
     menu->setPosition({0, 0});
     node->addChild(menu);
 
-    // Scale X slider
+    // ancho
     auto sxLbl = CCLabelBMFont::create("Width", "bigFont.fnt");
     sxLbl->setScale(0.3f);
     sxLbl->setPosition({panelX - 110, startY});
@@ -382,7 +378,7 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
     m_scaleXLabel->setPosition({panelX + 115, startY});
     node->addChild(m_scaleXLabel);
 
-    // Scale Y slider
+    // alto
     float yPos = startY - 35;
     auto syLbl = CCLabelBMFont::create("Height", "bigFont.fnt");
     syLbl->setScale(0.3f);
@@ -399,7 +395,7 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
     m_scaleYLabel->setPosition({panelX + 115, yPos});
     node->addChild(m_scaleYLabel);
 
-    // Size slider
+    // tamano
     float sizeY = yPos - 35;
     auto sizeLbl = CCLabelBMFont::create("Size", "bigFont.fnt");
     sizeLbl->setScale(0.3f);
@@ -416,7 +412,7 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
     m_sizeLabel->setPosition({panelX + 115, sizeY});
     node->addChild(m_sizeLabel);
 
-    // Stencil shape selection (formas geometricas + sprites)
+    // selector de forma
     float shapeY = sizeY - 35;
     auto shapeLbl = CCLabelBMFont::create("Shape", "bigFont.fnt");
     shapeLbl->setScale(0.35f);
@@ -433,16 +429,13 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
 
     for (size_t i = 0; i < stencils.size(); i++) {
         auto& [shapeName, label] = stencils[i];
-        // Crear miniatura de la forma
         auto shapeNode = createShapeStencil(shapeName, cellSz - 4);
         if (!shapeNode) continue;
 
-        // Colorear verde si esta seleccionado
+        // pinto el activo
         if (m_editConfig.stencilSprite == shapeName) {
-            // Iterar hijos para pintar de verde
             for (auto* child : CCArrayExt<CCNode*>(shapeNode->getChildren())) {
                 if (auto* drawNode = typeinfo_cast<CCDrawNode*>(child)) {
-                    // CCDrawNode no tiene setColor facil, usamos un tinte
                 }
                 if (auto* s9 = typeinfo_cast<CCScale9Sprite*>(child)) {
                     s9->setColor({0, 255, 0});
@@ -450,13 +443,11 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
             }
         }
 
-        // Envolver en un sprite para el boton (CCMenuItemSpriteExtra necesita CCNode derivado de CCSprite-like)
-        // Truco: poner un CCLayerColor de fondo y la forma encima
+        // armo un contenedor simple para el boton
         auto btnContainer = CCNode::create();
         btnContainer->setContentSize({cellSz, cellSz});
         btnContainer->setAnchorPoint({0.5f, 0.5f});
 
-        // Fondo semi-transparente
         auto bgRect = CCLayerColor::create(
             m_editConfig.stencilSprite == shapeName ? ccc4(0, 100, 0, 120) : ccc4(50, 50, 50, 80)
         );
@@ -477,7 +468,7 @@ CCNode* ProfilePicEditorPopup::createShapeTab() {
         if (colCount >= maxCols) { colCount = 0; rowCount++; }
     }
 
-    // Reset button
+    // reinicio rapido
     float resetY = shapeY - (rowCount + 1) * (cellSz + gapSz) - 10;
     auto resetSpr = ButtonSprite::create("Reset Shape", "bigFont.fnt", "GJ_button_04.png", 0.6f);
     resetSpr->setScale(0.5f);
@@ -535,7 +526,7 @@ void ProfilePicEditorPopup::onResetShape(CCObject*) {
     rebuildPreview();
 }
 
-// === DECO TAB ===
+// decoraciones
 
 CCNode* ProfilePicEditorPopup::createDecoTab() {
     auto node = CCNode::create();
@@ -551,7 +542,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
     titleLbl->setPosition({panelX, startY + 5});
     node->addChild(titleLbl);
 
-    // Grid de assets disponibles
+    // grilla de assets
     auto decos = ProfilePicCustomizer::getAvailableDecorations();
     float gridStartY = startY - 20;
     float gridX = panelX - 120;
@@ -571,7 +562,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         }
         if (!sprNode) continue;
 
-        // Escalar para que quepa en la celda
+        // que entre en la celda
         float maxDim = std::max(sprNode->getContentWidth(), sprNode->getContentHeight());
         if (maxDim > 0) sprNode->setScale((cellSize - 6) / maxDim);
 
@@ -587,7 +578,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         if (col >= 7) { col = 0; row++; }
     }
 
-    // Paging
+    // paginas
     float pageY = gridStartY - 5 * (cellSize + gap) - 15;
     if (m_decoPage > 0) {
         auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
@@ -608,7 +599,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         menu->addChild(nextBtn);
     }
 
-    // Info about current decorations
+    // contador
     auto countLbl = CCLabelBMFont::create(
         fmt::format("{} decorations placed", m_editConfig.decorations.size()).c_str(), "chatFont.fnt");
     countLbl->setScale(0.55f);
@@ -616,7 +607,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
     countLbl->setPosition({panelX, pageY - 18});
     node->addChild(countLbl);
 
-    // Remove last button
+    // borrar la ultima
     if (!m_editConfig.decorations.empty()) {
         auto rmSpr = ButtonSprite::create("Remove Last", "bigFont.fnt", "GJ_button_05.png", 0.6f);
         rmSpr->setScale(0.45f);
@@ -666,14 +657,14 @@ void ProfilePicEditorPopup::onDecoPage(CCObject* sender) {
 }
 
 void ProfilePicEditorPopup::refreshDecoList() {
-    // Reconstruir el tab de decoraciones
+    // rehago el tab completo
     if (m_decoTab) {
         m_decoTab->removeAllChildren();
         m_decoTab->addChild(createDecoTab());
     }
 }
 
-// === PREVIEW ===
+// vista previa
 
 void ProfilePicEditorPopup::rebuildPreview() {
     if (!m_previewContainer) return;
@@ -684,11 +675,11 @@ void ProfilePicEditorPopup::rebuildPreview() {
     float centerY = m_previewContainer->getContentHeight() / 2;
     float thumbSize = m_editConfig.size;
 
-    // Escalar el preview para que siempre quepa
+    // bajo el preview si hace falta para que entre
     float previewScale = previewSize / std::max(thumbSize, 1.f);
     previewScale = std::min(previewScale, 1.f);
 
-    // Contenedor con escala/forma aplicada
+    // aca aplico escala y forma
     auto picNode = CCNode::create();
     picNode->setContentSize({thumbSize, thumbSize});
     picNode->setAnchorPoint({0.5f, 0.5f});
@@ -696,7 +687,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
     picNode->setScaleX(m_editConfig.scaleX * previewScale);
     picNode->setScaleY(m_editConfig.scaleY * previewScale);
 
-    // Stencil con forma geometrica o sprite
+    // stencil final
     auto stencil = createShapeStencil(m_editConfig.stencilSprite, thumbSize);
     if (!stencil) stencil = createShapeStencil("circle", thumbSize);
     if (!stencil) return;
@@ -706,11 +697,11 @@ void ProfilePicEditorPopup::rebuildPreview() {
     clip->setAlphaThreshold(-1.0f);
     clip->setContentSize({thumbSize, thumbSize});
 
-    // === Intentar cargar la imagen/GIF real del perfil del usuario ===
+    // intento mostrar la foto real del perfil
     int myAccountID = GJAccountManager::get()->m_accountID;
     bool hasContent = false;
 
-    // 1) GIF en cache
+    // 1) GIF ya cacheado
     auto* cached = ProfileThumbs::get().getCachedProfile(myAccountID);
     if (cached && !cached->gifKey.empty() && AnimatedGIFSprite::isCached(cached->gifKey)) {
         auto gifSpr = AnimatedGIFSprite::createFromCache(cached->gifKey);
@@ -728,7 +719,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 2) Textura en cache de ProfileThumbs
+    // 2) textura ya cacheada
     if (!hasContent && cached && cached->texture) {
         auto imgSpr = CCSprite::createWithTexture(cached->texture);
         if (imgSpr) {
@@ -745,7 +736,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 3) Cargar desde disco via ProfileThumbs::loadTexture (RGB guardado)
+    // 3) textura guardada en disco
     if (!hasContent) {
         auto tex = ProfileThumbs::get().loadTexture(myAccountID);
         if (tex) {
@@ -765,46 +756,33 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 4) Cargar desde profileimg_cache en disco (datos descargados del servidor)
+    // 4) cache crudo del servidor
     if (!hasContent) {
         auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
         auto cachePath = cacheDir / fmt::format("{}.dat", myAccountID);
         std::error_code ecProfCache;
         if (std::filesystem::exists(cachePath, ecProfCache)) {
-            std::ifstream file(cachePath, std::ios::binary);
-            if (file) {
-                std::vector<uint8_t> data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-                file.close();
-                if (!data.empty()) {
-                    auto* img = new CCImage();
-                    if (img->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-                        auto* tex = new CCTexture2D();
-                        if (tex->initWithImage(img)) {
-                            tex->autorelease();
-                            auto imgSpr = CCSprite::createWithTexture(tex);
-                            if (imgSpr) {
-                                float iw = imgSpr->getContentWidth();
-                                float ih = imgSpr->getContentHeight();
-                                if (iw > 0 && ih > 0) {
-                                    float scale = std::max(thumbSize / iw, thumbSize / ih);
-                                    imgSpr->setScale(scale);
-                                }
-                                imgSpr->setAnchorPoint({0.5f, 0.5f});
-                                imgSpr->setPosition({thumbSize / 2, thumbSize / 2});
-                                clip->addChild(imgSpr);
-                                hasContent = true;
-                            }
-                        } else {
-                            tex->release();
-                        }
+            auto loaded = ImageLoadHelper::loadStaticImage(cachePath, 0);
+            if (loaded.success && loaded.texture) {
+                loaded.texture->autorelease();
+                auto imgSpr = CCSprite::createWithTexture(loaded.texture);
+                if (imgSpr) {
+                    float iw = imgSpr->getContentWidth();
+                    float ih = imgSpr->getContentHeight();
+                    if (iw > 0 && ih > 0) {
+                        float scale = std::max(thumbSize / iw, thumbSize / ih);
+                        imgSpr->setScale(scale);
                     }
-                    img->release();
+                    imgSpr->setAnchorPoint({0.5f, 0.5f});
+                    imgSpr->setPosition({thumbSize / 2, thumbSize / 2});
+                    clip->addChild(imgSpr);
+                    hasContent = true;
                 }
             }
         }
     }
 
-    // 5) Placeholder si no hay imagen
+    // 5) fallback si no hay imagen
     if (!hasContent) {
         auto placeholder = CCLayerColor::create({80, 40, 40, 255});
         placeholder->setContentSize({thumbSize, thumbSize});
@@ -875,7 +853,7 @@ void ProfilePicEditorPopup::onReset(CCObject*) {
     ProfilePicCustomizer::get().setConfig(m_editConfig);
     ProfilePicCustomizer::get().save();
 
-    // Reset sliders
+    // devolver sliders a sus valores base
     if (m_scaleXSlider) m_scaleXSlider->setValue(0.41f);
     if (m_scaleYSlider) m_scaleYSlider->setValue(0.41f);
     if (m_sizeSlider) m_sizeSlider->setValue(0.4f);

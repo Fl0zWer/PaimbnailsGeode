@@ -15,7 +15,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// Animated sprite that plays GIF frames with caching and incremental loading.
+// sprite GIF con cache y carga incremental
 class AnimatedGIFSprite : public cocos2d::CCSprite {
 public:
     static AnimatedGIFSprite* create(std::string const& filename);
@@ -28,7 +28,7 @@ public:
     struct SharedGIFData {
         std::vector<cocos2d::CCTexture2D*> textures;
         std::vector<float> delays;
-        std::vector<cocos2d::CCRect> frameRects; // Stores left, top, width, height
+        std::vector<cocos2d::CCRect> frameRects; // left, top, width, height
         int width;
         int height;
     };
@@ -36,8 +36,8 @@ public:
 protected:
     struct GIFFrame {
         cocos2d::CCTexture2D* texture = nullptr;
-        cocos2d::CCRect rect; // Position and size in canvas
-        float delay = 0.1f; // Seconds
+        cocos2d::CCRect rect; // posicion y tamano dentro del canvas
+        float delay = 0.1f; // segundos
         
         ~GIFFrame() {
             if (texture) {
@@ -49,18 +49,18 @@ protected:
     
     static std::unordered_map<std::string, SharedGIFData> s_gifCache;
     static std::list<std::string> s_lruList;
-    static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap; // LRU O(1)
+    static std::unordered_map<std::string, std::list<std::string>::iterator> s_lruMap; // acceso O(1) a la LRU
     static std::unordered_set<std::string> s_pinnedGIFs;
-    static std::mutex s_cacheMutex; // protege s_gifCache, s_lruList, s_pinnedGIFs, s_currentCacheSize
+    static std::mutex s_cacheMutex; // protege cache + LRU
     
-    static size_t s_currentCacheSize; // Bytes
+    static size_t s_currentCacheSize; // bytes
     static size_t getMaxCacheMem();
     
     // eviccion centralizada: quita entradas LRU hasta que el cache esta por debajo del limite
     static void evictIfNeeded();
 
     std::vector<GIFFrame*> m_frames;
-    // Dominant colors per frame: {A, B}
+    // colores dominantes por frame: {A, B}
     std::vector<std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B>> m_frameColors;
     
     unsigned int m_currentFrame = 0;
@@ -79,7 +79,7 @@ protected:
     virtual ~AnimatedGIFSprite();
     
 public:
-    // Shader support (used by e.g. LevelCell blur)
+    // soporte de shaders, por ejemplo para el blur del LevelCell
     float m_intensity = 0.0f;
     float m_time = 0.0f;
     float m_brightness = 1.0f;
@@ -95,7 +95,7 @@ public:
     
     static AnimatedGIFSprite* createFromCache(std::string const& key);
 
-    // Disk cache
+    // cache en disco
     struct DiskCacheEntry {
         int width;
         int height;
@@ -113,7 +113,7 @@ public:
     static std::string getCachePath(std::string const& path);
 
 private:
-    // Worker queue
+    // cola de workers
     struct GIFTask {
         std::string path;
         std::vector<uint8_t> data;
@@ -151,7 +151,7 @@ public:
     
     void setCurrentFrame(unsigned int frame);
 
-    // Used by the async loader to ensure frame 0 exists before layout.
+    // lo usa el loader async para tener el frame 0 listo antes del layout
     bool processNextPendingFrame();
 
     std::pair<cocos2d::ccColor3B, cocos2d::ccColor3B> getCurrentFrameColors() const {
@@ -168,7 +168,7 @@ private:
     
     void update(float dt) override;
 
-    // Override draw for shader support
+    // override de draw para shaders
     void draw() override;
 
 private:

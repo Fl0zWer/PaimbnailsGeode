@@ -3,9 +3,7 @@
 using namespace cocos2d;
 using namespace geode::prelude;
 
-// ════════════════════════════════════════════════════════════
 // CustomTransitionScene — ejecuta transiciones DSL
-// ════════════════════════════════════════════════════════════
 
 CustomTransitionScene* CustomTransitionScene::create(
     CCScene* fromScene,
@@ -37,7 +35,6 @@ bool CustomTransitionScene::initWithScenes(
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // ── Container for origin scene (transparent background to avoid white flash) ──
     m_fromContainer = CCLayerColor::create({0, 0, 0, 255}, winSize.width, winSize.height);
     m_fromContainer->setAnchorPoint({0.5f, 0.5f});
     m_fromContainer->setPosition({winSize.width / 2, winSize.height / 2});
@@ -71,7 +68,6 @@ bool CustomTransitionScene::initWithScenes(
         }
     }
 
-    // ── Container for destination scene (starts transparent) ──
     m_toContainer = CCLayerColor::create({0, 0, 0, 0}, winSize.width, winSize.height);
     m_toContainer->setAnchorPoint({0.5f, 0.5f});
     m_toContainer->setPosition({winSize.width / 2, winSize.height / 2});
@@ -105,11 +101,11 @@ bool CustomTransitionScene::initWithScenes(
         }
     }
 
-    // Initial state: destination invisible
+    // el destino arranca invisible
     m_toContainer->setVisible(true);
     m_toContainer->setOpacity(0);
 
-    // Default fallback if no commands
+    // si no hay comandos, tiro una transicion minima
     if (m_commands.empty()) {
         m_commands.push_back({CommandAction::FadeOut, "from", 0.15f, 0,0,0,0, 255.f, 0.f});
         m_commands.push_back({CommandAction::FadeIn, "to", 0.15f, 0,0,0,0, 0.f, 255.f});
@@ -329,7 +325,7 @@ void CustomTransitionScene::finishCurrentCommand() {
     auto& cmd = m_commands[m_currentCommandIdx];
     updateCommand(cmd, 1.0f);
 
-    // Reset shake position on finish
+    // al terminar el shake vuelvo al centro
     if (cmd.action == CommandAction::Shake) {
         auto* target = getTarget(cmd.target);
         if (target) {
@@ -351,7 +347,7 @@ void CustomTransitionScene::finishTransition() {
     m_finished = true;
     this->unscheduleUpdate();
 
-    // Move children from toContainer back to destScene, restoring their original state
+    // devuelvo los hijos al scene final con su estado original
     if (m_destScene && m_toContainer) {
         CCArray* children = m_toContainer->getChildren();
         if (children) {
@@ -360,7 +356,7 @@ void CustomTransitionScene::finishTransition() {
                 node->retain();
                 node->removeFromParentAndCleanup(false);
 
-                // Restore original state if we saved it
+                // si guarde el estado, lo restauro
                 auto it = m_originalStates.find(node);
                 if (it != m_originalStates.end()) {
                     auto const& state = it->second;
@@ -380,7 +376,7 @@ void CustomTransitionScene::finishTransition() {
         }
     }
 
-    // Clean up from container
+    // limpio contenedores
     if (m_fromContainer) {
         m_fromContainer->removeAllChildrenWithCleanup(true);
     }
@@ -389,7 +385,7 @@ void CustomTransitionScene::finishTransition() {
     }
     m_originalStates.clear();
 
-    // Replace with dest scene in next frame
+    // cambio al scene final en el siguiente frame
     if (this->isRunning()) {
         this->scheduleOnce(schedule_selector(CustomTransitionScene::onTransitionFinished), 0.f);
     } else {

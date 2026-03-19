@@ -855,7 +855,6 @@ void main() {
     gl_FragColor = vec4(result, color.a);
 })";
 
-
 constexpr auto fragmentShaderAtmosphere = R"(
 #ifdef GL_ES
 precision mediump float;
@@ -892,7 +891,6 @@ void main() {
     // Alpha siempre 1.0 para fondos opacos
     gl_FragColor = vec4(color / 16.0, 1.0) * v_fragmentColor;
 })";
-
 
     constexpr auto fragmentShaderFastBlur = R"(
     #ifdef GL_ES
@@ -944,9 +942,7 @@ void main() {
     /// Declared in Shaders.cpp
     cocos2d::CCGLProgram* getBlurSinglePassShader();
 
-// ═══════════════════════════════════════════════════════════
 //  NUEVOS EFECTOS ANIMADOS UNICOS
-// ═══════════════════════════════════════════════════════════
 
 // Rain — gotas de lluvia (optimizado: loop desenrollado, 1 texture read)
 constexpr auto fragmentShaderRain = R"(

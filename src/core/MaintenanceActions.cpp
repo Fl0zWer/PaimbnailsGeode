@@ -233,7 +233,7 @@ $execute {
                     return;
                 }
 
-                // Check if GDBrowser verification failed (code not generated/refreshed)
+                // si fallo GDBrowser, el mod code puede haberse quedado viejo
                 bool gdFailed = Mod::get()->getSavedValue<bool>("gd-verification-failed", false);
                 auto newCode = HttpClient::get().getModCode();
 

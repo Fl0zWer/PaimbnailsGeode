@@ -464,7 +464,6 @@ void LeaderboardLayer::createList(std::string type) {
     GJGameLevel* level = m_featuredLevel;
     int levelID = level->m_levelID;
 
-    // ── dimensiones de la tarjeta ────────────────────────
     float cardW = 420.f;
     float cardH = 190.f;
     float cardY = winSize.height / 2 - 10.f;
@@ -479,7 +478,6 @@ void LeaderboardLayer::createList(std::string type) {
     card->setScale(0.9f);
     card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.4f, 1.0f)));
 
-    // ── fondo de la tarjeta ──────────────────────────────
     auto cardBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
     if (!cardBg) cardBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
     if (cardBg) {
@@ -490,7 +488,6 @@ void LeaderboardLayer::createList(std::string type) {
         card->addChild(cardBg, 0);
     }
 
-    // ── borde sutil ──────────────────────────────────────
     auto border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
     if (!border) border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
     if (border) {
@@ -501,7 +498,6 @@ void LeaderboardLayer::createList(std::string type) {
         card->addChild(border, -1);
     }
 
-    // ── badge DAILY / WEEKLY ─────────────────────────────
     bool isDaily = (type == "daily");
     auto badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
     if (!badgeBg) badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
@@ -519,7 +515,6 @@ void LeaderboardLayer::createList(std::string type) {
         badgeLbl->setTag(TAG_BADGE_LABEL);
     }
 
-    // ── thumbnail (lado izquierdo ~55%) ──────────────────
     float thumbW = cardW * 0.52f;
     float thumbH = cardH;
     float thumbPad = 4.f;
@@ -603,7 +598,6 @@ void LeaderboardLayer::createList(std::string type) {
         checkLoadingComplete();
     }
 
-    // ── menu para click en la tarjeta ────────────────────
     auto cellMenu = CCMenu::create();
     cellMenu->setPosition({0, 0});
     cellMenu->setContentSize({cardW, cardH});
@@ -625,7 +619,6 @@ void LeaderboardLayer::createList(std::string type) {
         }
     }
 
-    // ── textos lado derecho ──────────────────────────────
     float textX = thumbW + 12.f;
     float textMaxW = cardW - textX - 15.f;
 
@@ -792,7 +785,6 @@ void LeaderboardLayer::updateAudioReactive(float dt) {
         m_particleBoost = std::min(1.f, m_particleBoost + 0.5f);
     }
     
-    // ── aplicar efectos visuales ──
     
     // 1. glow overlay — pulsa con color tematico
     if (m_glowOverlay) {
@@ -993,7 +985,6 @@ void LeaderboardLayer::setupPageInfo(gd::string, char const*) {
     // no necesario
 }
 
-// ── actualizar labels sin recrear la lista ──────────────
 void LeaderboardLayer::updateLevelInfo() {
     if (!m_featuredLevel) return;
 
@@ -1028,7 +1019,6 @@ void LeaderboardLayer::updateLevelInfo() {
     }
 }
 
-// ── chequear si toda la carga termino ───────────────────
 void LeaderboardLayer::checkLoadingComplete() {
     if (m_dataLoaded && m_thumbLoaded) {
         if (m_loadingSpinner) {
@@ -1058,7 +1048,6 @@ void LeaderboardLayer::checkLoadingComplete() {
     }
 }
 
-// ── particulas tematicas ────────────────────────────────
 void LeaderboardLayer::clearParticles() {
     this->unschedule(schedule_selector(LeaderboardLayer::spawnThemeParticle));
     if (m_particleContainer) {
@@ -1147,7 +1136,6 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
     ));
 }
 
-// ── historial ───────────────────────────────────────────
 void LeaderboardLayer::onHistory(CCObject*) {
     // la musica cueva NO se pausa al ir al historial — sigue sonando
     m_goingToHistory = true;
@@ -1155,9 +1143,7 @@ void LeaderboardLayer::onHistory(CCObject*) {
     TransitionManager::get().pushScene(scene);
 }
 
-// ═══════════════════════════════════════════════════════════
 //  SISTEMA DE AUDIO ROBUSTO — musica cueva + control de menu
-// ═══════════════════════════════════════════════════════════
 
 void LeaderboardLayer::startCaveMusic() {
     if (!m_featuredLevel) return;
@@ -1350,7 +1336,6 @@ void LeaderboardLayer::removeCaveEffect() {
     if (m_fftDSP) { m_fftDSP->release(); m_fftDSP = nullptr; }
 }
 
-// ── control de musica de menu (fade suave) ──────────────
 void LeaderboardLayer::fadeOutMenuMusic() {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) return;

@@ -12,9 +12,7 @@
 
 using namespace geode::prelude;
 
-// Helper: extrae el FMOD::Channel* subyacente del ChannelGroup de musica de fondo.
-// m_backgroundMusicChannel es ChannelGroup*, y getCurrentSound/getPosition/setPosition
-// solo existen en Channel*.
+// saco el Channel real desde el ChannelGroup del fondo
 static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
     if (!engine || !engine->m_backgroundMusicChannel) return nullptr;
     int numCh = 0;
@@ -54,15 +52,12 @@ float DynamicSongManager::getFadeDurationMs() const {
     return static_cast<float>(Mod::get()->getSettingValue<double>("profile-music-fade-duration")) * 1000.0f;
 }
 
-// ─── Canal principal ─────────────────────────────────────────────────
-// Reproduce una cancion directamente en m_backgroundMusicChannel de GD
-// usando engine->playMusic(). Esto asegura que siempre usamos el canal
-// principal y evitamos conflictos con otros mods.
+// reproduzco directo en el canal principal de GD
 void DynamicSongManager::playOnMainChannel(const std::string& songPath, float startVolume) {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine) return;
 
-    // playMusic reemplaza lo que sea que este en m_backgroundMusicChannel
+    // playMusic pisa lo que haya en el canal principal
     s_selfPlayMusic = true;
     engine->playMusic(songPath, true, 0.0f, 0);
     s_selfPlayMusic = false;
@@ -72,7 +67,7 @@ void DynamicSongManager::playOnMainChannel(const std::string& songPath, float st
     }
 }
 
-// Helper: Carga la pista de Menu en m_backgroundMusicChannel con volumen deseado.
+// cargo la musica del menu en el canal principal
 void DynamicSongManager::loadMenuTrack(float startVolume) {
     auto engine = FMODAudioEngine::sharedEngine();
     auto gm = GameManager::get();
@@ -101,7 +96,6 @@ void DynamicSongManager::restoreBgChannel() {
     log::info("[DynamicSong] Menu restaurado con vol:{:.2f}", targetVol);
 }
 
-// ─── Seek aleatorio ──────────────────────────────────────────────────
 void DynamicSongManager::applyRandomSeek() {
     auto engine = FMODAudioEngine::sharedEngine();
     auto* bgCh = getMainBgChannel(engine);
@@ -125,21 +119,13 @@ void DynamicSongManager::applyRandomSeek() {
     }
 }
 
-// ─── Cleanup del canal de fade-out (transicion cancion→cancion) ──────
-void DynamicSongManager::cleanupFadeOutChannel() {
-    if (m_fadeOutChannel) { m_fadeOutChannel->stop(); m_fadeOutChannel = nullptr; }
-    if (m_fadeOutSound) { m_fadeOutSound->release(); m_fadeOutSound = nullptr; }
-}
-
-// ─── Rotacion de canciones por nivel ──────────────────────────────────
-
 std::vector<std::string> DynamicSongManager::getAllSongPaths(GJGameLevel* level) {
     std::vector<std::string> paths;
     std::set<int> seenIds;
 
     auto mdm = MusicDownloadManager::sharedState();
 
-    // Cancion principal primero
+    // primero la principal
     if (level->m_songID > 0) {
         if (mdm->isSongDownloaded(level->m_songID)) {
             paths.push_back(mdm->pathForSong(level->m_songID));
@@ -152,13 +138,13 @@ std::vector<std::string> DynamicSongManager::getAllSongPaths(GJGameLevel* level)
         if (!fullPath.empty()) paths.push_back(fullPath);
     }
 
-    // Canciones adicionales desde m_songIDs (comma-separated)
+    // extras desde m_songIDs
     std::string songIdsStr = level->m_songIDs;
     if (!songIdsStr.empty()) {
         std::stringstream ss(songIdsStr);
         std::string token;
         while (std::getline(ss, token, ',')) {
-            // trim espacios
+            // saco espacios
             auto start = token.find_first_not_of(" \t");
             auto end = token.find_last_not_of(" \t");
             if (start == std::string::npos) continue;
@@ -184,14 +170,14 @@ std::vector<std::string> DynamicSongManager::getAllSongPaths(GJGameLevel* level)
 std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
     auto allPaths = getAllSongPaths(level);
 
-    // Si tiene 0 o 1 cancion, no hay rotacion
+    // con 0 o 1 no hay rotacion
     if (allPaths.size() <= 1) {
         return allPaths.empty() ? "" : allPaths[0];
     }
 
     int levelId = level->m_levelID;
 
-    // Si no hay cache o se agoto, recrear la lista completa
+    // si no hay cache o se gasto, la rehago
     auto it = m_songRotationCache.find(levelId);
     if (it == m_songRotationCache.end() || it->second.empty()) {
         m_songRotationCache[levelId] = allPaths;
@@ -199,7 +185,7 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
         log::info("[DynamicSong] Rotacion reiniciada para nivel {} ({} canciones)", levelId, allPaths.size());
     }
 
-    // Tomar la primera cancion pendiente y removerla
+    // saco la siguiente de la cola
     std::string nextSong = it->second.front();
     it->second.erase(it->second.begin());
 
@@ -209,31 +195,27 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
     return nextSong;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-
 void DynamicSongManager::playSong(GJGameLevel* level) {
     if (!Mod::get()->getSettingValue<bool>("dynamic-song")) return;
     if (!level) return;
 
     if (!isInValidLayer()) return;
 
-    // Si ProfileMusic habia destruido el canal, limpiar el flag
+    // si ProfileMusic habia cortado el canal, limpio ese estado
     if (m_stoppedByProfile) {
         m_stoppedByProfile = false;
     }
 
-    // Cancelar fades pendientes antes de iniciar uno nuevo
+    // corto fades pendientes antes de arrancar otro
     if (m_isFadingIn || m_isFadingOut) {
         m_isFadingIn = false;
         m_isFadingOut = false;
     }
     if (m_isTransitioning) {
         m_isTransitioning = false;
-        cleanupFadeOutChannel();
     }
 
-    // Si ya estamos reproduciendo la MISMA cancion (retry de onEnter),
-    // no avanzar la rotacion — reusar el mismo path.
+    // si ya era esta misma cancion, no avanzo la rotacion
     std::string songPath;
     int levelId = level->m_levelID.value();
 
@@ -242,12 +224,11 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
 
     if (m_isDynamicSongActive && !m_lastSongPath.empty()
         && levelId == m_currentPlayingLevelID) {
-        // Misma cancion — verificar que sigue sonando correctamente
+        // misma cancion: verifico que siga viva
         if (verifyPlayback()) {
             return; // ya esta sonando, no hacer nada
         }
-        // Verificacion fallo, pero si el canal principal tiene audio reproduciendose
-        // no reiniciar — probablemente es un falso positivo por timing
+        // si el canal sigue sonando, no fuerzo reinicio por un falso positivo
         auto engine2 = FMODAudioEngine::sharedEngine();
         if (engine2 && engine2->m_backgroundMusicChannel) {
             bool playing = false;
@@ -256,21 +237,21 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
                 return; // canal activo, no tocar
             }
         }
-        // Canal realmente muerto — reintentar con la misma cancion
+        // si de verdad murio, reintento con la misma
         songPath = m_lastSongPath;
     } else {
-        // Nivel distinto o primera vez — obtener cancion nueva
+        // nivel nuevo o primera vez
         songPath = getNextRotationSong(level);
     }
 
     if (songPath.empty()) return;
 
-    // Determinar si necesitamos crossfade cancion→cancion
+    // veo si necesito crossfade entre canciones
     bool needsSongTransition = m_isDynamicSongActive && !m_lastSongPath.empty()
                                && levelId != m_currentPlayingLevelID
                                && isCrossfadeEnabled();
 
-    // Guardar path y level ID
+    // guardo path y level ID
     m_lastSongPath = songPath;
     m_expectedSongPath = songPath;
     m_currentPlayingLevelID = levelId;
@@ -278,67 +259,23 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     float gameVolume = engine->m_musicVolume;
 
     if (needsSongTransition) {
-        // ═══ Crossfade cancion→cancion ═══
-        // 1. Capturar la cancion actual en canal temporal de fade-out
-        cleanupFadeOutChannel(); // limpiar anterior si hay
-
+        // bajo la actual y despues cargo la nueva
         float currentVol = 0.0f;
         if (engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->getVolume(&currentVol);
-
-            // Obtener path y posicion de la cancion actual para replicarla
-            auto* bgCh = getMainBgChannel(engine);
-            FMOD::Sound* currentSound = nullptr;
-            unsigned int currentPos = 0;
-            if (bgCh) {
-                bgCh->getCurrentSound(&currentSound);
-                bgCh->getPosition(&currentPos, FMOD_TIMEUNIT_MS);
-            }
-
-            if (currentSound) {
-                // Obtener el nombre del archivo para recrear el sonido
-                char nameBuffer[512] = {};
-                currentSound->getName(nameBuffer, sizeof(nameBuffer));
-                std::string currentPath(nameBuffer);
-
-                if (!currentPath.empty()) {
-                    // Crear canal temporal con la cancion saliente
-                    FMOD::Sound* fadeSound = nullptr;
-                    if (engine->m_system->createSound(currentPath.c_str(),
-                        FMOD_CREATESTREAM | FMOD_LOOP_NORMAL, nullptr, &fadeSound) == FMOD_OK && fadeSound) {
-                        FMOD::Channel* fadeChannel = nullptr;
-                        if (engine->m_system->playSound(fadeSound, nullptr, true, &fadeChannel) == FMOD_OK && fadeChannel) {
-                            fadeChannel->setPosition(currentPos, FMOD_TIMEUNIT_MS);
-                            fadeChannel->setVolume(currentVol);
-                            fadeChannel->setPaused(false);
-                            m_fadeOutChannel = fadeChannel;
-                            m_fadeOutSound = fadeSound;
-                        } else {
-                            fadeSound->release();
-                        }
-                    }
-                }
-            }
         }
 
-        // 2. Reproducir nueva cancion en el canal principal a volumen 0
-        playOnMainChannel(songPath, 0.0f);
-        applyRandomSeek();
-
-        // 3. Iniciar crossfade
         m_isTransitioning = true;
-        float fadeOutVol = (m_fadeOutChannel) ? currentVol : 0.0f;
-        executeSongTransition(0, FADE_STEPS, 0.0f, gameVolume, fadeOutVol, 0.0f);
+        executeSongTransition(0, FADE_STEPS, currentVol, 0.0f);
 
     } else if (!m_isDynamicSongActive) {
-        // ═══ Primera cancion — fade-in desde menu ═══
         if (engine->isMusicPlaying(0)) {
             m_savedMenuPos = engine->getMusicTimeMS(0);
         }
         m_bgVolumeBeforeFade = engine->m_musicVolume;
         m_isDynamicSongActive = true;
 
-        // Reproducir la cancion en el canal principal
+        // reproduzco en el canal principal
         playOnMainChannel(songPath, 0.0f);
         applyRandomSeek();
 
@@ -353,7 +290,6 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         }
 
     } else {
-        // ═══ Ya activa, sin crossfade — reemplazo directo ═══
         m_isDynamicSongActive = true;
         playOnMainChannel(songPath, gameVolume);
         applyRandomSeek();
@@ -367,12 +303,11 @@ void DynamicSongManager::stopSong() {
 
     // Cancelar transiciones pendientes
     m_isTransitioning = false;
-    cleanupFadeOutChannel();
 
     if (isCrossfadeEnabled()) {
         fadeOutAndRestore();
     } else {
-        // Pre-cargar menu antes de cambiar para evitar gap de silencio
+        // precargo menu para no dejar hueco de silencio
         float targetVol = FMODAudioEngine::sharedEngine()->m_musicVolume;
         loadMenuTrack(targetVol);
         m_isDynamicSongActive = false;
@@ -382,9 +317,8 @@ void DynamicSongManager::stopSong() {
 }
 
 void DynamicSongManager::fadeInMainChannel(float targetVolume) {
-    // Fade-in: canal principal sube de 0 a targetVolume
-    // No hay canal de fade-out en este caso (primera cancion)
-    executeFadeStep(0, FADE_STEPS, 0.0f, targetVolume, 0.0f, 0.0f, false);
+    // primer fade-in, sin canal aparte
+    executeFadeStep(0, FADE_STEPS, 0.0f, targetVolume, false);
 }
 
 void DynamicSongManager::fadeOutAndRestore() {
@@ -399,62 +333,24 @@ void DynamicSongManager::fadeOutAndRestore() {
         engine->m_backgroundMusicChannel->getVolume(&currentVol);
     }
 
-    // Crear canal temporal con la cancion actual para hacer fade-out
-    // mientras cargamos el menu en el canal principal
-    cleanupFadeOutChannel();
-
-    if (engine->m_backgroundMusicChannel && currentVol > 0.001f) {
-        auto* bgCh = getMainBgChannel(engine);
-        FMOD::Sound* currentSound = nullptr;
-        unsigned int currentPos = 0;
-        if (bgCh) {
-            bgCh->getCurrentSound(&currentSound);
-            bgCh->getPosition(&currentPos, FMOD_TIMEUNIT_MS);
-        }
-
-        if (currentSound && !m_lastSongPath.empty()) {
-            FMOD::Sound* fadeSound = nullptr;
-            if (engine->m_system->createSound(m_lastSongPath.c_str(),
-                FMOD_CREATESTREAM | FMOD_LOOP_NORMAL, nullptr, &fadeSound) == FMOD_OK && fadeSound) {
-                FMOD::Channel* fadeChannel = nullptr;
-                if (engine->m_system->playSound(fadeSound, nullptr, true, &fadeChannel) == FMOD_OK && fadeChannel) {
-                    fadeChannel->setPosition(currentPos, FMOD_TIMEUNIT_MS);
-                    fadeChannel->setVolume(currentVol);
-                    fadeChannel->setPaused(false);
-                    m_fadeOutChannel = fadeChannel;
-                    m_fadeOutSound = fadeSound;
-                } else {
-                    fadeSound->release();
-                }
-            }
-        }
-    }
-
-    // Cargar menu en el canal principal a volumen 0
-    loadMenuTrack(0.0f);
-    float targetBgVolume = engine->m_musicVolume;
-
-    // Fade: canal principal (menu) sube, canal temporal (cancion) baja
-    executeFadeStep(0, FADE_STEPS, 0.0f, targetBgVolume,
-                    currentVol, 0.0f, true);
+    // bajo la cancion y despues vuelvo al menu
+    executeFadeStep(0, FADE_STEPS, currentVol, 0.0f, true);
 }
 
 void DynamicSongManager::executeFadeStep(int step, int totalSteps,
-    float mainFrom, float mainTo, float fadeOutFrom, float fadeOutTo, bool restoreAfter) {
+    float mainFrom, float mainTo, bool restoreAfter) {
     if (step > totalSteps) {
         if (restoreAfter) {
-            cleanupFadeOutChannel();
-            // Asegurar volumen final del menu
+            // ya bajo del todo, vuelvo al menu
             auto engine = FMODAudioEngine::sharedEngine();
-            if (engine && engine->m_backgroundMusicChannel) {
-                engine->m_backgroundMusicChannel->setVolume(mainTo);
-            }
+            float targetVol = engine ? engine->m_musicVolume : 1.0f;
+            loadMenuTrack(targetVol);
             m_isFadingOut = false;
             m_isDynamicSongActive = false;
             m_currentPlayingLevelID = 0;
             m_expectedSongPath.clear();
         } else {
-            // Fade-in terminado: fijar volumen final
+            // fade terminado, fijo el volumen final
             auto engine = FMODAudioEngine::sharedEngine();
             if (engine && engine->m_backgroundMusicChannel) {
                 engine->m_backgroundMusicChannel->setVolume(mainTo);
@@ -467,14 +363,10 @@ void DynamicSongManager::executeFadeStep(int step, int totalSteps,
     float t = static_cast<float>(step) / static_cast<float>(totalSteps);
     float eT = (t < 0.5f) ? (2.f*t*t) : (1.f - std::pow(-2.f*t+2.f, 2.f)/2.f);
     float mainVol = mainFrom + (mainTo - mainFrom) * eT;
-    float fadeOutVol = fadeOutFrom + (fadeOutTo - fadeOutFrom) * eT;
     
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, mainVol)));
-    }
-    if (m_fadeOutChannel) {
-        m_fadeOutChannel->setVolume(std::max(0.f, std::min(1.f, fadeOutVol)));
     }
         
     float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
@@ -482,63 +374,61 @@ void DynamicSongManager::executeFadeStep(int step, int totalSteps,
     auto lifetimeToken = m_lifetimeToken;
     
     Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, mainFrom, mainTo,
-                                       fadeOutFrom, fadeOutTo, restoreAfter, stepMs]() {
+                                       restoreAfter, stepMs]() {
         std::thread([lifetimeToken, next, totalSteps, mainFrom, mainTo,
-                     fadeOutFrom, fadeOutTo, restoreAfter, stepMs]() {
+                     restoreAfter, stepMs]() {
             std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
             Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, mainFrom, mainTo,
-                                               fadeOutFrom, fadeOutTo, restoreAfter]() {
+                                               restoreAfter]() {
                 if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
                 auto manager = DynamicSongManager::get();
                 if (restoreAfter && !manager->m_isFadingOut) return;
                 if (!restoreAfter && !manager->m_isFadingIn) return;
-                manager->executeFadeStep(next, totalSteps, mainFrom, mainTo, fadeOutFrom, fadeOutTo, restoreAfter);
+                manager->executeFadeStep(next, totalSteps, mainFrom, mainTo, restoreAfter);
             });
         }).detach();
     });
 }
 
-// ─── Crossfade cancion→cancion ───────────────────────────────────────
 void DynamicSongManager::executeSongTransition(int step, int totalSteps,
-    float newFrom, float newTo, float oldFrom, float oldTo) {
+    float volFrom, float volTo) {
     if (step > totalSteps || !m_isTransitioning) {
-        // Transicion terminada: limpiar canal temporal
-        cleanupFadeOutChannel();
+        // ya bajo del todo, cargo la nueva
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->setVolume(newTo);
+            engine->m_backgroundMusicChannel->setVolume(0.0f);
         }
+
+        float targetVol = engine ? engine->m_musicVolume : 1.0f;
+        playOnMainChannel(m_lastSongPath, targetVol);
+        applyRandomSeek();
         m_isTransitioning = false;
         return;
     }
 
     float t = static_cast<float>(step) / static_cast<float>(totalSteps);
     float eT = (t < 0.5f) ? (2.f * t * t) : (1.f - std::pow(-2.f * t + 2.f, 2.f) / 2.f);
-    float newVol = newFrom + (newTo - newFrom) * eT;
-    float oldVol = oldFrom + (oldTo - oldFrom) * eT;
+    float vol = volFrom + (volTo - volFrom) * eT;
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
-        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, newVol)));
-    }
-    if (m_fadeOutChannel) {
-        m_fadeOutChannel->setVolume(std::max(0.f, std::min(1.f, oldVol)));
+        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
     float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
 
-    Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, newFrom, newTo, oldFrom, oldTo, stepMs]() {
-        std::thread([lifetimeToken, next, totalSteps, newFrom, newTo, oldFrom, oldTo, stepMs]() {
+    Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, volTo, stepMs]() {
+        std::thread([lifetimeToken, next, totalSteps, volFrom, volTo, stepMs]() {
             std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, newFrom, newTo, oldFrom, oldTo]() {
+            Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, volTo]() {
                 if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
                 auto manager = DynamicSongManager::get();
                 if (!manager->m_isTransitioning) return;
-                manager->executeSongTransition(next, totalSteps, newFrom, newTo, oldFrom, oldTo);
+                manager->executeSongTransition(next, totalSteps, volFrom, volTo);
             });
         }).detach();
     });
@@ -549,7 +439,6 @@ void DynamicSongManager::fadeOutForLevelStart() {
 
     m_isFadingIn = false;
     m_isTransitioning = false;
-    cleanupFadeOutChannel();
     m_isDynamicSongActive = false;
     m_currentLayer = DynSongLayer::None;
     m_expectedSongPath.clear();
@@ -561,7 +450,7 @@ void DynamicSongManager::fadeOutForLevelStart() {
     engine->m_backgroundMusicChannel->getVolume(&currentVol);
 
     if (!isCrossfadeEnabled() || currentVol <= 0.0f) {
-        // Sin crossfade: parar inmediatamente, GD cargara su propia musica
+        // sin crossfade paro de una y GD carga la suya
         engine->m_backgroundMusicChannel->setVolume(0.0f);
         return;
     }
@@ -611,7 +500,6 @@ void DynamicSongManager::forceKill() {
     m_isFadingIn = false;
     m_isFadingOut = false;
     m_isTransitioning = false;
-    cleanupFadeOutChannel();
 
     m_isDynamicSongActive = false;
     m_currentLayer = DynSongLayer::None;
@@ -619,16 +507,15 @@ void DynamicSongManager::forceKill() {
     m_currentPlayingLevelID = 0;
     m_expectedSongPath.clear();
 
-    // Restaurar volumen del canal principal — GD/PlayLayer cargaran su propia musica
+    // restauro volumen del canal principal
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
     }
 }
 
-// ─── Stop/Replay para ProfileMusic y otros sistemas ──────────────────
 void DynamicSongManager::stopDynamicForProfileMusic() {
-    // Guardar posicion actual para restaurarla al salir del perfil
+    // guardo la posicion para volver al salir del perfil
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
         unsigned int posMs = 0;
@@ -636,17 +523,15 @@ void DynamicSongManager::stopDynamicForProfileMusic() {
         if (bgCh && bgCh->getPosition(&posMs, FMOD_TIMEUNIT_MS) == FMOD_OK) {
             m_savedDynamicPosMs = posMs;
         }
-        // Detener el canal principal — ProfileMusic tiene su propio canal FMOD
+        // ProfileMusic usa su propio canal, asi que corto este
         engine->m_backgroundMusicChannel->stop();
     }
 
     m_isFadingIn = false;
     m_isTransitioning = false;
-    cleanupFadeOutChannel();
 
-    // El canal principal queda bajo control de ProfileMusic
+    // ProfileMusic toma control del canal principal
     m_stoppedByProfile = true;
-    // m_isDynamicSongActive se mantiene true para que sepamos que hay que recrear
 
     log::info("[DynamicSong] Detenido por ProfileMusic (lastSong: {}, pos: {}ms)", m_lastSongPath, m_savedDynamicPosMs);
 }
@@ -668,11 +553,11 @@ void DynamicSongManager::replayLastSong() {
         return;
     }
 
-    // Reproducir la cancion en el canal principal
+    // la vuelvo a poner en el canal principal
     playOnMainChannel(m_lastSongPath, 0.0f);
     m_expectedSongPath = m_lastSongPath;
 
-    // Restaurar posicion guardada; si no hay, seek aleatorio
+    // vuelvo a la posicion guardada o hago seek random
     if (engine->m_backgroundMusicChannel) {
         auto* bgCh = getMainBgChannel(engine);
         FMOD::Sound* currentSound = nullptr;
@@ -711,7 +596,6 @@ void DynamicSongManager::replayLastSong() {
     log::info("[DynamicSong] Replay en canal principal (vol:{:.2f})", gameVolume);
 }
 
-// ─── Volumen del canal principal (interfaz para ProfileMusic) ────────
 float DynamicSongManager::getDynamicVolume() const {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) return 0.0f;
@@ -727,7 +611,6 @@ void DynamicSongManager::setDynamicVolume(float vol) {
     }
 }
 
-// ─── Verificacion de playback ────────────────────────────────────────
 bool DynamicSongManager::verifyPlayback() {
     if (!m_isDynamicSongActive || m_expectedSongPath.empty()) return false;
     if (!isInValidLayer()) return false;
@@ -735,12 +618,12 @@ bool DynamicSongManager::verifyPlayback() {
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) return false;
 
-    // Verificar que el canal esta reproduciendo
+    // confirmo que el canal siga sonando
     bool isPlaying = false;
     engine->m_backgroundMusicChannel->isPlaying(&isPlaying);
     if (!isPlaying) return false;
 
-    // Verificar que la cancion es la esperada
+    // confirmo que sea la cancion esperada
     auto* bgCh = getMainBgChannel(engine);
     if (!bgCh) return false;
 
@@ -752,11 +635,10 @@ bool DynamicSongManager::verifyPlayback() {
     currentSound->getName(nameBuffer, sizeof(nameBuffer));
     std::string currentName(nameBuffer);
 
-    // Comparar: el nombre del sonido deberia contener el path esperado
-    // FMOD puede devolver el path completo o solo el nombre de archivo
+    // comparo por nombre de archivo porque FMOD a veces devuelve otra ruta
     if (currentName.empty()) return false;
     
-    // Extraer solo el nombre de archivo de ambos para comparacion robusta
+    // me quedo solo con el nombre del archivo
     auto getFileName = [](const std::string& path) -> std::string {
         auto pos = path.find_last_of("/\\");
         return (pos != std::string::npos) ? path.substr(pos + 1) : path;
@@ -774,7 +656,6 @@ void DynamicSongManager::onPlaybackHijacked() {
     m_isFadingIn = false;
     m_isFadingOut = false;
     m_isTransitioning = false;
-    cleanupFadeOutChannel();
     m_currentPlayingLevelID = 0;
     m_expectedSongPath.clear();
     m_currentLayer = DynSongLayer::None;

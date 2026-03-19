@@ -12,5 +12,5 @@ cocos2d::CCNode* createShapeStencil(std::string const& shapeName, float size);
 // util para dibujar marcos que siguen la misma forma del stencil.
 cocos2d::CCNode* createShapeBorder(std::string const& shapeName, float size, float thickness, cocos2d::ccColor3B color, GLubyte opacity = 255);
 
-// Lista de formas geometricas disponibles (no incluye sprites Scale9)
+// formas geometricas disponibles
 std::vector<std::pair<std::string, std::string>> getGeometricShapes();

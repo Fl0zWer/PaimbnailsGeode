@@ -29,12 +29,10 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ─── helpers ────────────────────────────────────────────────────────
 float CapturePreviewPopup::clampF(float value, float mn, float mx) {
     return std::max(mn, std::min(mx, value));
 }
 
-// ─── factory ────────────────────────────────────────────────────────
 CapturePreviewPopup* CapturePreviewPopup::create(
     CCTexture2D* texture, int levelID,
     std::shared_ptr<uint8_t> buffer, int width, int height,
@@ -72,7 +70,6 @@ CapturePreviewPopup::~CapturePreviewPopup() {
     }
 }
 
-// ─── updateContent ──────────────────────────────────────────────────
 void CapturePreviewPopup::updateContent(CCTexture2D* texture,
     std::shared_ptr<uint8_t> buffer, int width, int height)
 {
@@ -105,37 +102,34 @@ void CapturePreviewPopup::updateContent(CCTexture2D* texture,
             ccp(m_clippingNode->getContentSize().width / 2,
                 m_clippingNode->getContentSize().height / 2));
         m_clippingNode->addChild(m_previewSprite, 10);
-        // Reset zoom/anchor state on content update
+        // reset del zoom al recargar contenido
         m_wasZooming = false;
         m_activeTouches.clear();
         updatePreviewScale();
     }
 }
 
-// ─── init ───────────────────────────────────────────────────────────
 bool CapturePreviewPopup::init() {
-    // Popup grande (mismo tamano que LocalThumbnailViewPopup)
+    // mismo tamano que el viewer local
     if (!Popup::init(400.f, 280.f)) return false;
 
     this->setTitle(Localization::get().getString("preview.title").c_str());
 
-    // Nota: la musica se pausa en PlayLayer al presionar la tecla de captura,
-    // no aqui, para evitar desincronizacion.
+    // la musica se pausa desde PlayLayer, no aca
 
-    // Ocultar fondo por defecto del popup (igual que LocalThumbnailViewPopup)
+    // saco el fondo default del popup
     if (m_bgSprite) m_bgSprite->setVisible(false);
 
     auto content = m_mainLayer->getContentSize();
 
     if (!m_texture) return false;
 
-    // ── area de preview ─────────────────────────────────────────
     float maxWidth  = content.width  - 40.f;
     float maxHeight = content.height - 80.f;
     m_viewWidth  = maxWidth;
     m_viewHeight = maxHeight;
 
-    // Stencil geometrico — evita conflictos con HappyTextures/TextureLdr
+    // stencil simple para evitar lios con otros mods
     auto stencil = CCDrawNode::create();
     CCPoint rect[4] = { ccp(0,0), ccp(maxWidth,0), ccp(maxWidth,maxHeight), ccp(0,maxHeight) };
     ccColor4F white = {1,1,1,1};
@@ -148,7 +142,7 @@ bool CapturePreviewPopup::init() {
     m_clippingNode->setID("preview-clip"_spr);
     m_mainLayer->addChild(m_clippingNode, 1);
 
-    // Fondo oscuro dentro del clipping
+    // fondo oscuro del visor
     auto clippingBg = CCLayerColor::create(ccc4(0, 0, 0, 200));
     clippingBg->setContentSize({maxWidth, maxHeight});
     clippingBg->ignoreAnchorPointForPosition(false);
@@ -156,7 +150,7 @@ bool CapturePreviewPopup::init() {
     clippingBg->setPosition(ccp(maxWidth / 2, maxHeight / 2));
     m_clippingNode->addChild(clippingBg, -1);
 
-    // Borde decorativo (GJ_square07 como en LocalThumbnailViewPopup)
+    // borde del visor
     auto border = CCScale9Sprite::create("GJ_square07.png");
     if (border) {
         border->setContentSize({maxWidth + 4.f, maxHeight + 4.f});
@@ -165,7 +159,6 @@ bool CapturePreviewPopup::init() {
         m_mainLayer->addChild(border, 2);
     }
 
-    // ── sprite de preview ────────────────────────────────────────
     m_previewSprite = CCSprite::createWithTexture(m_texture);
     if (!m_previewSprite) return false;
 
@@ -176,7 +169,7 @@ bool CapturePreviewPopup::init() {
     ccTexParams texParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     m_texture->setTexParameters(&texParams);
 
-    // Escalar para fill (max) — igual que LocalThumbnailViewPopup
+    // arranco en fill
     float scaleX = maxWidth  / m_previewSprite->getContentSize().width;
     float scaleY = maxHeight / m_previewSprite->getContentSize().height;
     float scale  = std::max(scaleX, scaleY);
@@ -189,18 +182,16 @@ bool CapturePreviewPopup::init() {
     m_previewSprite->setPosition(ccp(maxWidth / 2, maxHeight / 2));
     m_clippingNode->addChild(m_previewSprite, 10);
 
-    // ── boton X (reposicionar al borde del area preview) ────────
     if (m_closeBtn) {
         float topY  = (content.height / 2 + 5.f) + (maxHeight / 2);
         float leftX = (content.width - maxWidth) / 2;
         m_closeBtn->setPosition(ccp(leftX - 3.f, topY + 3.f));
     }
 
-    // ── barra de botones inferior (RowLayout) ───────────────────
     m_buttonMenu = CCMenu::create();
     m_buttonMenu->setID("button-menu"_spr);
 
-    // Helper: normaliza un sprite para que encaje en targetSize x targetSize
+    // llevo todos los iconos al mismo tamano
     const float targetSize = 30.f;
     auto normalizeSprite = [&](CCSprite* spr) {
         if (!spr) return;
@@ -236,7 +227,7 @@ bool CapturePreviewPopup::init() {
         okSpr, this, menu_selector(CapturePreviewPopup::onAcceptBtn));
     okBtn->setID("ok-button"_spr);
 
-    // Boton recentrar
+    // recentrar
     auto recenterSpr = paimon::SpriteHelper::safeCreateWithFrameName("gj_findBtnOff_001.png");
     if (!recenterSpr) recenterSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_undoBtn_001.png");
     normalizeSprite(recenterSpr);
@@ -264,11 +255,7 @@ bool CapturePreviewPopup::init() {
 
     m_mainLayer->addChild(m_buttonMenu, 10);
 
-    // ── activar touch/scroll ────────────────────────────────────
-    // Use explicit low priority (-502) for pan/zoom so CCMenu buttons (-128)
-    // and child popups always receive touches first.
-    // Popup base (FLAlertLayer) registers at -500; we go below that
-    // so our pan/zoom never steals from menus or child popups.
+    // me voy por debajo del popup base para no robar toques a menus ni hijos
     this->setTouchEnabled(false); // disable default registration
     auto* dispatcher = CCDirector::sharedDirector()->getTouchDispatcher();
     dispatcher->addTargetedDelegate(this, -502, false);
@@ -282,7 +269,6 @@ bool CapturePreviewPopup::init() {
     return true;
 }
 
-// ─── updatePreviewScale ────────────────────────────────────────────
 void CapturePreviewPopup::updatePreviewScale() {
     if (!m_previewSprite || m_viewWidth < 1.f || m_viewHeight < 1.f) return;
 
@@ -308,7 +294,6 @@ void CapturePreviewPopup::updatePreviewScale() {
     }
 }
 
-// ─── button handlers ───────────────────────────────────────────────
 void CapturePreviewPopup::onTogglePlayer1Btn(CCObject* sender) {
     if (!sender) return;
     m_isPlayer1Hidden = !m_isPlayer1Hidden;
@@ -349,10 +334,10 @@ void CapturePreviewPopup::onRecenterBtn(CCObject*) {
 void CapturePreviewPopup::onClose(CCObject* sender) {
     CaptureLayerEditorPopup::restoreAllLayers();
 
-    // Cancel any pending recapture to avoid callbacks targeting a destroyed popup
+    // cancelo recapturas pendientes para que no vuelvan a un popup muerto
     FramebufferCapture::cancelPending();
 
-    // Reanudar musica solo si nosotros la pausamos (keybind capture)
+    // solo reanudo si la habiamos pausado nosotros
     if (m_pausedMusic) {
         if (auto* engine = FMODAudioEngine::sharedEngine()) {
             if (engine->m_backgroundMusicChannel) {
@@ -363,17 +348,11 @@ void CapturePreviewPopup::onClose(CCObject* sender) {
 
     m_activeTouches.clear();
 
-    // Limpia TODOS los delegates de touch ANTES de cerrar el popup.
-    // Problema: init() hace setTouchEnabled(false) + addTargetedDelegate manual (-502).
-    // Pero FLAlertLayer::show() registra otro delegate swallowing a -500.
-    // Si m_bTouchEnabled==false, Popup::onClose->setTouchEnabled(false) es no-op
-    // y el delegate -500 queda huerfano bloqueando toques del PauseLayer.
-    // Solucion: remover explicitamente TODOS los delegates de este objeto.
+    // saco todos los delegates a mano para que no quede ninguno colgado
     auto* dispatcher = CCDirector::sharedDirector()->getTouchDispatcher();
     dispatcher->removeDelegate(this);
     m_touchDelegateRegistered = false;
-    // Sincronizar m_bTouchEnabled para que ni onExit ni Popup::onClose
-    // intenten registrar/remover delegates adicionales
+    // dejo el flag alineado para que Popup no meta mano despues
     m_bTouchEnabled = false;
 
     if (!m_callbackExecuted && m_callback) {
@@ -416,9 +395,7 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
     auto* pl = PlayLayer::get();
     if (!pl) return;
 
-    // Use the same custom RenderTexture as captureScreenshot in PlayLayer
-    // It properly adjusts m_fScaleX/Y, m_obScreenSize and design resolution,
-    // which ensures ShaderLayer FBOs resolve correctly.
+    // uso el mismo RenderTexture del capture real
     auto* view = CCEGLView::sharedOpenGLView();
     if (!view) return;
     auto screenSize = view->getFrameSize();
@@ -426,7 +403,7 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
     int h = static_cast<int>(screenSize.height);
     if (w <= 0 || h <= 0) return;
 
-    // Hide UI layer
+    // escondo la UI antes de recapturar
     bool uiWasVisible = false;
     if (pl->m_uiLayer && pl->m_uiLayer->isVisible()) {
         uiWasVisible = true;
@@ -441,16 +418,14 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
         paimTogglePlayer(pl->m_player2, p2State, true);
     }
 
-    // The custom RenderTexture adjusts CCEGLView scale factors,
-    // design resolution and viewport — making ShaderLayer render
-    // correctly into our FBO.
+    // este RenderTexture ya deja bien viewport y shaders
     ::RenderTexture rt(w, h);
     rt.begin();
     pl->visit();
     rt.end();
     auto data = rt.getData();
 
-    // Restore state
+    // restauro lo que toque
     if (m_isPlayer1Hidden) {
         paimTogglePlayer(pl->m_player1, p1State, false);
     }
@@ -463,7 +438,7 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
 
     if (!data) return;
 
-    // Vertical flip (glReadPixels reads bottom-to-top)
+    // glReadPixels viene al reves
     int rowSize = w * 4;
     std::vector<uint8_t> tempRow(rowSize);
     uint8_t* buf = data.get();
@@ -490,7 +465,7 @@ void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
         tex->autorelease();
         updateContent(tex, buffer, w, h);
     } else {
-        // Fast path: create texture from data directly for visual-only update
+        // refresco visual rapido sin tocar el buffer guardado
         auto* tex = new CCTexture2D();
         if (!tex->initWithData(data.get(), kCCTexture2DPixelFormat_RGBA8888,
                                w, h, CCSize(static_cast<float>(w), static_cast<float>(h)))) {
@@ -515,9 +490,7 @@ void CapturePreviewPopup::onAcceptBtn(CCObject* sender) {
     m_callbackExecuted = true;
     ThumbnailLoader::get().invalidateLevel(m_levelID);
 
-    // pone la miniatura aceptada en el cache de sesion para que
-    // LevelInfoLayer pueda mostrarla de inmediato al volver del nivel
-    // (antes de que el server propague la subida)
+    // dejo la thumb aceptada en cache para verla al volver sin esperar al server
     if (m_buffer && m_width > 0 && m_height > 0) {
         auto* tex = new CCTexture2D();
         if (tex->initWithData(m_buffer.get(), kCCTexture2DPixelFormat_RGBA8888,
@@ -547,7 +520,6 @@ void CapturePreviewPopup::onCancelBtn(CCObject* sender) {
     this->onClose(nullptr);
 }
 
-// ─── crop ──────────────────────────────────────────────────────────
 void CapturePreviewPopup::onCropBtn(CCObject* sender) {
     if (!sender) return;
     if (!m_buffer || m_width <= 0 || m_height <= 0) return;
@@ -638,7 +610,6 @@ void CapturePreviewPopup::applyCrop(const CropRect& rect) {
     }
 }
 
-// ─── download ──────────────────────────────────────────────────────
 void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     if (!sender) return;
     if (!m_buffer || m_width <= 0 || m_height <= 0) {
@@ -664,14 +635,14 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     ss << "thumbnail_" << m_levelID << "_" << std::put_time(&tmBuf, "%Y%m%d_%H%M%S") << ".png";
     auto filePath = downloadDir / ss.str();
 
-    // Copiamos el buffer para el hilo de fondo
+    // copio el buffer para el hilo de guardado
     size_t dataSize = static_cast<size_t>(m_width) * m_height * 4;
     std::shared_ptr<uint8_t> bufCopy(new uint8_t[dataSize], std::default_delete<uint8_t[]>());
     std::memcpy(bufCopy.get(), m_buffer.get(), dataSize);
     int w = m_width, h = m_height;
     int levelID = m_levelID;
 
-    // stbi_write_png_to_func + std::ofstream(path) = Unicode-safe en Windows
+    // este guardado no se rompe con rutas Unicode en Windows
     std::thread([bufCopy, w, h, filePath, levelID]() {
         if (ImageConverter::saveRGBAToPNG(bufCopy.get(), w, h, filePath)) {
             geode::Loader::get()->queueInMainThread([filePath, levelID]() {
@@ -688,9 +659,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     }).detach();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// ZOOM / PAN (copied from LocalThumbnailViewPopup pattern)
-// ═══════════════════════════════════════════════════════════════════
+// zoom y paneo
 
 void CapturePreviewPopup::clampSpritePosition() {
     if (!m_previewSprite || m_viewWidth <= 0 || m_viewHeight <= 0) return;
@@ -765,14 +734,14 @@ void CapturePreviewPopup::clampSpritePositionAnimated() {
 bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (!this->isVisible()) return false;
 
-    // Don't capture touches when a child popup (Edit/LayerEditor) is open
+    // si hay popup hijo abierto, no agarro el toque
     if (m_childPopupOpen) return false;
 
     auto nodePos = m_mainLayer->convertToNodeSpace(touch->getLocation());
     auto size    = m_mainLayer->getContentSize();
     if (!CCRect(0, 0, size.width, size.height).containsPoint(nodePos)) return false;
 
-    // No capturar toque si esta sobre un boton
+    // no me meto si el toque cae sobre un boton
     auto isTouchOnMenu = [](CCMenu* menu, CCTouch* t) -> bool {
         if (!menu || !menu->isVisible()) return false;
         auto point = menu->convertTouchToNodeSpace(t);
@@ -786,7 +755,7 @@ bool CapturePreviewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     };
     if (isTouchOnMenu(m_buttonMenu, touch)) return false;
 
-    // Segundo dedo → pinch zoom
+    // segundo dedo = pinch
     if (m_activeTouches.size() == 1) {
         auto firstTouch = *m_activeTouches.begin();
         if (firstTouch == touch) return true;

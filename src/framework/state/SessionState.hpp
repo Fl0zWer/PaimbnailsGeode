@@ -27,14 +27,10 @@ public:
         return instance;
     }
 
-    // ── Navegacion general ──────────────────────────────────────────
     int         currentListID          = 0;
     std::string lastNavigationOrigin;
 
-    // ── Contexto de verificacion/moderacion ─────────────────────────
     VerificationContext verification;
-
-    // ── Helpers ─────────────────────────────────────────────────────
 
     // Consume un flag one-shot: lo lee y lo resetea en una sola llamada.
     // Uso: if (SessionState::get().consumeFlag(state.verification.openFromThumbs)) { ... }

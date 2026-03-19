@@ -24,7 +24,6 @@ bool ProfileReviewsPopup::init(int accountID) {
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // --- average display ---
     m_averageLabel = CCLabelBMFont::create("...", "bigFont.fnt");
     m_averageLabel->setScale(0.5f);
     m_averageLabel->setPosition({centerX, contentSize.height - 48.f});
@@ -37,7 +36,6 @@ bool ProfileReviewsPopup::init(int accountID) {
     m_countLabel->setColor({180, 180, 180});
     m_mainLayer->addChild(m_countLabel);
 
-    // --- spinner ---
     m_spinner = LoadingSpinner::create(30.f);
     m_spinner->setPosition({centerX, contentSize.height / 2.f - 20.f});
     m_mainLayer->addChild(m_spinner, 10);
@@ -91,7 +89,7 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
     auto contentSize = m_mainLayer->getContentSize();
     float centerX = contentSize.width / 2.f;
 
-    // update header
+    // refrescar encabezado
     if (m_averageLabel) {
         m_averageLabel->setString(fmt::format("{:.1f}/5", average).c_str());
     }
@@ -109,7 +107,7 @@ void ProfileReviewsPopup::buildReviewList(float average, int count, const matjso
     float scrollX = 15.f;
     float scrollY = 15.f;
 
-    // build content
+    // armar las celdas
     float cellHeight = 50.f;
     float cellPadding = 4.f;
 

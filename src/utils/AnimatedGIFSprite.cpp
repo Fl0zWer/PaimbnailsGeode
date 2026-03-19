@@ -11,12 +11,6 @@ using namespace geode::prelude;
 
 static float getContentScaleFactorSafe() {
     return 1.0f;
-    /*
-    auto* director = CCDirector::sharedDirector();
-    float sf = director ? director->getContentScaleFactor() : 1.0f;
-    if (sf <= 0.0f) sf = 1.0f;
-    return sf;
-    */
 }
 
 std::unordered_map<std::string, AnimatedGIFSprite::SharedGIFData> AnimatedGIFSprite::s_gifCache;
@@ -826,8 +820,6 @@ void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::strin
     }
     s_queueCV.notify_one();
 }
-
-
 
 void AnimatedGIFSprite::createAsync(std::string const& path, AsyncCallback callback) {
     std::error_code existsEc;

@@ -35,7 +35,7 @@ bool BackgroundConfigPopup::init() {
 
     auto center = m_mainLayer->getContentSize() / 2;
 
-    // crear capas
+    // una capa por tab
     m_menuLayer = CCLayer::create();
     m_menuLayer->setContentSize(m_mainLayer->getContentSize());
     m_mainLayer->addChild(m_menuLayer);
@@ -55,13 +55,13 @@ bool BackgroundConfigPopup::init() {
     m_layerBgLayer->setVisible(false);
     m_mainLayer->addChild(m_layerBgLayer);
 
-    // contenido
+    // contenido de cada tab
     m_menuLayer->addChild(this->createMenuTab());
     m_profileLayer->addChild(this->createProfileTab());
     m_petLayer->addChild(this->createPetTab());
     m_layerBgLayer->addChild(this->createLayerBgTab());
 
-    // pestanas
+    // tabs
     this->createTabs();
 
     paimon::markDynamicPopup(this);
@@ -92,7 +92,7 @@ void BackgroundConfigPopup::createTabs() {
         m_tabs.push_back(tab);
     }
 
-    // inicia pestana
+    // arranco en menu
     this->onTab(m_tabs[0]);
 }
 
@@ -102,13 +102,13 @@ void BackgroundConfigPopup::onTab(CCObject* sender) {
     int tag = btn->getTag();
     m_selectedTab = tag;
     
-    // cambia visibilidad
+    // muestro solo el tab activo
     m_menuLayer->setVisible(tag == 0);
     m_profileLayer->setVisible(tag == 1);
     m_petLayer->setVisible(tag == 2);
     if (m_layerBgLayer) m_layerBgLayer->setVisible(tag == 3);
 
-    // actualiza visuales
+    // repinto botones
     for (auto tab : m_tabs) {
         auto spr = typeinfo_cast<ButtonSprite*>(tab->getNormalImage());
         if (!spr) continue;
@@ -128,11 +128,10 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
     auto node = CCNode::create();
     auto size = m_mainLayer->getContentSize();
     
-    // diseno
     float centerY = size.height / 2;
     float centerX = size.width / 2;
 
-    // seccion fuente
+    // bloque de fuente
     auto bgSection = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
     bgSection->setContentSize({380, 110});
     bgSection->setColor({0, 0, 0});
@@ -144,7 +143,7 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
     btnMenu->setPosition({0, 0});
     node->addChild(btnMenu);
 
-    // botones fuente
+    // botones de fuente
     createBtn("Custom Image", {centerX - 90, centerY + 40}, menu_selector(BackgroundConfigPopup::onCustomImage), btnMenu);
     createBtn("Random Levels", {centerX + 90, centerY + 40}, menu_selector(BackgroundConfigPopup::onDownloadedThumbnails), btnMenu);
 
@@ -159,9 +158,7 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
         }
     }
 
-
-
-    // entrada id
+    // input del id
     auto inputBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
     inputBg->setContentSize({100, 30});
     inputBg->setOpacity(100);
@@ -176,10 +173,10 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
     
     createBtn("Set ID", {centerX + 50, centerY - 10}, menu_selector(BackgroundConfigPopup::onSetID), btnMenu);
 
-    // seccion opciones
+    // bloque de opciones
     float optionsY = centerY - 70;
     
-    // modo oscuro
+    // dark mode
     bool darkMode = Mod::get()->getSavedValue<bool>("bg-dark-mode", false);
     auto darkToggle = CCMenuItemToggler::createWithStandardSprites(this, menu_selector(BackgroundConfigPopup::onDarkMode), 0.7f);
     darkToggle->toggle(darkMode);
@@ -249,14 +246,14 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
         }
     }
 
-    // btn aplicar
+    // aplicar
     auto applySpr = ButtonSprite::create("Apply Changes", "goldFont.fnt", "GJ_button_01.png", .8f);
     auto applyBtn = CCMenuItemSpriteExtra::create(applySpr, this, menu_selector(BackgroundConfigPopup::onApply));
     applyBtn->setID("apply-changes-btn"_spr);
     applyBtn->setPosition({centerX - 60, 30}); // izq
     btnMenu->addChild(applyBtn);
 
-    // btn por defecto
+    // volver al default
     auto defSpr = ButtonSprite::create("Default", "goldFont.fnt", "GJ_button_04.png", .7f);
     defSpr->setScale(0.7f);
     auto defBtn = CCMenuItemSpriteExtra::create(defSpr, this, menu_selector(BackgroundConfigPopup::onDefaultMenu));
@@ -268,11 +265,11 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
 }
 
 void BackgroundConfigPopup::onDefaultMenu(CCObject*) {
-    // Escribir en formato unificado (lo que lee MenuLayer)
+    // guardo el formato nuevo
     LayerBgConfig cfg;
     cfg.type = "default";
     LayerBackgroundManager::get().saveConfig("menu", cfg);
-    // Tambien limpiar legacy keys para consistencia
+    // y limpio lo viejo pa no dejar basura
     Mod::get()->setSavedValue("bg-type", std::string("default"));
     Mod::get()->setSavedValue("bg-custom-path", std::string(""));
     Mod::get()->setSavedValue("bg-id", 0);
@@ -361,12 +358,12 @@ void BackgroundConfigPopup::onCustomImage(CCObject*) {
                 auto pathStr = geode::utils::string::pathToString(path);
                 std::replace(pathStr.begin(), pathStr.end(), '\\', '/');
 
-                // Escribir en formato unificado
+                // guardo el formato nuevo
                 LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
                 cfg.type = "custom";
                 cfg.customPath = pathStr;
                 LayerBackgroundManager::get().saveConfig("menu", cfg);
-                // Tambien legacy para compat
+                // dejo legacy por compat
                 Mod::get()->setSavedValue<std::string>("bg-type", "custom");
                 Mod::get()->setSavedValue<std::string>("bg-custom-path", pathStr);
                 (void)Mod::get()->saveData();
@@ -377,11 +374,11 @@ void BackgroundConfigPopup::onCustomImage(CCObject*) {
 }
 
 void BackgroundConfigPopup::onDownloadedThumbnails(CCObject*) {
-    // Escribir en formato unificado
+    // guardo el formato nuevo
     LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
     cfg.type = "random";
     LayerBackgroundManager::get().saveConfig("menu", cfg);
-    // Tambien legacy para compat
+    // dejo legacy por compat
     Mod::get()->setSavedValue("bg-type", std::string("thumbnails"));
     (void)Mod::get()->saveData();
     PaimonNotify::create("Menu set to Random", NotificationIcon::Success)->show();
@@ -393,12 +390,12 @@ void BackgroundConfigPopup::onSetID(CCObject*) {
 
     if (auto res = geode::utils::numFromString<int>(idStr)) {
         int id = res.unwrap();
-        // Escribir en formato unificado
+        // guardo el formato nuevo
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
         cfg.type = "id";
         cfg.levelId = id;
         LayerBackgroundManager::get().saveConfig("menu", cfg);
-        // Tambien legacy para compat
+        // dejo legacy por compat
         Mod::get()->setSavedValue("bg-type", std::string("id"));
         Mod::get()->setSavedValue("bg-id", id);
         (void)Mod::get()->saveData();
@@ -412,11 +409,11 @@ void BackgroundConfigPopup::onDarkMode(CCObject* sender) {
     auto toggle = typeinfo_cast<CCMenuItemToggler*>(sender);
     if (!toggle) return;
     bool dark = !toggle->isToggled();
-    // Escribir unificado
+    // guardo el formato nuevo
     LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
     cfg.darkMode = dark;
     LayerBackgroundManager::get().saveConfig("menu", cfg);
-    // Tambien legacy
+    // dejo legacy por compat
     Mod::get()->setSavedValue("bg-dark-mode", dark);
     (void)Mod::get()->saveData();
 }
@@ -424,11 +421,11 @@ void BackgroundConfigPopup::onDarkMode(CCObject* sender) {
 void BackgroundConfigPopup::onIntensityChanged(CCObject* sender) {
     if (m_slider) {
         float intensity = m_slider->getValue();
-        // Escribir unificado
+        // guardo el formato nuevo
         LayerBgConfig cfg = LayerBackgroundManager::get().getConfig("menu");
         cfg.darkIntensity = intensity;
         LayerBackgroundManager::get().saveConfig("menu", cfg);
-        // Tambien legacy
+        // dejo legacy por compat
         Mod::get()->setSavedValue("bg-dark-intensity", intensity);
         (void)Mod::get()->saveData();
     }
@@ -451,7 +448,7 @@ CCNode* BackgroundConfigPopup::createPetTab() {
     btnMenu->setPosition({0, 0});
     node->addChild(btnMenu);
 
-    // icono mascota
+    // icono
     auto petIcon = CCSprite::createWithSpriteFrameName("GJ_hammerIcon_001.png");
     if (petIcon) {
         petIcon->setScale(1.2f);
@@ -459,7 +456,7 @@ CCNode* BackgroundConfigPopup::createPetTab() {
         node->addChild(petIcon);
     }
 
-    // descripcion
+    // texto
     auto info = CCLabelBMFont::create("Add a cute pet that follows\nyour cursor everywhere!", "chatFont.fnt");
     info->setAlignment(kCCTextAlignmentCenter);
     info->setScale(0.7f);
@@ -467,7 +464,7 @@ CCNode* BackgroundConfigPopup::createPetTab() {
     info->setPosition({centerX, centerY + 5});
     node->addChild(info);
 
-    // boton configurar
+    // abrir config
     auto cfgSpr = ButtonSprite::create("Configure Pet", "goldFont.fnt", "GJ_button_01.png", .8f);
     cfgSpr->setScale(0.7f);
     auto cfgBtn = CCMenuItemSpriteExtra::create(cfgSpr, this, menu_selector(BackgroundConfigPopup::onOpenPetConfig));
@@ -522,9 +519,7 @@ void BackgroundConfigPopup::onProfileClear(CCObject*) {
     PaimonNotify::create("Profile Background Cleared", NotificationIcon::Success)->show();
 }
 
-// ═══════════════════════════════════════════════════════════
-// Layer Background Tab
-// ═══════════════════════════════════════════════════════════
+// fondos por layer
 
 CCNode* BackgroundConfigPopup::createLayerBgTab() {
     auto node = CCNode::create();
@@ -536,14 +531,13 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
     btnMenu->setPosition({0, 0});
     node->addChild(btnMenu, 10);
 
-    // ── selector de layer (fila de botones arriba) ──
     float selY = cy + 55;
     float selSpacing = 95.f;
     float selStartX = cx - selSpacing * 1.5f;
 
     for (int i = 0; i < (int)LayerBackgroundManager::LAYER_OPTIONS.size(); i++) {
         auto& [key, name] = LayerBackgroundManager::LAYER_OPTIONS[i];
-        // usar nombre corto
+        // version corta pa que entren
         std::string shortName;
         if (key == "creator") shortName = "Creator";
         else if (key == "browser") shortName = "Browser";
@@ -560,7 +554,6 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
         m_layerSelectBtns.push_back(btn);
     }
 
-    // ── botones de accion ──
     float actionY = cy + 10;
     createBtn("Custom Image", {cx - 90, actionY}, menu_selector(BackgroundConfigPopup::onLayerCustomImage), btnMenu);
     createBtn("Random", {cx + 10, actionY}, menu_selector(BackgroundConfigPopup::onLayerRandom), btnMenu);
@@ -579,7 +572,6 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
         }
     }
 
-    // ── Level ID input ──
     float idY = actionY - 40;
     auto inputBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
     inputBg->setContentSize({100, 30});
@@ -595,7 +587,6 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
 
     createBtn("Set ID", {cx + 50, idY}, menu_selector(BackgroundConfigPopup::onLayerSetID), btnMenu);
 
-    // ── dark mode ──
     float optY = idY - 45;
     auto cfg = LayerBackgroundManager::get().getConfig(m_selectedLayerKey);
 
@@ -620,7 +611,7 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
         }
     }
 
-    // intensity slider
+    // slider de intensidad
     m_layerDarkSlider = Slider::create(this, menu_selector(BackgroundConfigPopup::onLayerDarkIntensity), 0.5f);
     m_layerDarkSlider->setPosition({cx + 60, optY});
     m_layerDarkSlider->setValue(cfg.darkIntensity);
@@ -631,7 +622,6 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
     intLbl->setPosition({cx + 60, optY + 20});
     node->addChild(intLbl);
 
-    // ── boton default (quitar fondo custom) ──
     auto defSpr = ButtonSprite::create("Default (GD)", "goldFont.fnt", "GJ_button_05.png", .7f);
     defSpr->setScale(0.55f);
     auto defBtn = CCMenuItemSpriteExtra::create(defSpr, this, menu_selector(BackgroundConfigPopup::onLayerDefault));

@@ -8,10 +8,6 @@
 #include <optional>
 #include <chrono>
 
-/**
- * ModerationService — autenticacion de moderadores y operaciones sobre la
- * cola de verificacion.  Extraido de ThumbnailAPI.
- */
 class ModerationService {
 public:
     using ModeratorCallback = geode::CopyableFunction<void(bool isModerator, bool isAdmin)>;

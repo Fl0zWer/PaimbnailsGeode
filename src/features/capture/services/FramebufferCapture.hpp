@@ -19,13 +19,6 @@ struct CaptureQualitySettings {
     bool highQualityFiltering = true;
 };
 
-/**
- * Captures the game scene by re-rendering into a high-resolution FBO.
- *
- * Works with shaders via direct back-buffer capture that already contains
- * the final composited frame with all effects applied.
- * Resolution is configurable via mod.json "capture-resolution".
- */
 class FramebufferCapture {
 public:
     // Request a capture on the next frame.

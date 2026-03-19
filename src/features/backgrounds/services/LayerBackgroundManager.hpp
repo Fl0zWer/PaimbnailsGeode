@@ -4,11 +4,7 @@
 #include <unordered_map>
 #include <functional>
 
-// ════════════════════════════════════════════════════════════
-// LayerBackgroundManager — aplica fondos personalizados por layer
-// Unificado: incluye Menu, LevelInfo, Profile y todos los layers
-// Saved value pattern: "layerbg-{key}-type", "layerbg-{key}-path"
-// ════════════════════════════════════════════════════════════
+// fondos personalizados por layer
 
 struct LayerBgConfig {
     std::string type = "default";   // "default", "custom", "random", "menu", "id"
@@ -24,14 +20,14 @@ struct LayerMusicConfig {
     std::string mode = "default";   // "default", "newgrounds", "custom", "dynamic"
     int songID = 0;                 // Newgrounds song ID
     std::string customPath;         // ruta a archivo audio local
-    float speed = 1.0f;            // playback speed 0.1 - 1.0
-    bool randomStart = false;       // start from a random position
-    int startMs = 0;                // loop/play start time (0 = from beginning)
-    int endMs = 0;                  // loop/play end time (0 = until end)
-    std::string filter = "none";    // audio filter: none, cave, underwater, echo, etc.
+    float speed = 1.0f;            // velocidad 0.1 - 1.0
+    bool randomStart = false;       // arranca en un punto random
+    int startMs = 0;                // inicio del loop/play
+    int endMs = 0;                  // final del loop/play
+    std::string filter = "none";    // filtro de audio
 };
 
-// Available audio filters
+// filtros de audio disponibles
 static inline std::vector<std::pair<std::string, std::string>> AUDIO_FILTERS = {
     {"none",        "None"},
     {"cave",        "Cave"},
@@ -52,8 +48,8 @@ class LayerBackgroundManager {
 public:
     static LayerBackgroundManager& get();
 
-    // Aplica fondo al layer segun su key. Llama despues de super::init().
-    // Retorna true si se aplico un fondo custom (para que el hook oculte UI extra).
+    // aplica el fondo del layer; llamalo despues de super::init()
+    // devuelve true si habia fondo custom y el hook debe esconder UI extra
     bool applyBackground(cocos2d::CCLayer* layer, std::string const& layerKey);
 
     // Consulta rapida: ¿este layer tiene un fondo custom configurado? (no aplica nada)
@@ -69,11 +65,9 @@ public:
     // util para previews y consultas sin aplicar nada.
     LayerBgConfig resolveConfig(std::string const& layerKey) const;
 
-    // ── Music per-layer (legacy, kept for migration) ──
     LayerMusicConfig getMusicConfig(std::string const& layerKey) const;
     void saveMusicConfig(std::string const& layerKey, LayerMusicConfig const& cfg);
 
-    // ── Global music (replaces per-layer: one config for ALL layers) ──
     LayerMusicConfig getGlobalMusicConfig() const;
     void saveGlobalMusicConfig(LayerMusicConfig const& cfg);
 
@@ -99,7 +93,7 @@ public:
 private:
     LayerBackgroundManager() = default;
 
-    // helpers
+    // util
     void hideOriginalBg(cocos2d::CCLayer* layer);
     cocos2d::CCTexture2D* loadTextureForConfig(LayerBgConfig const& cfg);
     void applyStaticBg(cocos2d::CCLayer* layer, cocos2d::CCTexture2D* tex, LayerBgConfig const& cfg);

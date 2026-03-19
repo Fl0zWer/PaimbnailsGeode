@@ -14,7 +14,7 @@ protected:
     int m_selectedTab = 0;
     Slider* m_slider = nullptr;
 
-    // layer bg tab
+    // tab de fondos por layer
     std::string m_selectedLayerKey = "creator";
     geode::TextInput* m_layerIdInput = nullptr;
     Slider* m_layerDarkSlider = nullptr;
@@ -23,7 +23,7 @@ protected:
 
     bool init();
     
-    // ayudantes de ui
+    // armado general
     void createTabs();
     void onTab(cocos2d::CCObject* sender);
     void updateTabs();
@@ -32,7 +32,7 @@ protected:
     cocos2d::CCNode* createPetTab();
     cocos2d::CCNode* createLayerBgTab();
 
-    // acciones menu
+    // menu
     void onCustomImage(cocos2d::CCObject* sender);
     void onDownloadedThumbnails(cocos2d::CCObject* sender);
     void onSetID(cocos2d::CCObject* sender);
@@ -40,19 +40,19 @@ protected:
     void onDarkMode(cocos2d::CCObject* sender);
     void onIntensityChanged(cocos2d::CCObject* sender);
 
-    // acciones profile
+    // perfil
     void onProfileCustomImage(cocos2d::CCObject* sender);
     void onProfileClear(cocos2d::CCObject* sender);
     void onCustomizePhoto(cocos2d::CCObject* sender);
 
-    // acciones pet
+    // mascota
     void onOpenPetConfig(cocos2d::CCObject* sender);
 
-    // features
+    // extras
     void onDefaultMenu(cocos2d::CCObject* sender);
     void onAdaptiveColors(cocos2d::CCObject* sender);
 
-    // layer bg actions
+    // fondos por layer
     void onLayerSelect(cocos2d::CCObject* sender);
     void onLayerCustomImage(cocos2d::CCObject* sender);
     void onLayerRandom(cocos2d::CCObject* sender);
@@ -63,7 +63,7 @@ protected:
     void onLayerDarkIntensity(cocos2d::CCObject* sender);
     void updateLayerSelectButtons();
 
-    // helper
+    // util
     CCMenuItemSpriteExtra* createBtn(char const* text, cocos2d::CCPoint pos, cocos2d::SEL_MenuHandler handler, cocos2d::CCNode* parent);
 
 public:

@@ -9,8 +9,6 @@
 
 namespace paimon::settings {
 
-// ── Thumbnails / LevelCell ──────────────────────────────────────────────
-
 namespace thumbnails {
     inline std::string backgroundType() {
         return geode::Mod::get()->getSettingValue<std::string>("levelcell-background-type");
@@ -68,8 +66,6 @@ namespace thumbnails {
     }
 } // namespace thumbnails
 
-// ── LevelInfo ───────────────────────────────────────────────────────────
-
 namespace levelinfo {
     inline std::string backgroundStyle() {
         return geode::Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
@@ -87,8 +83,6 @@ namespace levelinfo {
         return geode::Mod::get()->getSettingValue<bool>("dynamic-song");
     }
 } // namespace levelinfo
-
-// ── Backgrounds ─────────────────────────────────────────────────────────
 
 namespace backgrounds {
     inline std::string bgType() {
@@ -110,8 +104,6 @@ namespace backgrounds {
         return geode::Mod::get()->getSavedValue<bool>("bg-adaptive-colors", false);
     }
 } // namespace backgrounds
-
-// ── Profiles ────────────────────────────────────────────────────────────
 
 namespace profiles {
     inline std::string scorecellBgType() {
@@ -137,10 +129,7 @@ namespace profiles {
     }
 } // namespace profiles
 
-// ── Transitions ─────────────────────────────────────────────────────────
 // Transition state is managed by TransitionManager::isEnabled() via transitions.json
-
-// ── Moderation ──────────────────────────────────────────────────────────
 
 namespace moderation {
     inline bool isVerifiedModerator() {
@@ -156,8 +145,6 @@ namespace moderation {
         return isVerifiedVip() || isVerifiedModerator() || isVerifiedAdmin();
     }
 } // namespace moderation
-
-// ── General / Cache ─────────────────────────────────────────────────────
 
 namespace general {
     inline bool clearCacheOnExit() {

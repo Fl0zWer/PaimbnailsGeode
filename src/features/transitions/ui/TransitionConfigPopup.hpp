@@ -3,20 +3,16 @@
 #include <Geode/ui/Popup.hpp>
 #include "../services/TransitionManager.hpp"
 
-// ════════════════════════════════════════════════════════════
 // TransitionConfigPopup — UI completa para configurar transiciones
-// ════════════════════════════════════════════════════════════
 
 class TransitionConfigPopup : public geode::Popup {
 protected:
     bool init();
 
-    // ── State ──
     TransitionConfig m_editingGlobal;
     TransitionConfig m_editingLevel;
     bool m_editingIsGlobal = true; // which section we last interacted with
 
-    // ── UI — Global section ──
     cocos2d::CCLabelBMFont* m_globalNameLabel = nullptr;
     cocos2d::CCLabelBMFont* m_globalDescLabel = nullptr;
     cocos2d::CCLabelBMFont* m_globalDurLabel = nullptr;
@@ -25,7 +21,6 @@ protected:
     CCMenuItemSpriteExtra* m_globalCustomBtn = nullptr;
     cocos2d::CCLayerColor* m_globalColorSwatch = nullptr;
 
-    // ── UI — Level Entry section ──
     cocos2d::CCLabelBMFont* m_levelNameLabel = nullptr;
     cocos2d::CCLabelBMFont* m_levelDescLabel = nullptr;
     cocos2d::CCLabelBMFont* m_levelDurLabel = nullptr;
@@ -34,18 +29,15 @@ protected:
     CCMenuItemSpriteExtra* m_levelCustomBtn = nullptr;
     cocos2d::CCLayerColor* m_levelColorSwatch = nullptr;
 
-    // ── UI — General ──
     CCMenuItemToggler* m_enableToggle = nullptr;
     CCMenuItemToggler* m_levelToggle = nullptr;
     cocos2d::CCLabelBMFont* m_statusLabel = nullptr;
 
-    // ── Methods ──
     void updateGlobalDisplay();
     void updateLevelDisplay();
     void updateConditionalButtons();
     int getTypeIndex(TransitionType t) const;
 
-    // ── Callbacks ──
     void onToggleEnabled(cocos2d::CCObject*);
     void onToggleLevelEntry(cocos2d::CCObject*);
     void onGlobalPrevType(cocos2d::CCObject*);

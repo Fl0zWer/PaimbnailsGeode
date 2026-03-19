@@ -71,7 +71,6 @@ CCTexture2D* getProfileImgCachedTexture(int accountID) {
     return nullptr;
 }
 
-// --- helpers de cache de disco para profileimg ---
 static std::filesystem::path getProfileImgCacheDir() {
     return Mod::get()->getSaveDir() / "profileimg_cache";
 }
@@ -167,28 +166,28 @@ class $modify(PaimonProfilePage, ProfilePage) {
         return m_fields->m_isApprovedMod || m_fields->m_isAdmin;
     }
 
-    // Helper: obtener left-menu de forma segura (estandar de Geode NodeIDs)
+    // saco left-menu de forma segura
     CCMenu* getLeftMenu() {
         if (!this->m_mainLayer) return nullptr;
         auto node = this->m_mainLayer->getChildByID("left-menu");
         return node ? typeinfo_cast<CCMenu*>(node) : nullptr;
     }
 
-    // Helper: obtener socials-menu de forma segura (estandar de Geode NodeIDs)
+    // saco socials-menu de forma segura
     CCMenu* getSocialsMenu() {
         if (!this->m_mainLayer) return nullptr;
         auto node = this->m_mainLayer->getChildByID("socials-menu");
         return node ? typeinfo_cast<CCMenu*>(node) : nullptr;
     }
 
-    // Helper: escalar un sprite para que encaje en un tamano cuadrado
+    // escalo un sprite para que entre en un cuadrado
     static void scaleToFit(CCNode* spr, float targetSize) {
         if (!spr) return;
         float curSize = std::max(spr->getContentWidth(), spr->getContentHeight());
         if (curSize > 0) spr->setScale(targetSize / curSize);
     }
 
-    // Helper: crear boton gear si no existe aun (mods + admins)
+    // creo el gear si todavia no existe
     void ensureGearButton(CCMenu* menu) {
         if (!menu || m_fields->m_gearBtn) return;
         if (menu->getChildByID("thumbs-gear-button"_spr)) return;
@@ -210,7 +209,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_gearBtn = gearBtn;
     }
 
-    // Helper: crear boton add-moderator si no existe aun (solo admins)
+    // creo el boton de add-mod si todavia no existe
     void ensureAddModeratorButton(CCMenu* menu) {
         if (!menu || m_fields->m_addModBtn) return;
         if (menu->getChildByID("add-moderator-button"_spr)) return;
@@ -232,7 +231,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_addModBtn = addModBtn;
     }
 
-    // â”€â”€ Verificador periodico de integridad de botones â”€â”€
     // Se ejecuta cada 0.5s para asegurar que todos los botones existen,
     // estan visibles y en el estado correcto (soluciona el bug donde
     // el boton de ban u otros desaparecen intermitentemente).
@@ -306,7 +304,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    // â”€â”€ Badge de moderador/admin en el perfil â”€â”€
     // (fusionado desde BadgeProfilePage para evitar doble $modify sobre ProfilePage)
 
     void onPaimonBadge(CCObject* sender) {
@@ -641,7 +638,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
     }
 
-    // â”€â”€ Helper: limpiar todos los botones paimon de un menu antes de re-crearlos â”€â”€
     // Evita duplicados si loadPageFromUserInfo se llama multiples veces
     void cleanPaimonButtons(CCMenu* menu) {
         if (!menu) return;
@@ -677,7 +673,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_addProfileImgBtn = nullptr;
     }
 
-    // â”€â”€ Helper: obtener posicion/tamano del popup de perfil â”€â”€
     // Usamos el nodo "background" (asignado por node-ids) para centrar los menus
     CCPoint getPopupCenter() {
         if (!this->m_mainLayer) return CCDirector::sharedDirector()->getWinSize() / 2;
@@ -716,11 +711,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         if (!this->m_mainLayer) return;
 
-        // â”€â”€ Referencia al popup â”€â”€
         auto popCenter = getPopupCenter();
         auto popSize = getPopupSize();
 
-        // â”€â”€ Obtener o crear left-menu â”€â”€
         auto leftMenuNode = this->m_mainLayer->getChildByID("left-menu");
         CCMenu* menu = leftMenuNode ? typeinfo_cast<CCMenu*>(leftMenuNode) : nullptr;
 
@@ -747,10 +740,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
             );
         }
 
-        // â”€â”€ Limpiar botones paimon anteriores para evitar duplicados â”€â”€
         cleanPaimonButtons(menu);
 
-        // â”€â”€ Boton de reviews (siempre visible) â”€â”€
         {
             auto reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_chatBtn_001.png");
             if (!reviewIcon) reviewIcon = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plainBtn_001.png");
@@ -762,7 +753,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // â”€â”€ Boton de calificar perfil en bottom-menu (solo perfiles ajenos) â”€â”€
         if (!this->m_ownProfile) {
             if (auto bottomMenu = this->m_mainLayer->getChildByIDRecursive("bottom-menu")) {
                 if (!bottomMenu->getChildByID("rate-profile-btn"_spr)) {
@@ -792,7 +782,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // â”€â”€ Boton de ban (solo mods/admins, no perfil propio) â”€â”€
         {
             auto banSpr = ButtonSprite::create("X", 40, true, "bigFont.fnt", "GJ_button_06.png", 30.f, 0.6f);
             banSpr->setScale(0.5f);
@@ -804,7 +793,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
         }
         refreshBanButtonVisibility();
 
-        // â”€â”€ Botones de moderacion (solo perfil propio, segun rango verificado) â”€â”€
         if (this->m_ownProfile) {
             // Si ya esta verificado como mod o admin â†’ mostrar gear (centro de verificacion)
             if (m_fields->m_isApprovedMod || m_fields->m_isAdmin) {
@@ -816,10 +804,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
 
-        // â”€â”€ Recalcular layout del left-menu â”€â”€
         menu->updateLayout();
 
-        // â”€â”€ Botones en socials-menu â”€â”€
         auto* socialsMenu = getSocialsMenu();
         bool createdSocialsMenu = false;
         if (!socialsMenu) {
@@ -849,7 +835,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         cleanPaimonSocialsButtons(socialsMenu);
 
-        // â”€â”€ Anadir nuestros botones DESPUeS de los botones nativos de GD â”€â”€
         // Los botones de YouTube, Twitter, Twitch etc. ya estan en el socials-menu
         // por el hook de GD; nosotros solo anadimos al final.
 
@@ -890,7 +875,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         socialsMenu->updateLayout();
 
-        // â”€â”€ Badge de moderador/admin en el username â”€â”€
         if (score) {
             std::string badgeUsername = score->m_userName;
 
@@ -1312,7 +1296,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         auto& musicMgr = ProfileMusicManager::get();
 
-        // â”€â”€ Optimistic: si hay config en cache y audio en disco, reproducir de inmediato â”€â”€
         auto* cached = musicMgr.getCachedConfig(accountID);
         if (cached && cached->songID > 0 && cached->enabled && musicMgr.isCached(accountID)) {
             if (m_fields->m_musicPauseBtn) {
@@ -1324,7 +1307,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             updatePauseButtonSprite(true);
         }
 
-        // â”€â”€ Siempre verificar config fresca del servidor en segundo plano â”€â”€
         Ref<ProfilePage> self = this;
         auto cachedCopy = cached ? std::optional<ProfileMusicManager::ProfileMusicConfig>(*cached)
                                  : std::nullopt;

@@ -5,7 +5,6 @@
 
 class LevelCellSettingsPopup : public geode::Popup {
 protected:
-    // -- Background section --
     cocos2d::CCLabelBMFont* m_bgTypeLabel = nullptr;
     std::vector<std::string> m_bgTypes;
     int m_bgTypeIndex = 0;
@@ -19,7 +18,6 @@ protected:
     Slider* m_darknessSlider = nullptr;
     cocos2d::CCLabelBMFont* m_darknessLabel = nullptr;
 
-    // -- Toggles --
     CCMenuItemToggler* m_separatorToggle = nullptr;
     CCMenuItemToggler* m_viewButtonToggle = nullptr;
     CCMenuItemToggler* m_compactToggle = nullptr;
@@ -28,7 +26,6 @@ protected:
     CCMenuItemToggler* m_mythicParticlesToggle = nullptr;
     CCMenuItemToggler* m_animatedGradientToggle = nullptr;
 
-    // -- Animation section --
     cocos2d::CCLabelBMFont* m_animTypeLabel = nullptr;
     std::vector<std::string> m_animTypes;
     int m_animTypeIndex = 0;
@@ -40,7 +37,6 @@ protected:
     std::vector<std::string> m_animEffects;
     int m_animEffectIndex = 0;
 
-    // -- Current values --
     std::string m_currentBgType;
     float m_currentThumbWidth = 0.5f;
     float m_currentBlur = 3.0f;
@@ -97,7 +93,4 @@ public:
     // LevelCell::update() revisa este valor pa invalidar cache y re-aplicar
     static inline int s_settingsVersion = 0;
 };
-
-
-
 

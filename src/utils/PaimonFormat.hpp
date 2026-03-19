@@ -5,24 +5,24 @@
 #include <cstdint>
 
 namespace PaimonFormat {
-    // XOR key (replace for production)
+    // clave xor
     constexpr uint8_t XOR_KEY[] = {0x50, 0x41, 0x49, 0x4D, 0x4F, 0x4E, 0x5F, 0x53, 0x45, 0x43, 0x52, 0x45, 0x54}; // "PAIMON_SECRET"
     constexpr size_t KEY_LENGTH = 13;
     
-    // Hash salt
+    // sal del hash
     constexpr uint64_t HASH_SALT = 0x9E3779B97F4A7C15;
 
-    // Calcular FNV-1a 64-bit hash
+    // hash FNV-1a de 64 bits
     inline uint64_t calculateHash(std::vector<uint8_t> const& data) {
-        uint64_t hash = 0xCBF29CE484222325; // FNV offset basis
+        uint64_t hash = 0xCBF29CE484222325;
         
-        // Hash salt first
+        // primero mezclo la sal
         for (int i = 0; i < 8; i++) {
             hash ^= ((HASH_SALT >> (i * 8)) & 0xFF);
-            hash *= 0x100000001B3; // FNV prime
+            hash *= 0x100000001B3;
         }
 
-        // Hash data
+        // despues los datos
         for (uint8_t byte : data) {
             hash ^= byte;
             hash *= 0x100000001B3;
@@ -30,7 +30,7 @@ namespace PaimonFormat {
         return hash;
     }
 
-    // Encrypt using XOR (rotating key)
+    // cifrado xor con clave rotando
     inline std::vector<uint8_t> encrypt(std::vector<uint8_t> const& data) {
         std::vector<uint8_t> encrypted(data.size());
         for (size_t i = 0; i < data.size(); i++) {
@@ -39,14 +39,14 @@ namespace PaimonFormat {
         return encrypted;
     }
     
-    // Decrypt (XOR is symmetric)
+    // descifrar es lo mismo con xor
     inline std::vector<uint8_t> decrypt(std::vector<uint8_t> const& data) {
-        return encrypt(data); // XOR is its own inverse
+        return encrypt(data);
     }
     
-    // Save encrypted data to a .paimon file
+    // guarda datos cifrados en .paimon
     bool save(std::filesystem::path const& path, std::vector<uint8_t> const& data);
 
-    // Load and decrypt data from a .paimon file
+    // carga y descifra un .paimon
     std::vector<uint8_t> load(std::filesystem::path const& path);
 }

@@ -3,12 +3,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 
-
-/*
- * ProfileImgPopup, Popup overlay que muestra la imagen de perfil
- * como fondo del popup, clipeada para que nunca sobresalga.
- * Se posiciona exactamente encima del ProfilePage popup
- */
+// popup que usa la imagen de perfil como fondo sin salirse del recorte
 class ProfileImgPopup : public geode::Popup {
 protected:
     int m_accountID;

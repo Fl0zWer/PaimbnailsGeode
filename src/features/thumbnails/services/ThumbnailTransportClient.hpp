@@ -7,10 +7,6 @@
 #include <string>
 #include <vector>
 
-/**
- * ThumbnailTransportClient — operaciones de subida/bajada/consulta de miniaturas.
- * Extraido de ThumbnailAPI para separar dominio 'thumbnails' de moderacion/profiles.
- */
 class ThumbnailTransportClient {
 public:
     using UploadCallback      = geode::CopyableFunction<void(bool success, std::string const& message)>;

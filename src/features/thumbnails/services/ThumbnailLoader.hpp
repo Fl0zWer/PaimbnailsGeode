@@ -16,13 +16,6 @@
 #include <chrono>
 #include "../../../utils/GIFDecoder.hpp"
 
-/**
- * cargador de thumbnails optimizado:
- * - limite de concurrencia
- * - cola por prioridad
- * - cache automatico
- * - evita lag
- */
 class ThumbnailLoader {
 public:
     using LoadCallback = geode::CopyableFunction<void(cocos2d::CCTexture2D* texture, bool success)>;
@@ -109,6 +102,15 @@ private:
     // flag de shutdown: cuando es true, los threads de background deben parar lo antes posible
     std::atomic<bool> m_shuttingDown{false};
 
+    // cola de callbacks cacheados — se despachan max N por frame pa evitar freezes
+    struct CachedCallback {
+        LoadCallback callback;
+        geode::Ref<cocos2d::CCTexture2D> texture;
+    };
+    std::deque<CachedCallback> m_cachedCallbackQueue;
+    bool m_drainingCachedCallbacks = false;
+    static constexpr int MAX_CACHED_CALLBACKS_PER_FRAME = 2;
+
     // metodos
     void processQueue();
     void startTask(std::shared_ptr<Task> task);
@@ -116,6 +118,8 @@ private:
     
     void addToCache(int levelID, cocos2d::CCTexture2D* texture);
     void initDiskCache();
+    void enqueueCachedCallback(LoadCallback callback, cocos2d::CCTexture2D* tex);
+    void drainCachedCallbacks();
     
     // Worker methods
     void workerLoadFromDisk(std::shared_ptr<Task> task);

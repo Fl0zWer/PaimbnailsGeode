@@ -29,11 +29,6 @@ using cocos2d::CCLabelBMFont;
 using cocos2d::CCSize;
 using cocos2d::CCObject;
 
-/**
- * Popup de visualizacion de thumbnails con zoom/pan tactil y galeria.
- * Extraido de LevelInfoLayer.cpp para mantener los hooks ligeros
- * (patron BetterInfo-Geode).
- */
 class LocalThumbnailViewPopup : public geode::Popup {
 protected:
     int32_t m_levelID = 0;
@@ -74,7 +69,6 @@ protected:
     CCMenuItemSpriteExtra* m_rightArrow = nullptr;
     CCLabelBMFont* m_counterLabel = nullptr;
 
-    // --- metodos protegidos ---
     void onPrev(CCObject*);
     void onNext(CCObject*);
     void onInfo(CCObject*);
