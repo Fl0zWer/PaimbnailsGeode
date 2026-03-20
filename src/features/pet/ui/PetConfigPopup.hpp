@@ -60,7 +60,7 @@ protected:
     cocos2d::CCNode* m_settingsTab = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_tabs;
 
-    bool init();
+    bool init() override;
     void createTabButtons();
     void onTabSwitch(cocos2d::CCObject* sender);
 
