@@ -3,6 +3,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
+#include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/utils/web.hpp>
 
 using namespace geode::prelude;
@@ -83,7 +84,7 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
         "Confirm",
         "Set this level as <cy>Daily</c>?",
         "Cancel", "Set",
-        [self](auto, bool btn2) {
+        [self](FLAlertLayer*, bool btn2) {
             if (btn2) {
                 auto popup = self.lock();
                 if (!popup) return;
@@ -92,7 +93,7 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                 int accountID = GJAccountManager::get()->m_accountID;
 
                 matjson::Value json = matjson::makeObject({
-                    {"levelID", m_levelID},
+                    {"levelID", popup->m_levelID},
                     {"username", username},
                     {"accountID", accountID}
                 });
@@ -123,7 +124,7 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
         "Confirm",
         "Set this level as <cy>Weekly</c>?",
         "Cancel", "Set",
-        [self](auto, bool btn2) {
+        [self](FLAlertLayer*, bool btn2) {
             if (btn2) {
                 auto popup = self.lock();
                 if (!popup) return;
@@ -132,7 +133,7 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                 int accountID = GJAccountManager::get()->m_accountID;
 
                 matjson::Value json = matjson::makeObject({
-                    {"levelID", m_levelID},
+                    {"levelID", popup->m_levelID},
                     {"username", username},
                     {"accountID", accountID}
                 });
@@ -163,7 +164,7 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
         "Confirm",
         "Unset this level from Daily/Weekly?",
         "Cancel", "Unset",
-        [self](auto, bool btn2) {
+        [self](FLAlertLayer*, bool btn2) {
              if (btn2) {
                 auto popup = self.lock();
                 if (!popup) return;
@@ -171,7 +172,7 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
                  std::string username = gm->m_playerName;
 
                  matjson::Value json = matjson::makeObject({
-                    {"levelID", m_levelID},
+                    {"levelID", popup->m_levelID},
                     {"type", "unset"},
                     {"username", username}
                 });
