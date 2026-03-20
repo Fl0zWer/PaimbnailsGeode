@@ -670,6 +670,7 @@ void AnimatedGIFSprite::workerLoop() {
                             
                             ret->m_frames.push_back(gifFrame);
                             ret->m_frameColors.push_back({ {0,0,0}, {255,255,255} });
+                            texture->retain();
                         }
                         
                         if (!ret->m_frames.empty()) {

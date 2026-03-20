@@ -40,6 +40,7 @@
 #include "../features/moderation/services/ModeratorCache.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../framework/compat/SceneLocators.hpp"
+#include "../utils/GIFDecoder.hpp"
 
 using namespace geode::prelude;
 
@@ -143,16 +144,33 @@ static CCTexture2D* loadProfileImgFromDisk(int accountID) {
     if (!file.read(reinterpret_cast<char*>(data.data()), size)) return nullptr;
     file.close();
 
-    CCImage img;
-    if (!img.initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-        return nullptr;
+    if (GIFDecoder::isGIF(data.data(), data.size())) {
+        auto gif = GIFDecoder::decode(data.data(), data.size());
+        if (gif.frames.empty()) return nullptr;
+        auto const& frame = gif.frames.front();
+        if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) return nullptr;
+
+        auto* tex = new CCTexture2D();
+        if (!tex->initWithData(
+            frame.pixels.data(),
+            kCCTexture2DPixelFormat_RGBA8888,
+            frame.width,
+            frame.height,
+            CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
+        )) {
+            tex->release();
+            return nullptr;
+        }
+        tex->autorelease();
+        return tex;
     }
 
-    auto tex = geode::Ref<CCTexture2D>(new CCTexture2D());
-    if (!tex->initWithImage(&img)) {
+    auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size());
+    if (!loaded.success || !loaded.texture) {
         return nullptr;
     }
-    return tex;
+    loaded.texture->autorelease();
+    return loaded.texture;
 }
 
 static void saveProfileImgToDisk(int accountID, std::vector<uint8_t> const& data) {
@@ -1181,13 +1199,26 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                     saveProfileImgToDisk(accountID, imgData);
 
-                    CCImage img;
-                    if (img.initWithImageData(const_cast<uint8_t*>(imgData.data()), imgData.size())) {
-                        auto tex = geode::Ref<CCTexture2D>(new CCTexture2D());
-                        if (tex->initWithImage(&img)) {
-                            // Ref<> hace retain/release automaticamente
-                            cacheProfileImgTexture(accountID, tex);
-                            static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
+                    if (GIFDecoder::isGIF(imgData.data(), imgData.size())) {
+                        auto gif = GIFDecoder::decode(imgData.data(), imgData.size());
+                        if (!gif.frames.empty()) {
+                            auto const& frame = gif.frames.front();
+                            if (!frame.pixels.empty() && frame.width > 0 && frame.height > 0) {
+                                auto* tex = new CCTexture2D();
+                                if (tex->initWithData(
+                                    frame.pixels.data(),
+                                    kCCTexture2DPixelFormat_RGBA8888,
+                                    frame.width,
+                                    frame.height,
+                                    CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
+                                )) {
+                                    tex->autorelease();
+                                    cacheProfileImgTexture(accountID, tex);
+                                    static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
+                                } else {
+                                    tex->release();
+                                }
+                            }
                         }
                     }
                 } else {

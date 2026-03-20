@@ -591,6 +591,7 @@ void LeaderboardLayer::createList(std::string type) {
 
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, safeClipper, createThumbSprite](CCTexture2D* tex, bool success) {
             geode::Loader::get()->queueInMainThread([self, safeClipper, tex, createThumbSprite] {
+                if (!self->getParent()) return;
                 if (safeClipper->getParent()) {
                     if (tex) createThumbSprite(tex);
                 }
@@ -1301,7 +1302,7 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
     std::thread([safeRef, next, totalSteps, from, to, fadeOut, stepMs]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
         geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, fadeOut]() {
-            // verificar que el fade no fue cancelado
+            if (!safeRef->getParent()) return;
             if (fadeOut && !safeRef->m_isFadingCaveOut) return;
             if (!fadeOut && !safeRef->m_isFadingCaveIn) return;
             safeRef->executeCaveFade(next, totalSteps, from, to, fadeOut);
@@ -1405,6 +1406,7 @@ void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, flo
     std::thread([safeRef, next, totalSteps, from, to, stepMs]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
         geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to]() {
+            if (!safeRef->getParent()) return;
             safeRef->executeMenuFade(next, totalSteps, from, to);
         });
     }).detach();

@@ -1033,12 +1033,12 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                         ok = ImageConverter::saveRGBAToPNG(rgba.data(), width, height, savePath);
                     }
                     Loader::get()->queueInMainThread([safeRef, ok, savePath, notifyResult]() {
+                        if (!safeRef->getParent()) return;
                         notifyResult(ok, savePath);
                     });
                     return;
                 }
                 if (fromCache) {
-                    // Copiar archivo preservando extensión para que el contenido coincida con la extensión
                     std::filesystem::path srcP(srcPath);
                     std::string ext = geode::utils::string::pathToString(srcP.extension());
                     if (ext.empty()) ext = ".png";
@@ -1047,11 +1047,13 @@ void LocalThumbnailViewPopup::onDownloadBtn(CCObject*) {
                     std::filesystem::copy(srcP, destPath, std::filesystem::copy_options::overwrite_existing, ec);
                     ok = !ec;
                     Loader::get()->queueInMainThread([safeRef, ok, destPath, notifyResult]() {
+                        if (!safeRef->getParent()) return;
                         notifyResult(ok, destPath);
                     });
                     return;
                 }
                 Loader::get()->queueInMainThread([safeRef, savePath, notifyResult]() {
+                    if (!safeRef->getParent()) return;
                     notifyResult(false, savePath);
                 });
             }).detach();

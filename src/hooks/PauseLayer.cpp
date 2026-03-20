@@ -330,9 +330,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             FramebufferCapture::requestCapture(levelID, [safeRef, levelID](bool success, CCTexture2D* texture, std::shared_ptr<uint8_t> rgbData, int width, int height) {
                 Loader::get()->queueInMainThread([safeRef, success, texture, rgbData, width, height, levelID]() {
                     auto* self = static_cast<PaimonPauseLayer*>(safeRef.data());
+                    if (!self->getParent()) {
+                        self->m_fields->m_captureInProgress = false;
+                        return;
+                    }
                     self->removeLoadingOverlay();
                     self->m_fields->m_captureInProgress = false;
-                    if (!self->getParent()) return;
 
                     if (success && texture && rgbData) {
                         log::info("[PauseLayer] Capture successful: {}x{}", width, height);
@@ -511,7 +514,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 int width = image->getWidth();
                 int height = image->getHeight();
 
-                // crea textura desde ccimage
+                if (width <= 0 || height <= 0) {
+                    image->release();
+                    PaimonNotify::create(Localization::get().getString("pause.gif_read_error").c_str(), NotificationIcon::Error)->show();
+                    return;
+                }
+
                 CCTexture2D* texture = new CCTexture2D();
                 bool ok = texture->initWithImage(image);
                 image->release();

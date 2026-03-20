@@ -154,6 +154,7 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
         if (!file.is_open()) {
             Loader::get()->queueInMainThread([self]() {
+                if (!self->getParent()) return;
                 self->m_loadingThumb = false;
             });
             return;
@@ -166,6 +167,10 @@ void PaimonSupportLayer::cycleThumbnail(float dt) {
         file.close();
 
         Loader::get()->queueInMainThread([self, data = std::move(data)]() {
+            if (!self->getParent()) {
+                self->m_loadingThumb = false;
+                return;
+            }
             auto image = new CCImage();
             if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
                 auto tex = new CCTexture2D();

@@ -1,6 +1,7 @@
 #include "ProfileImageService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/ImageLoadHelper.hpp"
 #include "ProfileThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
 #include <Geode/loader/Log.hpp>
@@ -129,17 +130,13 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
 
             auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
             queueInMainThread([accountID, callback, dataCopy]() {
-                CCImage img;
-                if (!img.initWithImageData(const_cast<uint8_t*>(dataCopy->data()), dataCopy->size())) {
+                auto loaded = ImageLoadHelper::loadWithSTBFromMemory(dataCopy->data(), dataCopy->size());
+                if (!loaded.success || !loaded.texture) {
                     callback(false, nullptr);
                     return;
                 }
-                auto tex = geode::Ref<CCTexture2D>(new CCTexture2D());
-                if (!tex->initWithImage(&img)) {
-                    callback(false, nullptr);
-                    return;
-                }
-                callback(true, tex);
+                loaded.texture->autorelease();
+                callback(true, loaded.texture);
             });
         }, isSelf);
 }

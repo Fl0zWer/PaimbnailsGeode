@@ -551,20 +551,30 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
                 if (task->cancelled) { finishTask(task, nullptr, false); return; }
                 
                 { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
-                auto image = new CCImage();
-                if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-                    auto tex = new CCTexture2D();
-                    if (tex->initWithImage(image)) {
-                        image->release();
-                        tex->autorelease();
-                        finishTask(task, tex, true);
-                    } else {
-                        image->release();
-                        tex->release();
-                        workerDownload(task);
-                    }
+                auto gifData = GIFDecoder::decode(data.data(), data.size());
+                if (gifData.frames.empty() || gifData.width <= 0 || gifData.height <= 0) {
+                    workerDownload(task);
+                    return;
+                }
+
+                auto const& frame = gifData.frames.front();
+                if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) {
+                    workerDownload(task);
+                    return;
+                }
+
+                auto tex = new CCTexture2D();
+                if (tex->initWithData(
+                    frame.pixels.data(),
+                    kCCTexture2DPixelFormat_RGBA8888,
+                    frame.width,
+                    frame.height,
+                    CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
+                )) {
+                    tex->autorelease();
+                    finishTask(task, tex, true);
                 } else {
-                    image->release();
+                    tex->release();
                     workerDownload(task);
                 }
             });
@@ -575,8 +585,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
             int w = 0, h = 0, ch = 0;
             unsigned char* pixels = stbi_load_from_memory(data.data(), (int)data.size(), &w, &h, &ch, 4); // fuerzo RGBA
 
-            if (pixels) {
-                // saco los colores en este mismo thread
+            if (pixels && w > 0 && h > 0 && w <= 16384 && h <= 16384) {
                 if (!LevelColors::get().getPair(realID)) {
                     LevelColors::get().extractFromRawData(realID, pixels, w, h, true);
                 }
@@ -657,20 +666,30 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                             // logica gif (mando a main thread)
                             Loader::get()->queueInMainThread([this, task, data, realID]() {
                                 { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
-                                auto image = new CCImage();
-                                if (image->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-                                    auto tex = new CCTexture2D();
-                                    if (tex->initWithImage(image)) {
-                                        image->release();
-                                        tex->autorelease();
-                                        finishTask(task, tex, true);
-                                    } else {
-                                        image->release();
-                                        tex->release();
-                                        finishTask(task, nullptr, false);
-                                    }
+                                auto gifData = GIFDecoder::decode(data.data(), data.size());
+                                if (gifData.frames.empty() || gifData.width <= 0 || gifData.height <= 0) {
+                                    finishTask(task, nullptr, false);
+                                    return;
+                                }
+
+                                auto const& frame = gifData.frames.front();
+                                if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) {
+                                    finishTask(task, nullptr, false);
+                                    return;
+                                }
+
+                                auto tex = new CCTexture2D();
+                                if (tex->initWithData(
+                                    frame.pixels.data(),
+                                    kCCTexture2DPixelFormat_RGBA8888,
+                                    frame.width,
+                                    frame.height,
+                                    CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
+                                )) {
+                                    tex->autorelease();
+                                    finishTask(task, tex, true);
                                 } else {
-                                    image->release();
+                                    tex->release();
                                     finishTask(task, nullptr, false);
                                 }
                             });
@@ -679,7 +698,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                             int sw = 0, sh = 0, ch = 0;
                             unsigned char* pixels = stbi_load_from_memory(data.data(), (int)data.size(), &sw, &sh, &ch, 4);
                              
-                            if (pixels) {
+                            if (pixels && sw > 0 && sh > 0 && sw <= 16384 && sh <= 16384) {
                                 if (!LevelColors::get().getPair(realID)) {
                                     LevelColors::get().extractFromRawData(realID, pixels, sw, sh, true);
                                 }

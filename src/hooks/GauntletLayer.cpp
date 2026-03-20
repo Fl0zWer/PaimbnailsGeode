@@ -272,7 +272,11 @@ public:
 
     void onTransitionFinished() {
         m_transitioning = false;
-        // reset sprite viejo
+    }
+
+    void onExit() override {
+        this->unschedule(schedule_selector(GauntletThumbnailNode::updateSlide));
+        CCNode::onExit();
     }
 };
 

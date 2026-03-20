@@ -60,6 +60,8 @@ float intensityToBlurRadius(float intensity) {
 
 CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, float intensity, bool useDirectRadius) {
     if (!texture) return nullptr;
+    if (targetSize.width <= 0.f || targetSize.height <= 0.f ||
+        targetSize.width > 4096.f || targetSize.height > 4096.f) return nullptr;
 
     auto srcSprite = CCSprite::createWithTexture(texture);
     if (!srcSprite) return nullptr;

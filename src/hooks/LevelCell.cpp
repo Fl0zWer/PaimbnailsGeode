@@ -294,18 +294,14 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
 
-        auto* blackImage = new CCImage();
+        auto* blackTex = new CCTexture2D();
         uint8_t blackPixel[4] = {0, 0, 0, 255};
-        if (blackImage->initWithImageData(blackPixel, 4)) {
-            auto* blackTex = new CCTexture2D();
-            if (blackTex->initWithImage(blackImage)) {
-                blackTex->autorelease();
-                this->addOrUpdateThumb(blackTex);
-            } else {
-                CC_SAFE_DELETE(blackTex);
-            }
+        if (blackTex->initWithData(blackPixel, kCCTexture2DPixelFormat_RGBA8888, 1, 1, CCSize(1, 1))) {
+            blackTex->autorelease();
+            this->addOrUpdateThumb(blackTex);
+        } else {
+            blackTex->release();
         }
-        blackImage->release();
     }
 
     void applyStaticThumbnailTexture(int32_t levelID, int currentRequestId, CCTexture2D* texture, bool enableSpinners) {

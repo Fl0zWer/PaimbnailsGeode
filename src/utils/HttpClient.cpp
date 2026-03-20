@@ -744,7 +744,7 @@ void HttpClient::downloadThumbnail(int levelId, bool isGif, DownloadCallback cal
 void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
     PaimonDebug::log("[HttpClient] downloadThumbnail llamado para level {} (priorizando WebP/GIF)", levelId);
     
-    bool preferGif = false; // logica fija, default en false
+    bool preferGif = true; // priorizar GIF para preservar animaciones sin dependencias externas
 
     auto headers = std::vector<std::string>{
         "X-API-Key: " + m_apiKey,

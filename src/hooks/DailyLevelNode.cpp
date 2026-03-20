@@ -121,6 +121,11 @@ public:
         CCSprite::update(dt);
     }
 
+    void onExit() override {
+        this->unscheduleUpdate();
+        CCSprite::onExit();
+    }
+
     void draw() override {
         if (auto* prog = getShaderProgram()) {
             prog->use();
