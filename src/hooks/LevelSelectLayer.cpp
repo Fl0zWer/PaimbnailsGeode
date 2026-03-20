@@ -6,7 +6,7 @@
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/BoomScrollLayer.hpp>
 #include <Geode/binding/GJGroundLayer.hpp>
-#include <Geode/binding/FMODAudioEngine.hpp> // acceso directo a FMOD
+#include <Geode/binding/FMODAudioEngine.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
@@ -15,21 +15,21 @@
 using namespace geode::prelude;
 using namespace Shaders;
 
-// hook a GameManager para que no pise nuestra cancion dinamica ni la de perfil
+// evitar que GameManager pise la cancion dinamica o la de perfil
 class $modify(PaimonGameManager, GameManager) {
     static void onModify(auto& self) {
-        // Este hook puede bloquear el original; dejamos que otros pre-hooks corran antes.
+        // otros hooks van primero, nosotros bloqueamos al final si hace falta
         (void)self.setHookPriorityPre("GameManager::fadeInMenuMusic", geode::Priority::Last);
     }
 
     $override
     void fadeInMenuMusic() {
         auto* dsm = DynamicSongManager::get();
-        // Solo bloquear si dynamic song esta activa Y estamos en un layer valido
+        // bloquear si dynamic song esta sonando en un layer valido
         if (dsm->m_isDynamicSongActive && dsm->isInValidLayer()) {
             return;
         }
-        // Bloquear si ProfileMusic esta reproduciendose
+        // tampoco si esta la musica de perfil
         if (ProfileMusicManager::get().isPlaying()) {
             return;
         }
@@ -37,12 +37,11 @@ class $modify(PaimonGameManager, GameManager) {
     }
 };
 
-// hook a FMODAudioEngine::playMusic para bloquear que GD reinicie la musica
-// durante transiciones cuando nuestra dynamic song esta activa.
-// Nuestras propias llamadas usan s_selfPlayMusic como bypass.
+// evitar que GD reinicie la musica en transiciones
+// nuestras llamadas propias pasan por s_selfPlayMusic
 class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
     static void onModify(auto& self) {
-        // Igual que fadeInMenuMusic: supresion condicional justo antes del original.
+        // mismo esquema que fadeInMenuMusic
         (void)self.setHookPriorityPre("FMODAudioEngine::playMusic", geode::Priority::Last);
     }
 
@@ -69,22 +68,21 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         int m_currentLevelID = 0;
         float m_pageCheckTimer = 0.f;
         float m_smoothedPeak = 0.f;
-        int m_verifyFrameCounter = 0;  // contador para verificacion periodica (~1s)
+        int m_verifyFrameCounter = 0;  // verificar musica cada ~1s
+        bool m_meteringEnabled = false;
     };
 
     $override
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
 
-        // Registrar que estamos en LevelSelectLayer
         DynamicSongManager::get()->enterLayer(DynSongLayer::LevelSelect);
 
-        // dynamic song + background: setup inicial
-        // en GD normal: pagina 0 = Stereo Madness (id 1)
+        // pagina 0 = nivel 1 (Stereo Madness)
         int levelID = p0 + 1;
         m_fields->m_currentLevelID = levelID;
         
-        // fuerzo update inmediato en init para saltarme el comportamiento de musica por defecto
+        // arrancar la cancion del nivel de entrada, saltando el default de GD
         if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
              auto level = GameLevelManager::sharedState()->getMainLevel(levelID, false);
              if (level) {
@@ -92,10 +90,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
              }
         }
         
-        // pongo el background inicial
+        // bg del nivel
         this->updateThumbnailBackground(levelID);
         
-        // oculto el background por defecto del juego
+        // quitar el fondo que GD pone
         CCArray* children = this->getChildren();
         if (children) {
             for (auto* node : CCArrayExt<CCNode*>(children)) {
@@ -104,7 +102,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                     node->setVisible(false);
                 }
                 
-                // oculto el ground layer si hace falta
+                // quitar ground tambien
                 if (typeinfo_cast<GJGroundLayer*>(node)) {
                     node->setVisible(false);
                 }
@@ -120,39 +118,37 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     void onEnter() {
         LevelSelectLayer::onEnter();
         
-        // Re-registrar layer (PlayLayer lo limpia con forceKill)
+        // re-registrar (PlayLayer lo borra con forceKill)
         auto* dsm = DynamicSongManager::get();
         dsm->enterLayer(DynSongLayer::LevelSelect);
         
         if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
-            // Si la dynamic song ya esta activa para el nivel actual,
-            // no relanzar — evita stutter al volver de InfoLayer
+            // si ya suena pa este nivel, no relanzar (evita corte al volver de info)
             if (dsm->m_isDynamicSongActive) {
                 return;
             }
-            // Primera entrada o viniendo de PlayLayer (forceKill limpio todo)
+            // primera vez o volviendo de PlayLayer
             this->scheduleOnce(schedule_selector(PaimonLevelSelectLayer::forcePlayMusic), 0.5f);
         }
     }
 
     $override
     void onExit() {
-        // Registrar salida del layer y detener dynamic song
+        // parar musica y desregistrar
         DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
         DynamicSongManager::get()->stopSong();
         LevelSelectLayer::onExit();
     }
 
     void forcePlayMusic(float dt) {
-         // paro lo que este sonando para dejar el estado limpio
-         // DynamicSongManager::get()->stopSong(); // en verdad playSong ya maneja transiciones
+         // playSong ya maneja transiciones, no necesito stopSong antes
 
          int levelID = m_fields->m_currentLevelID;
          if (levelID <= 0) levelID = 1;
          
          auto level = GameLevelManager::sharedState()->getMainLevel(levelID, false);
          if (level) {
-             // fuerzo play
+             // arrancar
              DynamicSongManager::get()->playSong(level);
          }
     }
@@ -160,9 +156,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     void checkPageLoop(float dt) {
         if (!m_scrollLayer) return;
 
-        // deteccion de posicion mejorada:
-        // calculo la pagina a mano mirando la posicion real del scroll
-        // esto es mas preciso que m_page, que puede ir con lag al scrollear
+        // calcular pagina a mano en vez de usar m_page (que lagea al scrollear)
 
         CCLayer* pagesLayer = m_scrollLayer->m_extendedLayer;
         if (!pagesLayer) return;
@@ -170,10 +164,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         float x = pagesLayer->getPositionX();
         float width = m_scrollLayer->getContentSize().width;
         
-        // indice de pagina basado en pos X
-        // X suele ser negativa si scrolleas a la derecha:
-        // pagina 0 = 0, pagina 1 = -width, etc.
-        // asi que page ≈ round(-x / width)
+        // page = round(-x / width)  (X negativa al scrollear a la derecha)
 
         int page = 0;
         if (width > 0) {
@@ -185,26 +176,25 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         // tamano del ciclo = 22 + 2 = 24
 
         const int totalLevels = 22;
-        const int emptySections = 2; // dos secciones vacias antes de volver a level 1
+        const int emptySections = 2;
         const int cycleSize = totalLevels + emptySections;
         
-        // normalizo la pagina a 0..23 (tambien si hay paginas negativas)
-        // esto crea un bucle infinito para elegir background
+        // wrap a 0..23 (funciona con negativo tambien)
         int cycleIndex = (page % cycleSize + cycleSize) % cycleSize;
         
         int levelID = -1;
         
 
-        // 0..21 representan niveles 1..22
+        // indices 0..21 → niveles 1..22
         if (cycleIndex < totalLevels) {
             levelID = cycleIndex + 1;
         } 
         
-        // Paimon: actualizacion de cancion dinamica + fondo
+        // cambio de pagina: actualizar cancion y fondo
         if (m_fields->m_currentLevelID != levelID) {
             m_fields->m_currentLevelID = levelID;
 
-            // lanzo la dynamic song del nivel nuevo
+            // nueva cancion pa el nivel
             if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
                 if (levelID != -1) {
                     if (auto level = GameLevelManager::sharedState()->getMainLevel(levelID, false)) {
@@ -213,12 +203,12 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                 }
             }
 
-            // actualizo el background a juego
+            // nuevo fondo
             this->updateThumbnailBackground(levelID);
         }
-        // Verificacion periodica (~1s a 60fps): detectar si otro mod cambio la musica
+        // chequeo cada ~1s si otro mod se metio con la musica
         if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
-            // Asegurar que estamos registrados como layer activo
+            // asegurar registro
             auto* dsm = DynamicSongManager::get();
             if (!dsm->isInValidLayer()) {
                 dsm->enterLayer(DynSongLayer::LevelSelect);
@@ -227,7 +217,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             m_fields->m_verifyFrameCounter++;
             if (m_fields->m_verifyFrameCounter >= 60) {
                 m_fields->m_verifyFrameCounter = 0;
-                // Solo verificar si no estamos en medio de una transicion
+                // no verificar durante transiciones
                 if (dsm->m_isDynamicSongActive && !dsm->isTransitioning() && !dsm->verifyPlayback()) {
                     dsm->exitLayer(DynSongLayer::LevelSelect);
                     dsm->onPlaybackHijacked();
@@ -236,7 +226,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         }
         // logica del efecto “pulso” con la musica
         if (m_fields->m_bgSprite && Mod::get()->getSettingValue<bool>("dynamic-song")) {
-             // con FMOD miro el master channel group
+             // master channel group pa leer picos
              auto engine = FMODAudioEngine::sharedEngine();
              if (engine->m_system) {
                  FMOD::ChannelGroup* masterGroup = nullptr;
@@ -247,7 +237,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                      masterGroup->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
                      
                      if (headDSP) {
-                         headDSP->setMeteringEnabled(false, true); // habilito el metering de salida
+                         if (!m_fields->m_meteringEnabled) {
+                             headDSP->setMeteringEnabled(false, true);
+                             m_fields->m_meteringEnabled = true;
+                         }
 
                          FMOD_DSP_METERING_INFO meteringInfo = {};
                          headDSP->getMeteringInfo(nullptr, &meteringInfo);
@@ -259,7 +252,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                              }
                          }
                          
-                         // suavizado: ataque rapido, release lento
+                         // smoothing: ataque rapido, decay lento
                          if (peak > m_fields->m_smoothedPeak) {
                              m_fields->m_smoothedPeak = peak;
                          } else {
@@ -267,10 +260,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
                              if (m_fields->m_smoothedPeak < 0.f) m_fields->m_smoothedPeak = 0.f;
                          }
                          
-                         // bajo un poco la sensibilidad (~30 %)
+                         // bajar sensibilidad un 30%
                          float val = m_fields->m_smoothedPeak * 0.7f;
 
-                         // brillo: base 80 -> pico 255
+                         // brillo: 80 base → 255 en pico
                          float brightnessVal = 80.f + (val * 175.f);
                          if (brightnessVal > 255.f) brightnessVal = 255.f;
                          GLubyte cVal = static_cast<GLubyte>(brightnessVal);
@@ -291,23 +284,21 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     
 
     void updateThumbnailBackground(int levelID) {
-        // este hook solo aplica a los 22 niveles main (1–22)
+        // solo niveles 1-22 tienen thumbnail
         bool isMainLevel = (levelID >= 1 && levelID <= 22);
 
         if (!isMainLevel) {
-             // las secciones vacias se quedan con fondo negro puro
+             // secciones vacias = negro
              this->applyBackground(nullptr, levelID); 
              return;
         }
 
-        // nombre de archivo de la mini
         std::string fileName = fmt::format("{}.png", levelID);
-        
-        // Ref<> mantiene vivo el layer hasta que el callback termine
+
         Ref<LevelSelectLayer> self = this;
 
         ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
-            // por si el usuario se fue a otra pagina mientras cargaba
+            // si cambio de pagina mientras cargaba, ignorar
             auto* layer = static_cast<PaimonLevelSelectLayer*>(self.data());
             if (layer->m_fields->m_currentLevelID == levelID) {
                 if (success && tex) {
@@ -319,14 +310,13 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         }, 5);
     }
     
-    // logica applyGroundColor eliminada (BG lo manejamos nosotros)
     
     void applyBackground(CCTexture2D* tex, int levelID = -1) {
         auto win = CCDirector::sharedDirector()->getWinSize();
-        CCSprite* finalSprite = nullptr; // capa blur
-        CCSprite* sharpSprite = nullptr; // capa nitida
+        CCSprite* finalSprite = nullptr;
+        CCSprite* sharpSprite = nullptr;
     
-        // limpio los fondos anteriores
+        // limpiar fondos anteriores con fade
         auto fadeAndRemove = [](Ref<CCSprite>& spr) {
             if (spr) {
                 spr->stopAllActions();
@@ -340,14 +330,14 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         if (tex) {
             sharpSprite = CCSprite::createWithTexture(tex);
             CCSize texSize = tex->getContentSize();
-            finalSprite = Shaders::createBlurredSprite(tex, texSize, 4.0f, true); // radio 4.0 directo para blur fuerte
+            finalSprite = Shaders::createBlurredSprite(tex, texSize, 4.0f, true);
             
             if (finalSprite) {
                     float scaleX = win.width / finalSprite->getContentSize().width;
                     float scaleY = win.height / finalSprite->getContentSize().height;
                     float scale = std::max(scaleX, scaleY);
 
-                    // helper: configura y anima un sprite de fondo
+                    // configura sprite de fondo con fade-in y zoom lento
                     auto setupBgSprite = [&](CCSprite* spr, int z, GLubyte startAlpha, GLubyte targetAlpha, ccColor3B tint) {
                         spr->setScale(scale);
                         spr->setPosition(win / 2);
@@ -368,7 +358,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             }
         }
         
-        m_fields->m_bgSprite = finalSprite; // blur principal
+        m_fields->m_bgSprite = finalSprite;
         m_fields->m_sharpBgSprite = sharpSprite;
     }
     

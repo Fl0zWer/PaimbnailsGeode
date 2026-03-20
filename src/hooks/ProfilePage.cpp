@@ -12,6 +12,7 @@
 #include "../utils/Debug.hpp"
 #include <chrono>
 #include <cmath>
+#include <vector>
 #include <fstream>
 #include <mutex>
 #include <atomic>
@@ -65,6 +66,7 @@ $on_game(Exiting) {
 
 // Acceso externo al cache de profileimg (usado por InfoLayer hook).
 CCTexture2D* getProfileImgCachedTexture(int accountID) {
+    if (s_profileImgShutdown.load(std::memory_order_acquire)) return nullptr;
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
     auto it = s_profileImgCache.find(accountID);
     if (it != s_profileImgCache.end()) return it->second;
@@ -949,11 +951,36 @@ class $modify(PaimonProfilePage, ProfilePage) {
         float padding = 3.f;
         CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
 
-        // stencil geometrico — evita conflictos con HappyTextures/TextureLdr
+        // stencil con esquinas redondeadas — usa CCDrawNode para evitar
+        // conflictos con HappyTextures/TextureLdr
+        float clipW = imgArea.width;
+        float clipH = imgArea.height;
+        float r = 6.f;
+        int segs = 8;
         auto stencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(imgArea.width,0), ccp(imgArea.width,imgArea.height), ccp(0,imgArea.height) };
+        std::vector<CCPoint> verts;
+        // esquina inferior-izquierda
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>(M_PI + (M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(r + r * cosf(a), r + r * sinf(a)));
+        }
+        // esquina inferior-derecha
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>(3.0 * M_PI / 2.0 + (M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(clipW - r + r * cosf(a), r + r * sinf(a)));
+        }
+        // esquina superior-derecha
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>((M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(clipW - r + r * cosf(a), clipH - r + r * sinf(a)));
+        }
+        // esquina superior-izquierda
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>(M_PI / 2.0 + (M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(r + r * cosf(a), clipH - r + r * sinf(a)));
+        }
         ccColor4F white = {1,1,1,1};
-        stencil->drawPolygon(rect, 4, white, 0, white);
+        stencil->drawPolygon(verts.data(), static_cast<int>(verts.size()), white, 0, white);
 
         auto clip = CCClippingNode::create();
         clip->setStencil(stencil);

@@ -120,10 +120,12 @@ bool CommunityHubLayer::init() {
     this->addChild(m_loadingSpinner, 100);
 
     this->setKeypadEnabled(true);
+    this->setTouchEnabled(true);
+    this->setTouchMode(kCCTouchesOneByOne);
+    this->setTouchPriority(0);
 #if defined(GEODE_IS_WINDOWS)
     this->setMouseEnabled(true);
 #endif
-    CCDirector::sharedDirector()->getTouchDispatcher()->addTargetedDelegate(this, 0, false);
 
     applyCaveEffect();
     this->scheduleUpdate();
@@ -138,6 +140,7 @@ void CommunityHubLayer::onEnterTransitionDidFinish() {
 }
 
 void CommunityHubLayer::update(float dt) {
+    if (m_isExiting) return;
     // Verificar que el efecto cueva sigue aplicado (por si el canal cambio)
     if (!m_caveApplied) {
         applyCaveEffect();
@@ -227,6 +230,8 @@ bool CommunityHubLayer::ccMouseScroll(float x, float y) {
 }
 
 void CommunityHubLayer::onBack(CCObject*) {
+    m_isExiting = true;
+    this->unscheduleUpdate();
     removeCaveEffect();
     CCDirector::sharedDirector()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);
 }

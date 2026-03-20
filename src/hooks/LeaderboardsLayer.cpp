@@ -32,22 +32,22 @@ protected:
 
         this->setTitle("Preview Profile");
 
-        // crear textura desde datos
+        // textura desde los datos raw
         auto* image = new CCImage();
         if (!image->initWithImageData(const_cast<uint8_t*>(m_data.data()), m_data.size())) {
-            CC_SAFE_DELETE(image);
+            image->release();
             return false;
         }
         auto* texture = new CCTexture2D();
         if (!texture->initWithImage(image)) {
-            CC_SAFE_DELETE(image);
-            CC_SAFE_DELETE(texture);
+            image->release();
+            texture->release();
             return false;
         }
         image->release();
         texture->autorelease();
 
-        // recoger config actual
+        // config actual del perfil
         ProfileConfig config;
         config.backgroundType = Mod::get()->getSavedValue<std::string>("scorecell-background-type", "thumbnail");
         config.blurIntensity = Mod::get()->getSavedValue<float>("scorecell-background-blur", 3.0f);
@@ -59,7 +59,7 @@ protected:
         config.separatorOpacity = 50;
 
         // crear nodo de preview
-        CCSize previewSize = {340, 50}; // tamano aprox de celda de puntuacion
+        CCSize previewSize = {320.f, 140.f};
         auto previewNode = ProfileThumbs::get().createProfileNode(texture, config, previewSize);
         
         if (previewNode) {
@@ -67,7 +67,7 @@ protected:
             m_mainLayer->addChild(previewNode);
         }
 
-        // anadir boton subir
+        // boton de subir
         auto uploadBtn = CCMenuItemSpriteExtra::create(
             ButtonSprite::create("Upload"),
             this,

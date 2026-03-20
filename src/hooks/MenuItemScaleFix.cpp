@@ -7,11 +7,10 @@
 
 using namespace geode::prelude;
 
-// Simplificado: mantiene el comportamiento de GD pero conserva la escala original.
+// conserva la escala original de nuestros botones despues del efecto de GD
 class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
-        // VeryLate = correr despues de casi todos los otros mods
-        // este hook intercepta TODOS los botones del juego, asi que minimizamos conflictos
+        // VeryLate porque toca todos los botones, menos chance de pisar otros mods
         (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::selected", geode::Priority::VeryLate);
         (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::unselected", geode::Priority::VeryLate);
         (void)self.setHookPriorityPost("CCMenuItemSpriteExtra::activate", geode::Priority::VeryLate);
@@ -22,8 +21,8 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
         bool m_scaleCaptured = false;
     };
 
+    $override
     void selected() {
-        // solo guardamos escala para los botones que registramos nosotros
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             if (!m_fields->m_scaleCaptured) {
                 m_fields->m_originalScale = this->getScale();
@@ -34,27 +33,25 @@ class $modify(PaimonMenuItemScaleFix, CCMenuItemSpriteExtra) {
         CCMenuItemSpriteExtra::selected();
     }
 
+    $override
     void unselected() {
         CCMenuItemSpriteExtra::unselected();
         
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             if (m_fields->m_scaleCaptured) {
-                // cancela la animacion de escala por defecto de GD
                 this->stopAllActions();
-                
-                // vuelve suavemente a la escala original
                 auto scaleTo = CCScaleTo::create(0.2f, m_fields->m_originalScale);
                 this->runAction(CCEaseSineOut::create(scaleTo));
             }
         }
     }
     
+    $override
     void activate() {
         CCMenuItemSpriteExtra::activate();
         
         if (PaimonButtonHighlighter::isRegisteredButton(this)) {
             if (m_fields->m_scaleCaptured) {
-                // restaura la escala original de golpe al activar
                 this->stopAllActions();
                 this->setScale(m_fields->m_originalScale);
             }

@@ -18,44 +18,9 @@ using namespace Shaders;
 
 // helpers pa los efectos premium
 namespace {
-    // mete particulas premium pegadas al nombre
-    void addPremiumParticlesToUsername(CCNode* parent, CCPoint const& namePos, float nameWidth) {
-        // crear 3 particulas pequenas alrededor del nombre
-        for (int i = 0; i < 3; ++i) {
-            auto particle = CCSprite::createWithSpriteFrameName("star_small01_001.png");
-            if (!particle) continue;
-            
-            float offsetX = (i - 1) * (nameWidth / 2.5f);
-            float offsetY = 8.0f + (rand() % 5);
-            particle->setPosition({namePos.x + offsetX, namePos.y + offsetY});
-            particle->setScale(0.25f);
-            particle->setOpacity(150);
-            particle->setColor({255, 215, 0}); // dorado
-            parent->addChild(particle, 200);
-            
-            // anim flotando chill
-            float duration = 1.0f + (rand() % 50) / 100.0f;
-            particle->runAction(CCRepeatForever::create(CCSequence::create(
-                CCSpawn::create(
-                    CCMoveBy::create(duration, {0, 5}),
-                    CCSequence::create(
-                        CCFadeTo::create(duration / 2, 220),
-                        CCFadeTo::create(duration / 2, 120),
-                        nullptr
-                    ),
-                    nullptr
-                ),
-                CCPlace::create({namePos.x + offsetX, namePos.y + offsetY}),
-                nullptr
-            )));
-        }
-    }
+   
 }
 
-// Cache estatico pa mover botones sin gastar de mas.
-// NOTA AUDIT VC-07: intencionalmente global â€” el offset es constante entre
-// todas las celdas de score (se calcula una sola vez al primer renderizado).
-// NO migrar a struct Fields: el valor no varia per-instancia.
 namespace {
     struct ButtonMoveCache {
         bool initialized = false;
@@ -208,9 +173,9 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
             std::string bgType = "gradient";
             float blurIntensity = 3.0f;
             float darkness = 0.2f;
-            bool useGradient = false;
             ccColor3B colorA = {255,255,255};
             ccColor3B colorB = {255,255,255};
+            bool useGradient = false;
             std::string gifKey = "";
 
             bool isCurrentUser = false;

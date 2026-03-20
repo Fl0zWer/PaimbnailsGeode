@@ -182,9 +182,12 @@ class $modify(PaimonLevelAreaInnerLayer, LevelAreaInnerLayer) {
 
 class $modify(InfoBtnHookFLAlertLayer, FLAlertLayer) {
     static void onModify(auto& self) {
-        // Este hook convive con PaimonDynamicPopupHook::show; lo dejamos despues.
+        // Dual-hook: convive con PaimonDynamicPopupHook::show (Priority::Late).
+        // VeryLate garantiza que corre despues del hook de animacion.
         (void)self.setHookPriorityPost("FLAlertLayer::show", geode::Priority::VeryLate);
     }
+
+    $override
 
     void show() {
         FLAlertLayer::show();

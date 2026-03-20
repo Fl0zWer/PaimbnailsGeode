@@ -577,7 +577,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
     m_delayLabel->setString(delBuf);
 
     // From/To display depends on action type
-    bool showFromTo = true;
     bool showMoveXY = false;
     bool showIntensity = false;
 
@@ -611,7 +610,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
             break;
         }
         case CommandAction::Move: {
-            showFromTo = false;
             showMoveXY = true;
             m_fromLabel->setString("-");
             m_toLabel->setString("-");
@@ -622,7 +620,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
             break;
         }
         case CommandAction::Color: {
-            showFromTo = false;
             char buf[64];
             snprintf(buf, sizeof(buf), "RGB(%d, %d, %d)", cmd.r, cmd.g, cmd.b);
             m_fromLabel->setString("-");
@@ -631,14 +628,12 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
             break;
         }
         case CommandAction::Wait: {
-            showFromTo = false;
             m_fromLabel->setString("-");
             m_toLabel->setString("-");
             m_extraLabel->setString("Pauses the timeline");
             break;
         }
         case CommandAction::Shake: {
-            showFromTo = false;
             showIntensity = true;
             m_fromLabel->setString("-");
             m_toLabel->setString("-");
@@ -648,7 +643,6 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
             break;
         }
         case CommandAction::Image: {
-            showFromTo = false;
             m_fromLabel->setString("-");
             m_toLabel->setString("-");
             m_extraLabel->setString(cmd.imagePath.empty() ? "No image set" : cmd.imagePath.c_str());
@@ -1053,9 +1047,6 @@ void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
 void CustomTransitionEditorPopup::updatePreviewArea() {
     // Mini preview shows timeline state
     if (m_commands.empty()) return;
-
-    float totalDur = 0.f;
-    for (auto const& cmd : m_commands) totalDur += cmd.duration + cmd.delay;
 
     // Visualize by adjusting box opacities based on command sequence
     bool hasFadeOut = false, hasFadeIn = false;

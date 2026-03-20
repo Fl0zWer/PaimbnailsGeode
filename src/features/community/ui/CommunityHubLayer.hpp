@@ -92,6 +92,7 @@ protected:
     FMOD::DSP* m_reverbDSP = nullptr;
     float m_savedBgVolume = 1.0f;
     bool m_caveApplied = false;
+    bool m_isExiting = false;
 
     void applyCaveEffect();
     void removeCaveEffect();

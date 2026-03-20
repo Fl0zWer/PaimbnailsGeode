@@ -3,10 +3,7 @@
 #include <fstream>
 #include <filesystem>
 
-// stbi_write_png_to_func: codifica PNG en memoria sin tocar el filesystem.
-// CCImage::saveToFile usa fopen() internamente, que en Windows NO soporta
-// paths UTF-8 (acentos, ñ, etc. en el nombre de usuario). Usar stb directo
-// + std::ofstream(std::filesystem::path) evita ese bug.
+// stbi_write_png_to_func codifica PNG en memoria y evita el bug de rutas UTF-8 en Windows.
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STBIW_WINDOWS_UTF8
 #include "stb_image_write.h"
@@ -27,10 +24,10 @@ std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbDa
     std::vector<uint8_t> rgba(pixelCount * 4);
     
     for (size_t i = 0; i < pixelCount; ++i) {
-        rgba[i * 4 + 0] = rgbData[i * 3 + 0]; // r
-        rgba[i * 4 + 1] = rgbData[i * 3 + 1]; // g
-        rgba[i * 4 + 2] = rgbData[i * 3 + 2]; // b
-        rgba[i * 4 + 3] = 255;                // a (completamente opaco)
+        rgba[i * 4 + 0] = rgbData[i * 3 + 0];
+        rgba[i * 4 + 1] = rgbData[i * 3 + 1];
+        rgba[i * 4 + 2] = rgbData[i * 3 + 2];
+        rgba[i * 4 + 3] = 255; // alpha opaco
     }
     
     return rgba;
@@ -39,7 +36,7 @@ std::vector<uint8_t> ImageConverter::rgbToRgba(std::vector<uint8_t> const& rgbDa
 bool ImageConverter::rgbaToPngBuffer(const uint8_t* rgba, uint32_t width, uint32_t height, std::vector<uint8_t>& outPngData) {
     if (!rgba || width == 0 || height == 0) return false;
     outPngData.clear();
-    outPngData.reserve(static_cast<size_t>(width) * height); // heuristico; stb crece segun necesite
+    outPngData.reserve(static_cast<size_t>(width) * height); // reserva heuristica
     int ok = stbi_write_png_to_func(stbiWriteToVector, &outPngData,
         static_cast<int>(width), static_cast<int>(height), 4, rgba,
         static_cast<int>(width) * 4);

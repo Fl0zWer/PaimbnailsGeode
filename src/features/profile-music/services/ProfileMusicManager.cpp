@@ -13,6 +13,17 @@
 
 using namespace geode::prelude;
 
+// Helper: extrae el FMOD::Channel* subyacente del ChannelGroup de musica de fondo.
+static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
+    if (!engine || !engine->m_backgroundMusicChannel) return nullptr;
+    int numCh = 0;
+    engine->m_backgroundMusicChannel->getNumChannels(&numCh);
+    if (numCh <= 0) return nullptr;
+    FMOD::Channel* ch = nullptr;
+    if (engine->m_backgroundMusicChannel->getChannel(0, &ch) != FMOD_OK) return nullptr;
+    return ch;
+}
+
 ProfileMusicManager::ProfileMusicManager() {
     std::error_code ec;
     std::filesystem::create_directories(getCacheDir(), ec);
@@ -353,6 +364,19 @@ void ProfileMusicManager::playProfileMusic(int accountID) {
         return;
     }
 
+    // Respetar el toggle nativo de musica de menu de GD (variable 0122)
+    if (GameManager::get()->getGameVariable("0122")) {
+        log::info("[ProfileMusic] Menu music is toggled off (0122), skipping");
+        return;
+    }
+
+    // Respetar el volumen de musica de GD
+    auto engineCheck = FMODAudioEngine::sharedEngine();
+    if (engineCheck && engineCheck->m_musicVolume <= 0.0f) {
+        log::info("[ProfileMusic] Music volume is 0, skipping");
+        return;
+    }
+
     if (m_isPlaying && m_currentProfileID == accountID && !m_isPaused && !m_isFadingOut) {
         log::info("[ProfileMusic] Already playing music for this account");
         return;
@@ -380,6 +404,19 @@ void ProfileMusicManager::playProfileMusic(int accountID, ProfileMusicConfig con
 
     if (!isEnabled()) {
         log::info("[ProfileMusic] Profile music is disabled in settings");
+        return;
+    }
+
+    // Respetar el toggle nativo de musica de menu de GD (variable 0122)
+    if (GameManager::get()->getGameVariable("0122")) {
+        log::info("[ProfileMusic] Menu music is toggled off (0122), skipping");
+        return;
+    }
+
+    // Respetar el volumen de musica de GD
+    auto engineCheck = FMODAudioEngine::sharedEngine();
+    if (engineCheck && engineCheck->m_musicVolume <= 0.0f) {
+        log::info("[ProfileMusic] Music volume is 0, skipping");
         return;
     }
 
@@ -426,368 +463,232 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
 }
 
 void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int startMs, int endMs) {
-    // Limpiar audio anterior de ProfileMusic SIN tocar DynamicSongManager
+    // Cancelar fades y limpiar estado
     m_isFadingIn = false;
     m_isFadingOut = false;
-    if (m_musicChannel) { m_musicChannel->stop(); m_musicChannel = nullptr; }
-    if (m_currentSound) { m_currentSound->release(); m_currentSound = nullptr; }
     m_isPlaying = false;
     m_isPaused = false;
+
+    // Limpiar efecto cueva si estaba activo
+    forceRemoveCaveEffect();
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
 
-    FMOD::System* system = engine->m_system;
-
-    // Usar FMOD_CREATESTREAM para carga asincrona (no bloquea el hilo principal)
-    // y FMOD_NONBLOCKING para que no haya tiron
-    FMOD_MODE mode = FMOD_CREATESTREAM | FMOD_NONBLOCKING;
-    if (loop) {
-        mode |= FMOD_LOOP_NORMAL;
-    }
-
-    FMOD_RESULT result = system->createSound(path.c_str(), mode, nullptr, &m_currentSound);
-    if (result != FMOD_OK || !m_currentSound) {
-        log::error("[ProfileMusic] Failed to create sound from: {}", path);
-        return;
-    }
-
-    // Guardar los parametros para usarlos cuando el sonido este listo
+    float gameVolume = engine->m_musicVolume;
+    m_bgVolumeBeforeFade = gameVolume;
     m_currentAudioPath = path;
     m_pendingStartMs = startMs;
     m_pendingEndMs = endMs;
+    m_pendingLoop = loop;
 
-    // Programar la verificacion del estado del sonido
-    Loader::get()->queueInMainThread([this]() {
-        checkSoundReady();
-    });
-}
-
-void ProfileMusicManager::checkSoundReady() {
-    if (!m_currentSound) return;
-
-    FMOD_OPENSTATE openState;
-    unsigned int percentBuffered;
-    bool starving, diskBusy;
-
-    FMOD_RESULT result = m_currentSound->getOpenState(&openState, &percentBuffered, &starving, &diskBusy);
-
-    if (result != FMOD_OK) {
-        log::error("[ProfileMusic] Failed to get sound state");
-        stopCurrentAudio();
-        return;
-    }
-
-    if (openState == FMOD_OPENSTATE_READY) {
-        // El sonido esta listo, ahora podemos reproducirlo
-        finishPlayback();
-    } else if (openState == FMOD_OPENSTATE_ERROR) {
-        log::error("[ProfileMusic] Sound failed to load");
-        stopCurrentAudio();
-    } else {
-        // Todavia cargando, verificar de nuevo en el proximo frame
-        Loader::get()->queueInMainThread([this]() {
-            checkSoundReady();
-        });
-    }
-}
-
-void ProfileMusicManager::finishPlayback() {
-    if (!m_currentSound) return;
-
-    auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_system) {
-        stopCurrentAudio();
-        return;
-    }
-
-    float gameVolume = engine->m_musicVolume;
-    m_bgVolumeBeforeFade = gameVolume;
     bool useCrossfade = isCrossfadeEnabled();
-
-    // Verificar si DynamicSong esta activa (realmente sonando)
     auto* dsm = DynamicSongManager::get();
     bool dynamicIsActive = dsm->m_isDynamicSongActive && !dsm->wasDynamicStoppedByProfile();
 
-    // Si no hay dynamic y no hay crossfade, detener BG completamente
-    // para que mods externos no puedan reactivarlo y causar musica doble
-    if (!dynamicIsActive && !useCrossfade) {
+    // Guardar posicion de lo que sea que este sonando para restaurar luego
+    m_savedBgPosMs = engine->getMusicTimeMS(0);
+
+    if (useCrossfade || dynamicIsActive) {
+        // Dip fade: bajar volumen del main → a vol=0 cargar profile → subir
+        float currentVol = 0.0f;
+        if (engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->getVolume(&currentVol);
+        }
+
+        if (currentVol > 0.001f) {
+            m_isFadingOut = true;
+            // restoreAfter=false → al llegar a 0, cargamos la musica de perfil
+            executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false);
+        } else {
+            // Ya estamos en silencio — notificar dynamic y cargar directo
+            if (dynamicIsActive) dsm->stopDynamicForProfileMusic();
+            loadProfileOnMainChannel(path, loop, startMs, endMs, 0.0f);
+            m_isPlaying = true;
+            m_isFadingIn = true;
+            executeDipFadeIn(0, FADE_STEPS, 0.0f, gameVolume);
+        }
+    } else {
+        // Sin crossfade, sin dynamic: parar BG y cargar directo
         if (engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->stop();
         }
-    } else if (useCrossfade && engine->m_backgroundMusicChannel) {
-        // Guardar posicion del BG para restaurarla al salir del perfil
-        m_savedBgPosMs = engine->getMusicTimeMS(0);
+        loadProfileOnMainChannel(path, loop, startMs, endMs, gameVolume);
+        m_isPlaying = true;
+    }
+}
+
+void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool loop, int startMs, int endMs, float volume) {
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_system) return;
+
+    DynamicSongManager::s_selfPlayMusic = true;
+    engine->playMusic(path, loop, 0.0f, 0);
+    DynamicSongManager::s_selfPlayMusic = false;
+
+    if (engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(volume);
     }
 
-    // Obtener duracion del archivo
-    unsigned int lengthMs = 0;
-    m_currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
+    // Configurar loop points y posicion via Channel*
+    auto* bgCh = getMainBgChannel(engine);
+    if (!bgCh) return;
 
-    int startMs = m_pendingStartMs;
-    int endMs = m_pendingEndMs;
+    FMOD::Sound* sound = nullptr;
+    bgCh->getCurrentSound(&sound);
+    if (!sound) return;
+
+    unsigned int lengthMs = 0;
+    sound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
 
     if (startMs == 0 && endMs == 0) {
-        endMs = lengthMs;
-    } else {
-        if (endMs > static_cast<int>(lengthMs) || endMs <= 0) endMs = lengthMs;
-        if (startMs >= endMs) startMs = 0;
+        endMs = static_cast<int>(lengthMs);
     }
+    if (endMs > static_cast<int>(lengthMs) || endMs <= 0) endMs = static_cast<int>(lengthMs);
+    if (startMs >= endMs) startMs = 0;
 
-    // Configurar loop points
-    m_currentSound->setLoopPoints(
+    sound->setLoopPoints(
         static_cast<unsigned int>(startMs), FMOD_TIMEUNIT_MS,
         static_cast<unsigned int>(endMs), FMOD_TIMEUNIT_MS
     );
 
-    FMOD_RESULT result = engine->m_system->playSound(m_currentSound, nullptr, true, &m_musicChannel);
-    if (result != FMOD_OK || !m_musicChannel) {
-        log::error("[ProfileMusic] Failed to play sound");
-        m_currentSound->release();
-        m_currentSound = nullptr;
-        return;
+    if (startMs > 0) {
+        bgCh->setPosition(static_cast<unsigned int>(startMs), FMOD_TIMEUNIT_MS);
     }
 
-    m_musicChannel->setPosition(static_cast<unsigned int>(startMs), FMOD_TIMEUNIT_MS);
-
-    if (dynamicIsActive) {
-        // ═══ Crossfade DynamicSong ↓ ProfileMusic ↑ (no tocar BG) ═══
-        float dynVol = dsm->getDynamicVolume();
-
-        m_musicChannel->setVolume(0.0f);
-        m_musicChannel->setPaused(false);
-
-        m_isPlaying = true;
-        m_isPaused = false;
-        m_isFadingIn = true;
-
-        log::info("[ProfileMusic] Crossfade Dynamic->Profile (dynVol:{:.2f}, target:{:.2f})",
-            dynVol, gameVolume);
-
-        // Crossfade dedicado: baja dynamic, sube profile
-        executeCrossfadeWithDynamic(0, FADE_STEPS, 0.0f, gameVolume, dynVol);
-
-    } else if (useCrossfade) {
-        // ═══ Crossfade normal con BG ═══
-        m_musicChannel->setVolume(0.0f);
-        m_musicChannel->setPaused(false);
-
-        m_isPlaying = true;
-        m_isPaused = false;
-        m_isFadingIn = true;
-
-        log::info("[ProfileMusic] Crossfade BG->Profile for account {} (target:{:.2f})",
-            m_currentProfileID, gameVolume);
-
-        fadeInProfileMusic(gameVolume);
-
-    } else {
-        // ═══ Sin crossfade ═══
-        m_musicChannel->setVolume(gameVolume);
-        m_musicChannel->setPaused(false);
-
-        m_isPlaying = true;
-        m_isPaused = false;
-
-        log::info("[ProfileMusic] Playing profile music for account {} (vol:{:.2f})",
-            m_currentProfileID, gameVolume);
-    }
+    log::info("[ProfileMusic] Loaded on main channel: {} ({}ms-{}ms, vol:{:.2f})", path, startMs, endMs, volume);
 }
 
 void ProfileMusicManager::fadeInProfileMusic(float targetVolume) {
-    // Crossfade: musica de fondo baja de m_bgVolumeBeforeFade -> 0, perfil sube de 0 -> targetVolume
-    executeFadeStep(0, FADE_STEPS, 0.0f, targetVolume, m_bgVolumeBeforeFade, 0.0f, false);
-}
-
-void ProfileMusicManager::executeCrossfadeWithDynamic(int step, int totalSteps,
-    float profileFrom, float profileTo, float dynFrom) {
-
-    // Single-thread crossfade: one thread handles all steps instead of spawning 20+.
-    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
-
-    std::thread([this, step, totalSteps, profileFrom, profileTo, dynFrom, stepMs]() {
-        for (int s = step; s <= totalSteps; s++) {
-            if (s > step) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            }
-
-            int currentStep = s;
-            Loader::get()->queueInMainThread([this, currentStep, totalSteps, profileFrom, profileTo, dynFrom]() {
-                if (!m_isFadingIn) return;
-
-                auto* dsm = DynamicSongManager::get();
-
-                if (currentStep >= totalSteps) {
-                    if (m_musicChannel) m_musicChannel->setVolume(profileTo);
-                    dsm->setDynamicVolume(0.0f);
-                    // Destruir el canal dinamico completamente para evitar musica doble
-                    dsm->stopDynamicForProfileMusic();
-                    m_isFadingIn = false;
-                    log::info("[ProfileMusic] Crossfade complete, dynamic destroyed, profile at {:.2f}", profileTo);
-                    return;
-                }
-
-                float t = static_cast<float>(currentStep) / static_cast<float>(totalSteps);
-                float eT = (t < 0.5f) ? (2.0f * t * t) : (1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) / 2.0f);
-
-                float profileVol = profileFrom + (profileTo - profileFrom) * eT;
-                float dynVol = dynFrom * (1.0f - eT);
-
-                if (m_musicChannel) m_musicChannel->setVolume(std::max(0.0f, std::min(1.0f, profileVol)));
-                dsm->setDynamicVolume(dynVol);
-            });
-        }
-    }).detach();
+    executeDipFadeIn(0, FADE_STEPS, 0.0f, targetVolume);
 }
 
 void ProfileMusicManager::fadeOutAndStop() {
-    if (!m_musicChannel) {
-        // No hay canal
-        auto* dsm = DynamicSongManager::get();
-        if (dsm->wasDynamicStoppedByProfile()) {
-            dsm->replayLastSong();
-        } else {
-            // Recargar BG desde cero (fue destruido anteriormente)
-            reloadBgMusic(FMODAudioEngine::sharedEngine()->m_musicVolume);
-        }
-        return;
-    }
-
-    // Si DynamicSong fue destruida por nosotros, recrearla directamente
-    auto* dsm = DynamicSongManager::get();
-    if (dsm->wasDynamicStoppedByProfile()) {
-        if (m_musicChannel) { m_musicChannel->stop(); m_musicChannel = nullptr; }
-        if (m_currentSound) { m_currentSound->release(); m_currentSound = nullptr; }
-        m_isPlaying = false;
-        m_isPaused = false;
-        m_isFadingOut = false;
-        m_isFadingIn = false;
-        m_currentProfileID = 0;
-        m_currentAudioPath.clear();
-        dsm->replayLastSong();
-        log::info("[ProfileMusic] Stopped and replaying DynamicSong");
-        return;
-    }
-
     m_isFadingOut = true;
     m_isFadingIn = false;
 
-    // Releer el volumen objetivo del juego (por si cambio durante la reproduccion)
     auto engine = FMODAudioEngine::sharedEngine();
-    float targetBgVolume = m_bgVolumeBeforeFade;
-    if (engine) {
-        targetBgVolume = engine->m_musicVolume;
-    }
-    m_bgVolumeBeforeFade = targetBgVolume;
+    if (!engine) return;
 
-    // Obtener volumen actual de la musica de perfil
-    float currentProfileVol = 0.0f;
-    m_musicChannel->getVolume(&currentProfileVol);
-
-    log::info("[ProfileMusic] Starting fade-out (profile vol: {:.2f}, bg target: {:.2f})",
-        currentProfileVol, targetBgVolume);
-
-    // Guardar posicion del BG antes de recargar (por si aun esta el canal original)
-    auto engineForPos = FMODAudioEngine::sharedEngine();
-    if (engineForPos && engineForPos->m_backgroundMusicChannel) {
-        m_savedBgPosMs = engineForPos->getMusicTimeMS(0);
+    float currentVol = 0.0f;
+    if (engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->getVolume(&currentVol);
     }
 
-    // Despausar la musica de fondo con volumen 0 para empezar el fade-in
-    // Como el BG fue destruido, hay que recargarlo desde cero
-    reloadBgMusic(0.0f);
+    // Actualizar volumen objetivo (por si cambio durante la reproduccion)
+    m_bgVolumeBeforeFade = engine->m_musicVolume;
 
-    // Crossfade: perfil baja de currentProfileVol -> 0, fondo sube de 0 -> targetBgVolume
-    executeFadeStep(0, FADE_STEPS, currentProfileVol, 0.0f, 0.0f, targetBgVolume, true);
+    log::info("[ProfileMusic] Starting dip fade-out (vol: {:.2f}, bg target: {:.2f})",
+        currentVol, m_bgVolumeBeforeFade);
+
+    // Dip fade: bajar main a 0 → cargar menu/dynamic → subir
+    // restoreAfter=true: al llegar a 0 se restaura la musica anterior
+    executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, true);
 }
 
-void ProfileMusicManager::executeFadeStep(int step, int totalSteps, float profileFrom, float profileTo,
-                                           float bgFrom, float bgTo, bool stopAfter) {
-    // Single-thread fade: launch ONE thread that sleeps between steps and queues
-    // volume updates to the main thread. Replaces the old pattern that spawned
-    // a new detached thread per step (20+ threads per fade).
-    float fadeDurationMs = getFadeDurationMs();
-    float stepDelayMs = fadeDurationMs / static_cast<float>(totalSteps);
-
-    std::thread([this, step, totalSteps, profileFrom, profileTo, bgFrom, bgTo, stopAfter, stepDelayMs]() {
-        for (int s = step; s <= totalSteps; s++) {
-            // sleep between steps (skip first)
-            if (s > step) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepDelayMs)));
-            }
-
-            int currentStep = s;
-            Loader::get()->queueInMainThread([this, currentStep, totalSteps, profileFrom, profileTo,
-                                               bgFrom, bgTo, stopAfter]() {
-                // check cancellation
-                if (stopAfter && !m_isFadingOut) return;
-                if (!stopAfter && !m_isFadingIn) return;
-
-                if (currentStep > totalSteps) return; // safety
-
-                if (currentStep == totalSteps) {
-                    // Fade terminado
-                    if (stopAfter) {
-                        if (m_musicChannel) {
-                            m_musicChannel->stop();
-                            m_musicChannel = nullptr;
-                        }
-                        if (m_currentSound) {
-                            m_currentSound->release();
-                            m_currentSound = nullptr;
-                        }
-                        m_isPlaying = false;
-                        m_isPaused = false;
-                        m_isFadingOut = false;
-                        m_currentProfileID = 0;
-                        m_currentAudioPath.clear();
-
-                        auto* dsm = DynamicSongManager::get();
-                        if (dsm->wasDynamicStoppedByProfile()) {
-                            dsm->replayLastSong();
-                        } else {
-                            // BG ya fue recargado por fadeOutAndStop con vol 0
-                            // Solo asegurar que tiene el volumen correcto
-                            auto engine = FMODAudioEngine::sharedEngine();
-                            if (engine && engine->m_backgroundMusicChannel) {
-                                engine->m_backgroundMusicChannel->setVolume(bgTo);
-                            }
-                        }
-                        log::info("[ProfileMusic] Fade-out complete, music restored");
-                    } else {
-                        // Fade-in completo: BG ya llego a vol 0, destruirlo completamente
-                        if (bgFrom != 0.0f || bgTo != 0.0f) {
-                            auto engine = FMODAudioEngine::sharedEngine();
-                            if (engine && engine->m_backgroundMusicChannel) {
-                                engine->m_backgroundMusicChannel->stop();
-                            }
-                        }
-                        if (m_musicChannel) {
-                            m_musicChannel->setVolume(profileTo);
-                        }
-                        m_isFadingIn = false;
-                        log::info("[ProfileMusic] Fade-in complete, profile music playing at {:.2f}", profileTo);
-                    }
-                    return;
-                }
-
-                // Interpolate
-                float t = static_cast<float>(currentStep) / static_cast<float>(totalSteps);
-                float easedT = (t < 0.5f) ? (2.0f * t * t) : (1.0f - std::pow(-2.0f * t + 2.0f, 2.0f) / 2.0f);
-
-                float profileVol = profileFrom + (profileTo - profileFrom) * easedT;
-                float bgVol = bgFrom + (bgTo - bgFrom) * easedT;
-
-                if (m_musicChannel) {
-                    m_musicChannel->setVolume(std::max(0.0f, std::min(1.0f, profileVol)));
-                }
-                auto engine = FMODAudioEngine::sharedEngine();
-                if (engine && engine->m_backgroundMusicChannel) {
-                    engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, bgVol)));
-                }
-            });
+// ─── Dip Fade: fade-out del canal principal ──────────────────────────
+// Al llegar a volTo (0), carga la musica correspondiente y hace fade-in.
+void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
+    float volFrom, float volTo, bool restoreAfter) {
+    if (step > totalSteps || !m_isFadingOut) {
+        // Fade-out terminado
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->setVolume(0.0f);
         }
-    }).detach();
+
+        auto* dsm = DynamicSongManager::get();
+
+        if (restoreAfter) {
+            // Saliendo de profile music: restaurar menu o dynamic
+            m_isPlaying = false;
+            m_isPaused = false;
+            m_currentProfileID = 0;
+            m_currentAudioPath.clear();
+
+            if (dsm->wasDynamicStoppedByProfile()) {
+                dsm->replayLastSong();
+                m_isFadingOut = false;
+                log::info("[ProfileMusic] Fade-out complete, dynamic song replayed");
+            } else {
+                reloadBgMusic(0.0f);
+                m_isFadingOut = false;
+                m_isFadingIn = true;
+                executeDipFadeIn(0, totalSteps, 0.0f, m_bgVolumeBeforeFade);
+                log::info("[ProfileMusic] Fade-out complete, menu reloaded, fading in");
+            }
+        } else {
+            // Entrando a profile music: notificar dynamic y cargar profile
+            if (dsm->m_isDynamicSongActive && !dsm->wasDynamicStoppedByProfile()) {
+                dsm->stopDynamicForProfileMusic();
+            }
+            loadProfileOnMainChannel(m_currentAudioPath, m_pendingLoop,
+                                     m_pendingStartMs, m_pendingEndMs, 0.0f);
+            m_isPlaying = true;
+            m_isFadingOut = false;
+            m_isFadingIn = true;
+            float gameVolume = engine ? engine->m_musicVolume : 1.0f;
+            executeDipFadeIn(0, totalSteps, 0.0f, gameVolume);
+        }
+        return;
+    }
+
+    float t = static_cast<float>(step) / static_cast<float>(totalSteps);
+    float eT = (t < 0.5f) ? (2.f*t*t) : (1.f - std::pow(-2.f*t+2.f, 2.f)/2.f);
+    float vol = volFrom + (volTo - volFrom) * eT;
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
+    }
+
+    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    int next = step + 1;
+
+    Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, restoreAfter, stepMs]() {
+        std::thread([this, next, totalSteps, volFrom, volTo, restoreAfter, stepMs]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
+            Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, restoreAfter]() {
+                if (!m_isFadingOut) return;
+                executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreAfter);
+            });
+        }).detach();
+    });
+}
+
+// ─── Dip Fade: fade-in del canal principal ───────────────────────────
+void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
+    float volFrom, float volTo) {
+    if (step > totalSteps || !m_isFadingIn) {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->setVolume(volTo);
+        }
+        m_isFadingIn = false;
+        return;
+    }
+
+    float t = static_cast<float>(step) / static_cast<float>(totalSteps);
+    float eT = (t < 0.5f) ? (2.f*t*t) : (1.f - std::pow(-2.f*t+2.f, 2.f)/2.f);
+    float vol = volFrom + (volTo - volFrom) * eT;
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel) {
+        engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
+    }
+
+    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    int next = step + 1;
+
+    Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, stepMs]() {
+        std::thread([this, next, totalSteps, volFrom, volTo, stepMs]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
+            Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo]() {
+                if (!m_isFadingIn) return;
+                executeDipFadeIn(next, totalSteps, volFrom, volTo);
+            });
+        }).detach();
+    });
 }
 
 void ProfileMusicManager::stopCurrentAudio() {
@@ -797,36 +698,17 @@ void ProfileMusicManager::stopCurrentAudio() {
     m_caveTransitioning = false;
 
     // Limpiar efecto cueva si estaba activo
-    if (m_caveEffectActive && m_musicChannel && m_lowpassDSP) {
-        m_musicChannel->removeDSP(m_lowpassDSP);
-    }
-    if (m_lowpassDSP) {
-        m_lowpassDSP->release();
-        m_lowpassDSP = nullptr;
-    }
-    m_caveEffectActive = false;
-    m_originalFrequency = 0.0f;
-    m_originalVolume = 0.0f;
-
-    if (m_musicChannel) {
-        m_musicChannel->stop();
-        m_musicChannel = nullptr;
-    }
-    if (m_currentSound) {
-        m_currentSound->release();
-        m_currentSound = nullptr;
-    }
+    forceRemoveCaveEffect();
 
     m_isPlaying = false;
     m_isPaused = false;
 
     auto* dsm = DynamicSongManager::get();
     if (dsm->wasDynamicStoppedByProfile()) {
-        // DynamicSong fue destruida por nosotros — recrearla
+        // DynamicSong fue detenida por nosotros — recrearla en el main channel
         dsm->replayLastSong();
     } else {
-        // No hay dynamic song — recargar la musica de fondo desde cero
-        // (fue destruida al iniciar profile music para evitar musica doble)
+        // No hay dynamic song — recargar la musica de fondo en el main channel
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine) {
             reloadBgMusic(engine->m_musicVolume);
@@ -838,6 +720,10 @@ void ProfileMusicManager::reloadBgMusic(float startVolume) {
     auto engine = FMODAudioEngine::sharedEngine();
     auto gm = GameManager::get();
     if (!engine || !gm) return;
+
+    // Respetar el toggle nativo de musica de menu de GD (variable 0122)
+    if (gm->getGameVariable("0122")) return;
+    if (engine->m_musicVolume <= 0.0f) return;
 
     std::string menuTrack = gm->getMenuMusicFile();
     DynamicSongManager::s_selfPlayMusic = true;
@@ -856,16 +742,22 @@ void ProfileMusicManager::reloadBgMusic(float startVolume) {
 }
 
 void ProfileMusicManager::pauseProfileMusic() {
-    if (m_musicChannel && m_isPlaying) {
-        m_musicChannel->setPaused(true);
+    if (m_isPlaying) {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->setPaused(true);
+        }
         m_isPaused = true;
         log::info("[ProfileMusic] Paused");
     }
 }
 
 void ProfileMusicManager::resumeProfileMusic() {
-    if (m_musicChannel && m_isPaused) {
-        m_musicChannel->setPaused(false);
+    if (m_isPaused) {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->setPaused(false);
+        }
         m_isPaused = false;
         log::info("[ProfileMusic] Resumed");
     }
@@ -880,11 +772,11 @@ void ProfileMusicManager::stopProfileMusic() {
 
     // Si no hay nada reproduciendose, no tocar nada
     // (evita que stopCurrentAudio restaure el BG channel innecesariamente)
-    if (!m_isPlaying && !m_musicChannel) {
+    if (!m_isPlaying) {
         return;
     }
 
-    if (m_isPlaying && m_musicChannel && isCrossfadeEnabled()) {
+    if (m_isPlaying && isCrossfadeEnabled()) {
         // Usar fade-out suave
         log::info("[ProfileMusic] Starting fade-out transition");
         fadeOutAndStop();
@@ -1093,48 +985,17 @@ void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
 
-    // Usar el volumen de musica configurado en los ajustes del juego
+    // Respetar el toggle nativo de musica de menu de GD (variable 0122)
+    if (GameManager::get()->getGameVariable("0122")) return;
+    if (engine->m_musicVolume <= 0.0f) return;
+
     float gameVolume = engine->m_musicVolume;
-    if (engine->m_backgroundMusicChannel) {
-        // Pausar la musica de fondo del juego para el preview
-        engine->m_backgroundMusicChannel->setPaused(true);
-    }
 
-    FMOD::System* system = engine->m_system;
+    // Guardar posicion actual para restaurar al salir del preview
+    m_savedBgPosMs = engine->getMusicTimeMS(0);
 
-    FMOD_RESULT result = system->createSound(filePath.c_str(), FMOD_DEFAULT | FMOD_LOOP_NORMAL, nullptr, &m_currentSound);
-    if (result != FMOD_OK || !m_currentSound) {
-        // Restaurar musica si falla
-        if (engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->setPaused(false);
-        }
-        return;
-    }
-
-    unsigned int lengthMs;
-    m_currentSound->getLength(&lengthMs, FMOD_TIMEUNIT_MS);
-
-    if (endMs > static_cast<int>(lengthMs)) endMs = lengthMs;
-    if (startMs >= endMs) startMs = 0;
-
-    m_currentSound->setLoopPoints(startMs, FMOD_TIMEUNIT_MS, endMs, FMOD_TIMEUNIT_MS);
-
-    result = system->playSound(m_currentSound, nullptr, false, &m_musicChannel);
-    if (result != FMOD_OK || !m_musicChannel) {
-        m_currentSound->release();
-        m_currentSound = nullptr;
-        // Restaurar musica si falla
-        if (engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->setPaused(false);
-        }
-        return;
-    }
-
-    m_musicChannel->setPosition(startMs, FMOD_TIMEUNIT_MS);
-
-    // Usar el volumen del juego
-    m_musicChannel->setVolume(gameVolume);
-
+    // Cargar preview en el canal principal
+    loadProfileOnMainChannel(filePath, true, startMs, endMs, gameVolume);
     m_isPlaying = true;
     m_isPaused = false;
 }
@@ -1234,10 +1095,10 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
 
 void ProfileMusicManager::applyCaveEffect() {
     if (m_caveEffectActive && !m_caveTransitioning) return;
-    if (!m_musicChannel) return;
+    if (!m_isPlaying) return;
 
     auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_system) return;
+    if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
 
     // Crear lowpass DSP si no existe
     if (!m_lowpassDSP) {
@@ -1251,11 +1112,14 @@ void ProfileMusicManager::applyCaveEffect() {
     // Empezar con cutoff alto (sin efecto) y transicionar a bajo
     m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, 22000.0f);
     m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 1.0f);
-    m_musicChannel->addDSP(0, m_lowpassDSP);
+    engine->m_backgroundMusicChannel->addDSP(0, m_lowpassDSP);
 
-    // Guardar estado original
-    m_musicChannel->getFrequency(&m_originalFrequency);
-    m_musicChannel->getVolume(&m_originalVolume);
+    // Guardar estado original via Channel*
+    auto* bgCh = getMainBgChannel(engine);
+    if (bgCh) {
+        bgCh->getFrequency(&m_originalFrequency);
+    }
+    engine->m_backgroundMusicChannel->getVolume(&m_originalVolume);
 
     m_caveEffectActive = true;
     m_caveTransitioning = true;
@@ -1278,13 +1142,18 @@ void ProfileMusicManager::forceRemoveCaveEffect() {
     m_caveTransitioning = false;
     m_caveEffectActive = false;
 
-    if (m_musicChannel && m_lowpassDSP) {
-        m_musicChannel->removeDSP(m_lowpassDSP);
-        auto engine = FMODAudioEngine::sharedEngine();
-        float targetVol = engine ? engine->m_musicVolume : m_originalVolume;
-        float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : 22050.0f;
-        m_musicChannel->setFrequency(targetFreq);
-        m_musicChannel->setVolume(std::max(0.0f, std::min(1.0f, targetVol)));
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (engine && engine->m_backgroundMusicChannel && m_lowpassDSP) {
+        engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
+        float targetVol = engine->m_musicVolume;
+        if (targetVol <= 0.0f && m_originalVolume > 0.0f) targetVol = m_originalVolume;
+        engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, targetVol)));
+
+        auto* bgCh = getMainBgChannel(engine);
+        if (bgCh) {
+            float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : 22050.0f;
+            bgCh->setFrequency(targetFreq);
+        }
     }
     if (m_lowpassDSP) {
         m_lowpassDSP->release();
@@ -1297,7 +1166,9 @@ void ProfileMusicManager::forceRemoveCaveEffect() {
 
 void ProfileMusicManager::removeCaveEffect() {
     if (!m_caveEffectActive) return;
-    if (!m_musicChannel) {
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!engine || !engine->m_backgroundMusicChannel) {
         // Canal ya no existe, solo limpiar estado
         if (m_lowpassDSP) {
             m_lowpassDSP->release();
@@ -1310,16 +1181,20 @@ void ProfileMusicManager::removeCaveEffect() {
 
     m_caveTransitioning = true;
 
-    // Leer valores actuales del canal
-    float currentFreq = 0.0f;
+    // Leer valores actuales
     float currentVol = 0.0f;
-    m_musicChannel->getFrequency(&currentFreq);
-    m_musicChannel->getVolume(&currentVol);
+    engine->m_backgroundMusicChannel->getVolume(&currentVol);
+
+    float currentFreq = 0.0f;
+    auto* bgCh = getMainBgChannel(engine);
+    if (bgCh) {
+        bgCh->getFrequency(&currentFreq);
+    }
 
     // Volumen objetivo = volumen del juego
-    auto engine = FMODAudioEngine::sharedEngine();
-    float targetVol = engine ? engine->m_musicVolume : m_originalVolume;
-    float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : currentFreq / 0.92f;
+    float targetVol = engine->m_musicVolume;
+    if (targetVol <= 0.0f && m_originalVolume > 0.0f) targetVol = m_originalVolume;
+    float targetFreq = (m_originalFrequency > 0.0f) ? m_originalFrequency : (currentFreq > 0.0f ? currentFreq / 0.92f : 22050.0f);
 
     log::info("[ProfileMusic] Cave effect: starting smooth transition OUT (freq:{:.0f}->{:.0f}, vol:{:.2f}->{:.2f})",
         currentFreq, targetFreq, currentVol, targetVol);
@@ -1337,27 +1212,30 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     float freqFrom, float freqTo,
     float volFrom, float volTo, bool applying) {
 
-    if (!m_caveTransitioning || !m_musicChannel) {
+    auto engine = FMODAudioEngine::sharedEngine();
+    if (!m_caveTransitioning || !engine || !engine->m_backgroundMusicChannel) {
         // Cancelado o canal desaparecio
-        if (!applying && m_lowpassDSP && m_musicChannel) {
-            m_musicChannel->removeDSP(m_lowpassDSP);
+        if (!applying && m_lowpassDSP && engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
         }
         m_caveTransitioning = false;
         if (!applying) m_caveEffectActive = false;
         return;
     }
 
+    auto* bgCh = getMainBgChannel(engine);
+
     if (step > totalSteps) {
         m_caveTransitioning = false;
         if (!applying) {
             // Transicion OUT completada: quitar DSP
-            if (m_lowpassDSP && m_musicChannel) {
-                m_musicChannel->removeDSP(m_lowpassDSP);
+            if (m_lowpassDSP) {
+                engine->m_backgroundMusicChannel->removeDSP(m_lowpassDSP);
             }
-            if (m_musicChannel) {
-                m_musicChannel->setFrequency(freqTo);
-                m_musicChannel->setVolume(volTo);
+            if (bgCh) {
+                bgCh->setFrequency(freqTo);
             }
+            engine->m_backgroundMusicChannel->setVolume(volTo);
             m_caveEffectActive = false;
             m_originalFrequency = 0.0f;
             m_originalVolume = 0.0f;
@@ -1368,10 +1246,10 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
                 m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_CUTOFF, cutoffTo);
                 m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, 2.0f);
             }
-            if (m_musicChannel) {
-                m_musicChannel->setFrequency(freqTo);
-                m_musicChannel->setVolume(volTo);
+            if (bgCh) {
+                bgCh->setFrequency(freqTo);
             }
+            engine->m_backgroundMusicChannel->setVolume(volTo);
             log::info("[ProfileMusic] Cave effect fully applied");
         }
         return;
@@ -1390,10 +1268,10 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
         float resonance = applying ? (1.0f + eT * 1.0f) : (2.0f - eT * 1.0f);
         m_lowpassDSP->setParameterFloat(FMOD_DSP_LOWPASS_RESONANCE, resonance);
     }
-    if (m_musicChannel) {
-        m_musicChannel->setFrequency(freq);
-        m_musicChannel->setVolume(std::max(0.0f, std::min(1.0f, vol)));
+    if (bgCh) {
+        bgCh->setFrequency(freq);
     }
+    engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, vol)));
 
     int next = step + 1;
     float stepMs = 400.0f / static_cast<float>(totalSteps); // 400ms total transition
@@ -1422,22 +1300,7 @@ void ProfileMusicManager::forceStop() {
     m_caveTransitioning = false;
 
     // Limpiar efecto cueva
-    if (m_caveEffectActive && m_musicChannel && m_lowpassDSP) {
-        m_musicChannel->removeDSP(m_lowpassDSP);
-    }
-    m_caveEffectActive = false;
-    m_originalFrequency = 0.0f;
-    m_originalVolume = 0.0f;
-
-    // Parar canal y sonido
-    if (m_musicChannel) {
-        m_musicChannel->stop();
-        m_musicChannel = nullptr;
-    }
-    if (m_currentSound) {
-        m_currentSound->release();
-        m_currentSound = nullptr;
-    }
+    forceRemoveCaveEffect();
 
     m_isPlaying = false;
     m_isPaused = false;
@@ -1448,11 +1311,15 @@ void ProfileMusicManager::forceStop() {
 }
 
 float ProfileMusicManager::getCurrentAmplitude() const {
-    if (!m_isPlaying || !m_musicChannel) return 0.f;
+    if (!m_isPlaying) return 0.f;
+
+    auto engine = FMODAudioEngine::sharedEngine();
+    auto* bgCh = getMainBgChannel(engine);
+    if (!bgCh) return 0.f;
 
     // usar FMOD DSP metering pa leer la amplitud real
     FMOD::DSP* headDSP = nullptr;
-    auto result = m_musicChannel->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
+    auto result = bgCh->getDSP(FMOD_CHANNELCONTROL_DSP_HEAD, &headDSP);
     if (result != FMOD_OK || !headDSP) return 0.f;
 
     headDSP->setMeteringEnabled(false, true);

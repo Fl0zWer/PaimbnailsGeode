@@ -18,6 +18,7 @@ class $modify(PaimonLevelPage, LevelPage) {
         int m_levelID = 0;
     };
 
+    $override
     void updateDynamicPage(GJGameLevel* level) {
         LevelPage::updateDynamicPage(level);
         

@@ -31,7 +31,6 @@ GIFDecoder::GIFData GIFDecoder::decode(uint8_t const* data, size_t size) {
     uint8_t const* ptr = data;
     uint8_t const* end = data + size;
 
-    // parseo cabecera basica
     if (!parseHeader(ptr, end, result.width, result.height)) {
         log::error("[GIFDecoder] Failed to parse header");
         return result;
@@ -205,7 +204,7 @@ bool GIFDecoder::parseColorTable(uint8_t const*& ptr, uint8_t const* end, std::v
     return true;
 }
 
-// descompresion LZW
+// descompresion LZW del stream de indices
 static bool lzwDecode(std::vector<uint8_t> const& compressed, std::vector<uint8_t>& output, int minCodeSize, int pixelCount) {
     int clearCode = 1 << minCodeSize;
     int eoiCode = clearCode + 1;
@@ -432,4 +431,3 @@ bool GIFDecoder::parseFrame(uint8_t const*& ptr, uint8_t const* end, RawFrame& f
     
     return true;
 }
-

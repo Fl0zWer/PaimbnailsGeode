@@ -5,7 +5,7 @@
 
 using namespace geode::prelude;
 
-// helper node para recibir el callback del boton support
+// nodo auxiliar pa manejar el click del boton support
 class SupportButtonHandler : public CCNode {
 public:
     static SupportButtonHandler* create() {
@@ -26,14 +26,14 @@ public:
 };
 
 $execute {
-    // escuchar cuando se abre el popup de nuestro mod para interceptar el boton support
+    // cuando se abre el popup del mod, cambiamos el boton support por el nuestro
     static auto handle = ModPopupUIEvent().listen(
         +[](FLAlertLayer* popup, std::string_view modID, std::optional<Mod*>) -> ListenerResult {
             if (modID != Mod::get()->getID()) {
                 return ListenerResult::Propagate;
             }
 
-            // buscar el boton support dentro de links-container
+            // buscar el boton en links-container
             auto linksMenu = popup->querySelector("links-container");
             if (!linksMenu) return ListenerResult::Propagate;
 
@@ -43,17 +43,17 @@ $execute {
             auto menuItem = typeinfo_cast<CCMenuItemSpriteExtra*>(supportBtn);
             if (!menuItem) return ListenerResult::Propagate;
 
-            // verificar si ya reemplazamos el handler (evitar duplicados en re-posts del evento)
+            // si ya lo cambiamos antes, no duplicar
             if (menuItem->getChildByID("support-handler"_spr)) {
                 return ListenerResult::Propagate;
             }
 
-            // crear handler persistente como hijo del boton para que viva mientras el boton exista
+            // el handler vive como hijo del boton
             auto handler = SupportButtonHandler::create();
             handler->setID("support-handler"_spr);
             menuItem->addChild(handler);
 
-            // reemplazar target y selector
+            // redirigir a nuestro handler
             menuItem->setTarget(handler, menu_selector(SupportButtonHandler::onSupportClicked));
             menuItem->setEnabled(true);
 

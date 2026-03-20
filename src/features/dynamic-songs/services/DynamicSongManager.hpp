@@ -52,7 +52,7 @@ public:
     bool verifyPlayback();
 
     // Estado de transicion (para evitar false-positives en verificacion)
-    bool isTransitioning() const { return m_isTransitioning || m_isFadingIn || m_isFadingOut; }
+    bool isTransitioning() const { return m_isFadingIn || m_isFadingOut; }
 
     // Ceder control si otro mod cambio la musica
     void onPlaybackHijacked();
@@ -60,15 +60,10 @@ public:
 private:
     DynSongLayer m_currentLayer = DynSongLayer::None;
 
-    // Crossfade song-to-song: canal temporal para la cancion saliente
-    FMOD::Channel* m_fadeOutChannel = nullptr;
-    FMOD::Sound* m_fadeOutSound = nullptr;
-
-    // Crossfade
+    // Dip-fade (solo usa el canal principal, sin canales temporales)
     static constexpr int FADE_STEPS = 20;
     bool m_isFadingIn = false;
     bool m_isFadingOut = false;
-    bool m_isTransitioning = false;   // true durante crossfade cancion→cancion
     float m_bgVolumeBeforeFade = 1.0f;
     bool m_stoppedByProfile = false;
     std::string m_lastSongPath;       // path del ultimo song para replay tras ProfileMusic
@@ -85,15 +80,16 @@ private:
     void loadMenuTrack(float startVolume);
     void restoreBgChannel();
 
-    // Crossfade helpers
+    // Dip-fade helpers (solo canal principal, sin canales temporales)
     void fadeInMainChannel(float targetVolume);
     void fadeOutAndRestore();
-    void executeFadeStep(int step, int totalSteps, float mainFrom, float mainTo,
-                         float fadeOutFrom, float fadeOutTo, bool restoreAfter);
-    void executeSongTransition(int step, int totalSteps,
-                               float newFrom, float newTo, float oldFrom, float oldTo);
+    void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreMenu);
+    void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo);
     void executeLevelStartFade(int step, int totalSteps, float volFrom);
-    void cleanupFadeOutChannel();
+
+    // Dip fade para transicion cancion→cancion
+    std::string m_pendingSongPath;      // path pendiente para cargar cuando vol llegue a 0
+    float m_pendingTargetVolume = 0.0f; // volumen objetivo tras cargar la nueva cancion
 
     // Seek aleatorio en el canal principal
     void applyRandomSeek();

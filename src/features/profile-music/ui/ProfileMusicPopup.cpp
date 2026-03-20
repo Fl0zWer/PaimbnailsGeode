@@ -159,6 +159,8 @@ void ProfileMusicPopup::createControlButtons() {
 
     // Play preview
     auto playSpr = CCSprite::createWithSpriteFrameName("GJ_playBtn2_001.png");
+    if (!playSpr) playSpr = CCSprite::createWithSpriteFrameName("GJ_playMusicBtn_001.png");
+    if (!playSpr) playSpr = CCSprite::create();
     playSpr->setScale(0.5f);
     auto playBtn = CCMenuItemSpriteExtra::create(playSpr, this, menu_selector(ProfileMusicPopup::onPlayPreview));
     playBtn->setPosition({winSize.width / 2 - 80.f, row1Y});
@@ -167,6 +169,7 @@ void ProfileMusicPopup::createControlButtons() {
     // Stop preview
     auto stopSpr = CCSprite::createWithSpriteFrameName("GJ_stopMusicBtn_001.png");
     if (!stopSpr) stopSpr = CCSprite::createWithSpriteFrameName("GJ_deleteBtn_001.png");
+    if (!stopSpr) stopSpr = CCSprite::create();
     stopSpr->setScale(0.5f);
     auto stopBtn = CCMenuItemSpriteExtra::create(stopSpr, this, menu_selector(ProfileMusicPopup::onStopPreview));
     stopBtn->setPosition({winSize.width / 2 - 20.f, row1Y});
@@ -174,6 +177,8 @@ void ProfileMusicPopup::createControlButtons() {
 
     // Download song button
     auto downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
+    if (!downloadSpr) downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadsIcon_001.png");
+    if (!downloadSpr) downloadSpr = CCSprite::create();
     downloadSpr->setScale(0.55f);
     auto downloadBtn = CCMenuItemSpriteExtra::create(downloadSpr, this, menu_selector(ProfileMusicPopup::onDownloadSong));
     downloadBtn->setPosition({winSize.width / 2 + 40.f, row1Y});

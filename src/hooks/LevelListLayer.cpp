@@ -11,12 +11,13 @@ using namespace geode::prelude;
 
 class $modify(PaimonLevelListLayer, LevelListLayer) {
     static void onModify(auto& self) {
+        // Pre: capturar el ID de lista ANTES de que init() cree los nodos
         (void)self.setHookPriorityPre("LevelListLayer::init", geode::Priority::Normal);
     }
 
     $override
     bool init(GJLevelList* list) {
-        // guardar id de lista pa LevelInfoLayer
+        // guardar id pa usarlo en LevelInfoLayer
         if (list) {
             paimon::SessionState::get().currentListID = list->m_listID;
             log::debug("Entered List: {}", list->m_listID);
@@ -30,19 +31,20 @@ class $modify(PaimonLevelListLayer, LevelListLayer) {
 
 class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
     static void onModify(auto& self) {
+        // AfterPost: correr despues de geode.node-ids para acceder a IDs de nodos
         (void)self.setHookPriorityAfterPost("LevelBrowserLayer::init", "geode.node-ids");
     }
 
     $override
     bool init(GJSearchObject* p0) {
-        // limpiar id de lista al entrar al browser normal (busqueda, etc)
+        // limpiar contexto al entrar a busqueda normal
         paimon::SessionState::get().currentListID = 0;
         if (!LevelBrowserLayer::init(p0)) return false;
 
-        // ── Aplicar fondo custom unificado ──
+        // fondo custom
         LayerBackgroundManager::get().applyBackground(this, "browser");
 
-        // ── Boton engranaje en search-menu ──
+        // engranaje de settings
         addSettingsGearButton();
 
         return true;
@@ -64,7 +66,7 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
             searchMenu = typeinfo_cast<CCMenu*>(node);
         }
 
-        // fallback: buscar entre los menus hijos
+        // si no hay search-menu, buscarlo entre los menus hijos
         if (!searchMenu) {
             for (auto* child : CCArrayExt<CCNode*>(this->getChildren())) {
                 if (auto menu = typeinfo_cast<CCMenu*>(child)) {
@@ -122,4 +124,4 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
 };
 
-// NOTE: current-list-id cleanup moved to main MenuLayer hook (main.cpp) to avoid double-hooking MenuLayer::init
+// NOTE: limpieza de current-list-id esta en MenuLayer::init

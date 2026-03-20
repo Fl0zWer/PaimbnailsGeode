@@ -163,25 +163,39 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
              }
         }
 
+        // Determinar tamaño y posicion del clipping a partir del background real
+        CCSize clipSize;
+        CCPoint clipPos;
+        CCPoint clipAnchor = ccp(0.5f, 0.5f);
+        float padding = 3.f;
+
         if (bg) {
-            nodeSize = bg->getContentSize();
-        } else if (nodeSize.width < 10.f) {
-            // fallback de size
-            nodeSize = CCSize(340.f, 230.f);
+            clipSize = bg->getScaledContentSize();
+            clipPos  = bg->getPosition();
+            clipAnchor = bg->getAnchorPoint();
+        } else if (nodeSize.width >= 10.f) {
+            clipSize = nodeSize;
+            clipPos  = ccp(0.f, 0.f);
+        } else {
+            clipSize = CCSize(340.f, 230.f);
+            clipPos  = ccp(0.f, 0.f);
         }
 
-        // creo el clipping node
-        // valores sacados de la imagen del user
+        // Restar padding para que la miniatura no toque los bordes
+        CCSize imgArea = CCSize(clipSize.width - padding * 2.f,
+                                clipSize.height - padding * 2.f);
+
+        // creo el clipping node con tamaño dinamico del background
         m_fields->m_paimonClipper = CCClippingNode::create();
-        m_fields->m_paimonClipper->setContentSize({382.f, 116.f});
-        m_fields->m_paimonClipper->setAnchorPoint({0.5f, 0.5f});
-        m_fields->m_paimonClipper->setPosition({0.f, 0.f});
-        m_fields->m_paimonClipper->setScale(0.985f);
+        m_fields->m_paimonClipper->setContentSize(imgArea);
+        m_fields->m_paimonClipper->setAnchorPoint(clipAnchor);
+        m_fields->m_paimonClipper->setPosition(clipPos);
         m_fields->m_paimonClipper->setID("paimon-thumbnail-clipper"_spr);
+
         // stencil con esquinas redondeadas — usa CCDrawNode para evitar
         // conflictos con mods de texturas (HappyTextures, TextureLdr)
-        float clipW = 382.f;
-        float clipH = 116.f;
+        float clipW = imgArea.width;
+        float clipH = imgArea.height;
         float r = 6.f;
         int segs = 8;
         auto stencil = CCDrawNode::create();
@@ -215,7 +229,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
 
         // creo el spinner de carga (geode::LoadingSpinner gira solo y respeta content size)
         auto spinner = geode::LoadingSpinner::create(25.f);
-        spinner->setPosition({382.f / 2.f, 116.f / 2.f});
+        spinner->setPosition(imgArea / 2);
         m_fields->m_paimonClipper->addChild(spinner, 10);
         m_fields->m_loadingSpinner = spinner;
 

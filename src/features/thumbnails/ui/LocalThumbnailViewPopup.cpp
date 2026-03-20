@@ -79,7 +79,9 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
                 long long timestamp = numResult.unwrap();
                 if (timestamp > 1600000000000) {
                     time_t timeSec = timestamp / 1000;
-                    if (auto tmPtr = std::localtime(&timeSec)) {
+                    struct tm tmBuf;
+                    if (localtime_s(&tmBuf, &timeSec) == 0) {
+                        auto tmPtr = &tmBuf;
                         date = fmt::format("{:02}/{:02}/{:02} {:02}:{:02}",
                            tmPtr->tm_mday, tmPtr->tm_mon + 1, tmPtr->tm_year % 100,
                            tmPtr->tm_hour, tmPtr->tm_min);

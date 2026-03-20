@@ -436,7 +436,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                                     s_hideP1ForCapture = hideP1;
                                     s_hideP2ForCapture = hideP2;
                                     if (popup) popup->setVisible(false);
-                                    gCaptureInProgress = false;
+                                    gCaptureInProgress.store(false);
                                     Loader::get()->queueInMainThread([safeRef, popup]() {
                                         auto* self = static_cast<PaimonCapturePlayLayer*>(safeRef.data());
                                         if (!self->getParent()) return;
@@ -780,7 +780,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
             // oculto el popup un momento para hacer la nueva captura
             if (popup) popup->setVisible(false);
 
-            gCaptureInProgress = false;
+            gCaptureInProgress.store(false);
             WeakRef<PaimonCapturePlayLayer> self = this;
             Loader::get()->queueInMainThread([self, popup]() {
                 auto layer = self.lock();

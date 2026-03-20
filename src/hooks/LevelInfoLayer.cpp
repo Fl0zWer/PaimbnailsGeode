@@ -425,6 +425,41 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         LevelInfoLayer::onExit();
     }
 
+    // Crea el boton de set daily/weekly si aun no existe
+    void addSetDailyWeeklyButton() {
+        // evitar duplicados
+        if (this->getChildByIDRecursive("set-daily-weekly-button"_spr)) return;
+
+        CCSprite* iconSpr = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
+        if (!iconSpr) {
+            iconSpr = CCSprite::createWithSpriteFrameName("GJ_starBtn_001.png");
+        }
+        if (!iconSpr) return;
+
+        iconSpr->setScale(0.8f);
+
+        auto btnSprite = CircleButtonSprite::create(
+            iconSpr,
+            CircleBaseColor::Green,
+            CircleBaseSize::Medium
+        );
+        if (!btnSprite) return;
+
+        auto btn = CCMenuItemSpriteExtra::create(
+            btnSprite,
+            this,
+            menu_selector(PaimonLevelInfoLayer::onSetDailyWeekly)
+        );
+        btn->setID("set-daily-weekly-button"_spr);
+
+        auto leftMenu = static_cast<CCMenu*>(this->getChildByID("left-side-menu"));
+        if (leftMenu) {
+            leftMenu->addChild(btn);
+            leftMenu->updateLayout();
+            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", leftMenu);
+        }
+    }
+
     void onSetDailyWeekly(CCObject* sender) {
         if (m_level->m_levelID.value() <= 0) return;
         SetDailyWeeklyPopup::create(m_level->m_levelID.value())->show();
@@ -597,6 +632,17 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
 
             // admin? -> btn daily/weekly
+            // Verificacion local primero: si el mod code esta guardado y el usuario
+            // esta marcado como admin, mostrar el boton inmediatamente sin esperar al server.
+            {
+                bool localAdmin = Mod::get()->getSavedValue<bool>("is-verified-admin", false);
+                bool hasModCode = !HttpClient::get().getModCode().empty();
+
+                if (localAdmin && hasModCode) {
+                    this->addSetDailyWeeklyButton();
+                }
+            }
+            // Verificacion con servidor (refresca cache y puede agregar/quitar el boton)
             if (auto gm = GameManager::get()) {
                 auto username = gm->m_playerName;
                 auto accountID = 0;
@@ -605,45 +651,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 Ref<LevelInfoLayer> selfMod = this;
                 ThumbnailAPI::get().checkModeratorAccount(username, accountID, [selfMod](bool isMod, bool isAdmin) {
                     auto* self = static_cast<PaimonLevelInfoLayer*>(selfMod.data());
-                    if (!self->getParent()) {
-                        return;
-                    }
+                    if (!self->getParent()) return;
                     if (isAdmin) {
-                        // btn daily
-                        // icono estrella/tiempo
-                        CCSprite* iconSpr = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
-
-                        if (!iconSpr) {
-                            iconSpr = CCSprite::createWithSpriteFrameName("GJ_starBtn_001.png");
-                        }
-                        
-                        // reducir el icono un 20%
-                        iconSpr->setScale(0.8f);
-
-                        // CircleButtonSprite verde
-                        auto btnSprite = CircleButtonSprite::create(
-                            iconSpr,
-                            CircleBaseColor::Green,
-                            CircleBaseSize::Medium
-                        );
-
-                        if (!btnSprite) {
-                            return;
-                        }
-
-                        auto btn = CCMenuItemSpriteExtra::create(
-                            btnSprite,
-                            self,
-                            menu_selector(PaimonLevelInfoLayer::onSetDailyWeekly)
-                        );
-                        btn->setID("set-daily-weekly-button"_spr);
-                        
-                        auto leftMenu = static_cast<CCMenu*>(self->getChildByID("left-side-menu"));
-                        if (leftMenu) {
-                            leftMenu->addChild(btn);
-                            leftMenu->updateLayout();
-                            ButtonLayoutManager::get().applyLayoutToMenu("LevelInfoLayer", leftMenu);
-                        }
+                        self->addSetDailyWeeklyButton();
                     }
                 });
             }

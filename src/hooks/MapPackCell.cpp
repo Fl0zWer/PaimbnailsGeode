@@ -23,16 +23,16 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         
         m_fields->m_pack = pack;
 
-        // quitar carousel existente si hay (reuso de celda)
+        // quitar carousel viejo si reusan la celda
         if (m_fields->m_carousel) {
             m_fields->m_carousel->removeFromParent();
             m_fields->m_carousel = nullptr;
         }
 
-        // retrasar creacion pa que datos y layout esten listos
+        // delay pa que el layout ya este armado
         Ref<MapPackCell> self = this;
         Loader::get()->queueInMainThread([self]() {
-            if (self->getParent()) { // comprobar que siga vivo
+            if (self->getParent()) {
                 static_cast<PaimonMapPackCell*>(self.data())->createCarousel();
             }
         });
@@ -42,25 +42,25 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         auto pack = m_fields->m_pack;
         if (!pack) return;
 
-        // parsear ids de niveles
+        // sacar ids de niveles del pack
         std::vector<int> levelIDs;
         
         if (pack->m_levels && pack->m_levels->count() > 0) {
             for (auto obj : CCArrayExt<CCObject*>(pack->m_levels)) {
-                // intentar como CCString (id nivel)
+                // probar como CCString
                 if (auto str = typeinfo_cast<CCString*>(obj)) {
                     if (auto res = geode::utils::numFromString<int>(str->getCString())) {
                         levelIDs.push_back(res.unwrap());
                     }
                 } 
-                // intentar como GJGameLevel
+                // o como GJGameLevel
                 else if (auto level = typeinfo_cast<GJGameLevel*>(obj)) {
                     levelIDs.push_back(level->m_levelID);
                 }
             }
         }
 
-        // fallback: parsear m_levelStrings si m_levels vacio
+        // si m_levels no tenia nada, parsear el string
         if (levelIDs.empty() && !pack->m_levelStrings.empty()) {
             std::string levelsStr(pack->m_levelStrings.c_str());
             std::stringstream ss(levelsStr);
@@ -77,7 +77,7 @@ class $modify(PaimonMapPackCell, MapPackCell) {
 
         auto size = this->getContentSize();
         
-        // forzar altura tipica de celda si hace falta
+        // forzar minimo de altura
         CCSize carouselSize = size;
         if (carouselSize.height < 90.0f) {
             carouselSize.height = 90.0f;
@@ -87,13 +87,12 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         if (carousel) {
             carousel->setID("paimon-mappack-carousel"_spr);
 
-            // centrar carousel en la celda
+            // centrar y poner detras del texto
             carousel->setPosition({size.width / 2, size.height / 2});
             
-            // z=-1 pa quedar detras de texto/botones
             carousel->setZOrder(-1); 
             
-            // mandar fondo atras (buscar por tipo en vez de indice fragil)
+            // el fondo original va mas atras
             if (auto bg = this->getChildByType<CCLayerColor>(0)) {
                 bg->setZOrder(-2);
             } else if (auto firstChild = this->getChildByType<CCNode>(0)) {

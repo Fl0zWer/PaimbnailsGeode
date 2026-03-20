@@ -1,6 +1,4 @@
-// Bootstrap.cpp — Inicializacion diferida del mod.
-// Llamado desde MenuLayer::init() la primera vez que se carga el juego.
-// Separa la logica de arranque del entrypoint para reducir acoplamiento.
+// Inicializacion diferida del mod desde MenuLayer::init().
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/string.hpp>

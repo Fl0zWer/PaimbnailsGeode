@@ -1,17 +1,15 @@
-// DynamicPopupHook.cpp  –  Paimbnails popup animation system
-// Hooks FLAlertLayer::show() / keyBackClicked() for Paimbnails popups only.
-// Hooks CCMenuItemSpriteExtra::activate() to capture button world-position.
+// animaciones de entrada/salida pa popups de Paimbnails
+// hookea FLAlertLayer::show() y keyBackClicked()
+// tambien CCMenuItemSpriteExtra::activate() pa saber de donde sale el popup
 //
-// Styles:
-//   paimonUI     – expands from the button with a 3-phase spring settle
-//   slide-up     – rises from below with deceleration
-//   slide-down   – drops from above
-//   zoom-fade    – quick scale burst from center
-//   elastic      – bouncy elastic overshoot
-//   bounce       – drops in with bounce at the end
-//   flip         – 3D-ish horizontal flip via scaleX
-//   fold         – vertical fold-open via scaleY
-//   pop-rotate   – scale + subtle rotation swing
+// estilos disponibles:
+//   paimonUI     – se expande desde el boton, con spring de 3 fases
+//   slide-up/down – sube/baja con desaceleracion
+//   zoom-fade    – escala rapida desde el centro
+//   elastic      – overshoot elastico
+//   bounce       – rebote al caer
+//   flip/fold    – rotacion en X o Y (efecto 3D)
+//   pop-rotate   – escala + giro
 
 #include <Geode/modify/FLAlertLayer.hpp>
 #include <Geode/modify/CCMenuItemSpriteExtra.hpp>
@@ -21,13 +19,11 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-// ═══════════════════════════════════════════════════════════════════════
-// Button origin capture
-// ═══════════════════════════════════════════════════════════════════════
+// --- captura de posicion del boton ---
 
 class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     static void onModify(auto& self) {
-        // Capturar el origen antes de cualquier logica de activacion/mods posteriores.
+        // guardamos la posicion del boton antes de que se procese el click
         (void)self.setHookPriorityPre("CCMenuItemSpriteExtra::activate", geode::Priority::First);
     }
 
@@ -41,9 +37,7 @@ class $modify(PaimonButtonOriginCapture, CCMenuItemSpriteExtra) {
     }
 };
 
-// ═══════════════════════════════════════════════════════════════════════
-// Main hook – entry & exit animations
-// ═══════════════════════════════════════════════════════════════════════
+// --- animaciones de entrada y salida ---
 
 class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
@@ -51,6 +45,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         bool    m_exiting = false;
         CCPoint m_origin  = {-1.f, -1.f};
         CCPoint m_finalPos= {0.f, 0.f};
+        Ref<FLAlertLayer> m_exitGuard = nullptr;
     };
 
     static void onModify(auto& self) {
@@ -58,7 +53,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         (void)self.setHookPriorityPost("FLAlertLayer::keyBackClicked", geode::Priority::Late);
     }
 
-    // ── helpers ──────────────────────────────────────────────────
+    // --- helpers ---
 
     bool isPaimonPopup() {
         return paimon::isDynamicPopup(this)
@@ -80,18 +75,18 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         return p ? p->convertToNodeSpace(wp) : wp;
     }
 
-    // Consume or discard the stored button origin; always stores fallback.
+    // toma o descarta el origen guardado del boton
     CCPoint resolveOrigin(CCPoint const& fallback) {
         CCPoint o = fallback;
         if (paimon::hasButtonOrigin())
             o = worldToMLParent(paimon::consumeButtonOrigin());
         else
-            paimon::consumeButtonOrigin(); // discard stale
+            paimon::consumeButtonOrigin(); // limpiar si habia uno viejo
         m_fields->m_origin = o;
         return o;
     }
 
-    // ── ENTRY ────────────────────────────────────────────────────
+    // --- ENTRADA ---
 
     void runEntryAnimation() {
         auto* ml = m_mainLayer;
@@ -103,7 +98,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         CCPoint     fp  = ml->getPosition();
         m_fields->m_finalPos = fp;
 
-        // ── paimonUI ──────────────────────────────────────────────
+        // -- paimonUI --
         if (sty == "paimonUI") {
             CCPoint org = resolveOrigin(fp);
 
@@ -112,20 +107,19 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
             float dur = 0.42f / spd;
 
-            // Phase 1: fast expansion 0 → 1.06 with exponential out  (70%)
-            // Phase 2: soft settle    1.06 → 0.985                   (18%)
-            // Phase 3: final snap     0.985 → 1.00                   (12%)
+            // fase 1: expansion rapida 0→1.06 (70%)
+            // fase 2: acomodo suave 1.06→0.985 (18%)
+            // fase 3: snap final 0.985→1.0 (12%)
             auto phase1 = CCEaseExponentialOut::create(CCScaleTo::create(dur * 0.70f, 1.06f));
             auto phase2 = CCEaseSineInOut::create(CCScaleTo::create(dur * 0.18f, 0.985f));
             auto phase3 = CCEaseSineOut::create(CCScaleTo::create(dur * 0.12f, 1.00f));
             ml->runAction(CCSequence::create(phase1, phase2, phase3, nullptr));
 
-            // Movement: smooth exponential ease to final position
+            // movimiento suave a la posicion final
             ml->runAction(
                 CCEaseExponentialOut::create(CCMoveTo::create(dur * 0.70f, fp))
             );
 
-        // ── slide-up ──────────────────────────────────────────────
         } else if (sty == "slide-up") {
             resolveOrigin(fp);
             ml->setScale(0.96f);
@@ -138,7 +132,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── slide-down ────────────────────────────────────────────
         } else if (sty == "slide-down") {
             resolveOrigin(fp);
             ml->setScale(0.96f);
@@ -151,7 +144,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── zoom-fade ─────────────────────────────────────────────
         } else if (sty == "zoom-fade") {
             resolveOrigin(fp);
             ml->setScale(0.70f);
@@ -161,7 +153,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 CCEaseExponentialOut::create(CCScaleTo::create(dur, 1.00f))
             );
 
-        // ── elastic ───────────────────────────────────────────────
         } else if (sty == "elastic") {
             resolveOrigin(fp);
             ml->setScale(0.0f);
@@ -171,7 +162,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 CCEaseElasticOut::create(CCScaleTo::create(dur, 1.00f), 0.35f)
             );
 
-        // ── bounce ────────────────────────────────────────────────
         } else if (sty == "bounce") {
             resolveOrigin(fp);
             ml->setScale(0.0f);
@@ -184,19 +174,17 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── flip ──────────────────────────────────────────────────
         } else if (sty == "flip") {
             resolveOrigin(fp);
             ml->setScaleX(0.0f);
             ml->setScaleY(1.0f);
 
             float dur = 0.35f / spd;
-            // scaleX: 0→1.04→1.0  with overshoot feel
+            // scaleX: 0→1.04→1.0 con overshoot
             auto flipX1 = CCEaseExponentialOut::create(CCScaleTo::create(dur * 0.75f, 1.04f, 1.0f));
             auto flipX2 = CCEaseSineOut::create(CCScaleTo::create(dur * 0.25f, 1.0f, 1.0f));
             ml->runAction(CCSequence::create(flipX1, flipX2, nullptr));
 
-        // ── fold ──────────────────────────────────────────────────
         } else if (sty == "fold") {
             resolveOrigin(fp);
             ml->setScaleX(1.0f);
@@ -207,7 +195,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             auto foldY2 = CCEaseSineOut::create(CCScaleTo::create(dur * 0.25f, 1.0f, 1.0f));
             ml->runAction(CCSequence::create(foldY1, foldY2, nullptr));
 
-        // ── pop-rotate ────────────────────────────────────────────
         } else if (sty == "pop-rotate") {
             resolveOrigin(fp);
             ml->setScale(0.0f);
@@ -223,7 +210,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
             auto r2 = CCEaseSineOut::create(CCRotateTo::create(dur * 0.35f, 0.f));
             ml->runAction(CCSequence::create(r1, r2, nullptr));
 
-        // ── fallback ──────────────────────────────────────────────
         } else {
             resolveOrigin(fp);
             ml->setScale(0.70f);
@@ -232,7 +218,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
         }
     }
 
-    // ── EXIT ─────────────────────────────────────────────────────
+    // --- SALIDA ---
 
     void runExitAnimation() {
         auto* ml = m_mainLayer;
@@ -240,7 +226,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
         ml->stopAllActions();
         this->stopAllActions();
-        this->retain();
+        m_fields->m_exitGuard = this;
 
         float       spd = getSpeed();
         std::string sty = getStyle();
@@ -250,17 +236,16 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
 
         float dur = 0.f;
 
-        // ── paimonUI ─────────────────────────────────────────────
+        // -- paimonUI --
         if (sty == "paimonUI") {
             dur = 0.25f / spd;
-            // Accelerating shrink back toward origin
+            // se encoge acelerando hacia donde estaba el boton
             ml->runAction(CCSpawn::create(
                 CCEaseIn::create(CCScaleTo::create(dur, 0.0f), 2.8f),
                 CCEaseIn::create(CCMoveTo::create(dur, org), 2.8f),
                 nullptr
             ));
 
-        // ── slide-up ─────────────────────────────────────────────
         } else if (sty == "slide-up") {
             dur = 0.20f / spd;
             ml->runAction(CCSpawn::create(
@@ -269,7 +254,6 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── slide-down ───────────────────────────────────────────
         } else if (sty == "slide-down") {
             dur = 0.20f / spd;
             ml->runAction(CCSpawn::create(
@@ -278,21 +262,18 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── zoom-fade ────────────────────────────────────────────
         } else if (sty == "zoom-fade") {
             dur = 0.16f / spd;
             ml->runAction(
                 CCEaseIn::create(CCScaleTo::create(dur, 0.70f), 2.f)
             );
 
-        // ── elastic ──────────────────────────────────────────────
         } else if (sty == "elastic") {
             dur = 0.22f / spd;
             ml->runAction(
                 CCEaseIn::create(CCScaleTo::create(dur, 0.0f), 2.5f)
             );
 
-        // ── bounce ───────────────────────────────────────────────
         } else if (sty == "bounce") {
             dur = 0.22f / spd;
             ml->runAction(CCSpawn::create(
@@ -301,21 +282,18 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── flip ─────────────────────────────────────────────────
         } else if (sty == "flip") {
             dur = 0.22f / spd;
             ml->runAction(
                 CCEaseIn::create(CCScaleTo::create(dur, 0.0f, 1.0f), 2.5f)
             );
 
-        // ── fold ─────────────────────────────────────────────────
         } else if (sty == "fold") {
             dur = 0.22f / spd;
             ml->runAction(
                 CCEaseIn::create(CCScaleTo::create(dur, 1.0f, 0.0f), 2.5f)
             );
 
-        // ── pop-rotate ───────────────────────────────────────────
         } else if (sty == "pop-rotate") {
             dur = 0.22f / spd;
             ml->runAction(CCSpawn::create(
@@ -324,13 +302,12 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
                 nullptr
             ));
 
-        // ── fallback ─────────────────────────────────────────────
         } else {
             dur = 0.16f / spd;
             ml->runAction(CCEaseIn::create(CCScaleTo::create(dur, 0.70f), 2.f));
         }
 
-        // Deferred close on 'this' (never on m_mainLayer)
+        // cerrar despues de que termine la animacion (en this, no en m_mainLayer)
         this->runAction(CCSequence::create(
             CCDelayTime::create(dur + 0.01f),
             CCCallFunc::create(this, callfunc_selector(PaimonDynamicPopupHook::finishExit)),
@@ -344,11 +321,11 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     void deferredClose(float) {
-        this->release();
+        m_fields->m_exitGuard = nullptr;
         FLAlertLayer::keyBackClicked();
     }
 
-    // ── hooks ────────────────────────────────────────────────────
+    // --- hooks ---
 
     $override
     void show() {

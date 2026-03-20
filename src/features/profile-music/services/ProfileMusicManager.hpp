@@ -219,29 +219,25 @@ private:
     int m_currentProfileID = 0;
     std::string m_currentAudioPath;
 
-    // FMOD channel para musica de perfil (usamos canal separado)
-    FMOD::Channel* m_musicChannel = nullptr;
-    FMOD::Sound* m_currentSound = nullptr;
-
-    // Parametros pendientes para reproduccion asincrona
+    // Parametros pendientes para carga tras dip fade
     int m_pendingStartMs = 0;
     int m_pendingEndMs = 0;
+    bool m_pendingLoop = true;
 
-    // Crossfade / transicion suave
-    static constexpr int FADE_STEPS = 20;               // Pasos de interpolacion
+    // Dip fade (solo canal principal, sin canales temporales)
+    static constexpr int FADE_STEPS = 20;
     bool m_isFadingIn = false;
     bool m_isFadingOut = false;
-    float m_bgVolumeBeforeFade = 1.0f;  // Volumen original de la musica de fondo
-    unsigned int m_savedBgPosMs = 0;     // Posicion del BG al abrir perfil (restaurar al salir)
+    float m_bgVolumeBeforeFade = 1.0f;
+    unsigned int m_savedBgPosMs = 0;
 
     bool isCrossfadeEnabled() const;
     float getFadeDurationMs() const;
 
     void fadeInProfileMusic(float targetVolume);
     void fadeOutAndStop();
-    void executeFadeStep(int step, int totalSteps, float fromVol, float toVol,
-                         float bgFromVol, float bgToVol, bool stopAfter);
-    void executeCrossfadeWithDynamic(int step, int totalSteps, float profileFrom, float profileTo, float dynFrom);
+    void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreAfter);
+    void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo);
 
     // Cache de configuraciones
     std::map<int, ProfileMusicConfig> m_configCache;
@@ -268,10 +264,9 @@ private:
     std::vector<uint8_t> extractAudioFragment(std::string const& filePath, int startMs, int endMs);
 
     // Helpers
+    void loadProfileOnMainChannel(const std::string& path, bool loop, int startMs, int endMs, float volume);
     void playAudioFile(std::string const& path, bool loop, int startMs = 0, int endMs = 0);
     void playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config);
-    void checkSoundReady();
-    void finishPlayback();
     void stopCurrentAudio();
     void reloadBgMusic(float startVolume);
 

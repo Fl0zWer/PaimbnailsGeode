@@ -169,7 +169,7 @@ void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback c
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadThumbnail(levelId,
-        [this, levelId, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
             callback(success, bytesToTexture(data));
         });

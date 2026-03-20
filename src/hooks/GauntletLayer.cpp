@@ -78,6 +78,8 @@ class GauntletThumbnailNode : public CCNode {
     bool m_firstLoad = true;
 
 public:
+    using CCNode::init; // bring base init into scope to silence -Woverloaded-virtual
+
     static GauntletThumbnailNode* create(std::vector<int> const& levelIDs) {
         auto node = new GauntletThumbnailNode();
         if (node && node->init(levelIDs)) {
@@ -132,7 +134,7 @@ public:
         // Ref<> mantiene vivo este nodo hasta que los callbacks terminen
         Ref<GauntletThumbnailNode> self = this;
         for (int id : m_levelIDs) {
-            ThumbnailLoader::get().requestLoad(id, "", [self, id](CCTexture2D* tex, bool success) {
+            ThumbnailLoader::get().requestLoad(id, "", [self](CCTexture2D* tex, bool success) {
                 // precache
             }, 10, false);
         }

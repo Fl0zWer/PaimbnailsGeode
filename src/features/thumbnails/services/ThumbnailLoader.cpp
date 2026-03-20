@@ -68,9 +68,6 @@ void ThumbnailLoader::initDiskCache() {
 
         int deletedCount = 0;
         int keptCount = 0;
-        
-        auto now = std::filesystem::file_time_type::clock::now();
-        auto defaultRetention = std::chrono::hours(24 * 15); // 15 dias, por si alguna vez lo uso
 
         std::error_code dirEc;
         for (auto const& entry : std::filesystem::directory_iterator(path, dirEc)) {
@@ -519,7 +516,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 
     Loader::get()->queueInMainThread([this, task, realID, isGif]() {
         HttpClient::get().downloadThumbnail(realID, isGif, 
-            [this, task, isGif, realID](bool success, std::vector<uint8_t> const& data, int w, int h) {
+            [this, task, realID](bool success, std::vector<uint8_t> const& data, int w, int h) {
                 if (task->cancelled) {
                     finishTask(task, nullptr, false);
                     return;
@@ -528,7 +525,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                 if (success && !data.empty()) {
                     // empiezo procesamiento en thread background
                     // hilo de I/O disco + decodificacion stb_image — no migrable a WebTask
-                    std::thread([this, task, data, isGif, realID]() {
+                    std::thread([this, task, data, realID]() {
                         geode::utils::thread::setName("ThumbnailLoader Download Worker");
                         // 1. guardo en disco con nombre segun formato real
                         // asi no se duplica si el request estatico baja un GIF

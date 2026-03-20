@@ -30,25 +30,23 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
         if (!InfoLayer::init(level, score, list)) return false;
 
-        // Solo aplicar fondo si viene de un perfil de usuario (score != nullptr)
+    // solo aplicar fondo si es un perfil de usuario
         if (!score) return true;
 
         int accountID = score->m_accountID;
         if (accountID <= 0) return true;
 
-        // Intentar obtener la textura del cache de profileimg
+        // Intentar del cache primero
         CCTexture2D* tex = getProfileImgCachedTexture(accountID);
         if (!tex) {
-            // Si no hay cache, intentar descargar en background
+            // no hay cache, bajar en background
             Ref<InfoLayer> safeRef = this;
             ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef](bool success, CCTexture2D* texture) {
-                auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
-                if (!self->getParent()) return;
                 if (success && texture) {
                     Loader::get()->queueInMainThread([safeRef, texture]() {
-                        auto* self2 = static_cast<PaimonInfoLayer*>(safeRef.data());
-                        if (self2->getParent()) {
-                            self2->applyBlurredBackground(texture);
+                        auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
+                        if (self->getParent()) {
+                            self->applyBlurredBackground(texture);
                         }
                     });
                 }
@@ -58,7 +56,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         applyBlurredBackground(tex);
 
-        // Aplicar efecto cueva a la musica del perfil si esta sonando
+        // Aplicar efecto cueva si hay musica de perfil sonando
         if (ProfileMusicManager::get().isPlaying()) {
             ProfileMusicManager::get().applyCaveEffect();
             m_fields->m_hasCaveEffect = true;
@@ -74,7 +72,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (!layer) return;
         auto layerSize = layer->getContentSize();
 
-        // Buscar el background del popup por node ID de Geode
+        // Buscar el bg del popup por node ID
         CCSize popupSize = CCSize(440.f, 290.f);
         CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
 
@@ -82,7 +80,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             popupSize = bg->getScaledContentSize();
             popupCenter = bg->getPosition();
         } else {
-            // fallback: primer CCScale9Sprite hijo directo
+            // fallback: primer Scale9 hijo
             for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
                 if (typeinfo_cast<CCScale9Sprite*>(child)) {
                     popupSize = child->getScaledContentSize();
@@ -95,13 +93,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         float padding = 3.f;
         CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
 
-        // Crear sprite con blur gaussiano multi-paso
+        // blur gaussiano multi-paso
         auto blurredSprite = Shaders::createBlurredSprite(tex, imgArea, 7.0f);
         if (!blurredSprite) return;
 
         blurredSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
-        // Stencil geometrico — evita conflictos con HappyTextures/TextureLdr
+        // stencil geometrico, no sprites (pa no chocar con HappyTextures)
         auto stencil = CCDrawNode::create();
         CCPoint rect[4] = { ccp(0,0), ccp(imgArea.width,0), ccp(imgArea.width,imgArea.height), ccp(0,imgArea.height) };
         ccColor4F white = {1,1,1,1};
@@ -116,7 +114,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         clip->addChild(blurredSprite);
 
-        // Overlay oscuro para mejorar legibilidad
+        // overlay oscuro pa legibilidad
         auto dark = CCLayerColor::create(ccc4(0, 0, 0, 120));
         dark->setContentSize(imgArea);
         dark->setAnchorPoint(ccp(0, 0));
@@ -124,14 +122,14 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         dark->setID("paimon-infolayer-dark-overlay"_spr);
         clip->addChild(dark);
 
-        // Insertar detras del contenido (zOrder -1)
+        // detras de todo (zOrder -1)
         layer->addChild(clip, -1);
         m_fields->m_bgClip = clip;
 
-        // Ocultar elementos decorativos (igual que en ProfilePage)
+        // ocultar decoraciones del popup
         styleInfoLayerBgs(layer);
 
-        // Tick periodico para mantener estilos
+        // re-aplicar estilos periodicamente
         this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
     }
 
@@ -145,7 +143,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
 
-                // GJCommentListLayer: opacidad 0 + ocultar bordes y fondos
+                // GJCommentListLayer: transparentar y quitar bordes
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
                     commentList->setOpacity(0);
 
@@ -164,7 +162,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                         }
                     }
 
-                    // Ocultar fondos internos de CommentCells
+                    // quitar fondos de las celdas de comentarios
                     hideCommentCellBgs(commentList);
                 }
 
@@ -191,12 +189,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                     for (auto* cc : CCArrayExt<CCNode*>(cellChildren)) {
                         if (!cc) continue;
 
-                        // CCLayerColor directo = fondo de la celda
+                        // CCLayerColor = fondo de celda
                         if (typeinfo_cast<CCLayerColor*>(cc)) {
                             cc->setVisible(false);
                         }
 
-                        // CCLayer hijo: solo ocultar CCScale9Sprite de fondo, NO el CCLayer
+                        // en CCLayer hijo: solo quitar Scale9 de fondo
                         if (typeinfo_cast<CCLayer*>(cc) && !typeinfo_cast<CCLayerColor*>(cc)) {
                             auto* layerKids = cc->getChildren();
                             if (!layerKids) continue;

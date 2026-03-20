@@ -48,7 +48,7 @@ void ThumbnailSubmissionService::downloadSuggestion(int levelId, DownloadCallbac
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadSuggestion(levelId,
-        [levelId, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
             callback(success, ThumbnailTransportClient::bytesToTexture(data));
         });
@@ -70,7 +70,7 @@ void ThumbnailSubmissionService::downloadUpdate(int levelId, DownloadCallback ca
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadUpdate(levelId,
-        [levelId, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
             callback(success, ThumbnailTransportClient::bytesToTexture(data));
         });
@@ -80,7 +80,7 @@ void ThumbnailSubmissionService::downloadReported(int levelId, DownloadCallback 
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadReported(levelId,
-        [levelId, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
             callback(success, ThumbnailTransportClient::bytesToTexture(data));
         });
