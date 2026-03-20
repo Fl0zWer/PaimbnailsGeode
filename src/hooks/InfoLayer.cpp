@@ -9,6 +9,7 @@
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Shaders.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include <algorithm>
 
@@ -24,14 +25,87 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     struct Fields {
         Ref<CCClippingNode> m_bgClip = nullptr;
+        Ref<CCClippingNode> m_commentsBlurClip = nullptr;
+        Ref<CCSprite> m_commentsBlurSprite = nullptr;
+        Ref<CCLayerColor> m_commentsBlurDark = nullptr;
         bool m_hasCaveEffect = false;
     };
+
+    bool getCommentsPanelGeometry(CCPoint& outPos, CCSize& outSize, CCNode*& outCommentNode) {
+        auto layer = this->m_mainLayer;
+        if (!layer) return false;
+
+        CCNode* found = nullptr;
+        auto dfs = [&](auto const& self, CCNode* node) -> void {
+            if (!node || found) return;
+            if (typeinfo_cast<GJCommentListLayer*>(node)) {
+                found = node;
+                return;
+            }
+            auto children = node->getChildren();
+            if (!children) return;
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                self(self, child);
+                if (found) return;
+            }
+        };
+        dfs(dfs, layer);
+
+        if (!found) return false;
+        outCommentNode = found;
+
+        auto parent = found->getParent();
+        if (!parent) return false;
+
+        CCRect localRect = found->boundingBox();
+        CCPoint worldMin = parent->convertToWorldSpace(localRect.origin);
+        CCPoint worldMax = parent->convertToWorldSpace({
+            localRect.origin.x + localRect.size.width,
+            localRect.origin.y + localRect.size.height
+        });
+
+        CCPoint layerMin = layer->convertToNodeSpace(worldMin);
+        CCPoint layerMax = layer->convertToNodeSpace(worldMax);
+
+        float width = std::max(1.0f, std::abs(layerMax.x - layerMin.x));
+        float height = std::max(1.0f, std::abs(layerMax.y - layerMin.y));
+        outSize = {width, height};
+        outPos = {std::min(layerMin.x, layerMax.x), std::min(layerMin.y, layerMax.y)};
+        return true;
+    }
 
     $override
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
         if (!InfoLayer::init(level, score, list)) return false;
 
-    // solo aplicar fondo si es un perfil de usuario
+        // blur del panel de comentarios basado en miniatura del nivel (si existe)
+        if (level && level->m_levelID.value() > 0) {
+            int32_t levelID = level->m_levelID.value();
+            std::string fileName = fmt::format("{}.png", levelID);
+            Ref<InfoLayer> safeRef = this;
+            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, fileName](CCTexture2D* texture, bool success) {
+                auto applyOnMain = [safeRef](CCTexture2D* tex) {
+                    Loader::get()->queueInMainThread([safeRef, tex]() {
+                        auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
+                        if (!self || !self->getParent()) return;
+                        self->applyCommentsBlurBackground(tex);
+                    });
+                };
+
+                if (success && texture) {
+                    applyOnMain(texture);
+                    return;
+                }
+
+                ThumbnailLoader::get().requestLoad(levelID, fileName, [applyOnMain](CCTexture2D* fallbackTex, bool fallbackSuccess) {
+                    if (fallbackSuccess && fallbackTex) {
+                        applyOnMain(fallbackTex);
+                    }
+                }, 5, false);
+            }, 6, true);
+        }
+
+        // solo aplicar fondo de perfil si es popup de usuario
         if (!score) return true;
 
         int accountID = score->m_accountID;
@@ -65,6 +139,63 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         m_fields->m_hasCaveEffect = musicMgr.hasCaveEffect();
 
         return true;
+    }
+
+    void applyCommentsBlurBackground(CCTexture2D* tex) {
+        if (!tex) return;
+        auto layer = this->m_mainLayer;
+        if (!layer) return;
+
+        CCPoint panelPos;
+        CCSize panelSize;
+        CCNode* commentNode = nullptr;
+        if (!getCommentsPanelGeometry(panelPos, panelSize, commentNode)) return;
+
+        if (m_fields->m_commentsBlurClip) {
+            m_fields->m_commentsBlurClip->removeFromParent();
+            m_fields->m_commentsBlurClip = nullptr;
+            m_fields->m_commentsBlurSprite = nullptr;
+            m_fields->m_commentsBlurDark = nullptr;
+        }
+
+        auto blurred = Shaders::createBlurredSprite(tex, panelSize, 6.5f, true);
+        if (!blurred) return;
+        blurred->setPosition({panelSize.width * 0.5f, panelSize.height * 0.5f});
+        blurred->setID("paimon-infolayer-comments-blur-sprite"_spr);
+
+        auto stencil = CCDrawNode::create();
+        CCPoint rect[4] = { ccp(0,0), ccp(panelSize.width,0), ccp(panelSize.width,panelSize.height), ccp(0,panelSize.height) };
+        ccColor4F white = {1,1,1,1};
+        stencil->drawPolygon(rect, 4, white, 0, white);
+
+        auto clip = CCClippingNode::create();
+        clip->setStencil(stencil);
+        clip->setContentSize(panelSize);
+        clip->setAnchorPoint({0.f, 0.f});
+        clip->setPosition(panelPos);
+        clip->setID("paimon-infolayer-comments-blur-clip"_spr);
+
+        clip->addChild(blurred);
+
+        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 95));
+        dark->setContentSize(panelSize);
+        dark->setAnchorPoint({0.f, 0.f});
+        dark->setPosition({0.f, 0.f});
+        dark->setID("paimon-infolayer-comments-blur-dark"_spr);
+        clip->addChild(dark);
+
+        int z = 0;
+        if (commentNode && commentNode->getParent() == layer) {
+            z = commentNode->getZOrder() - 1;
+        }
+        layer->addChild(clip, z);
+
+        m_fields->m_commentsBlurClip = clip;
+        m_fields->m_commentsBlurSprite = blurred;
+        m_fields->m_commentsBlurDark = dark;
+
+        styleInfoLayerBgs(layer);
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
     }
 
     void applyBlurredBackground(CCTexture2D* tex) {
@@ -151,6 +282,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             if (!children) return;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
+                auto childId = child->getID();
+                if (!childId.empty() && childId.find("paimon-infolayer-comments-blur") == 0) {
+                    continue;
+                }
 
                 // GJCommentListLayer: transparentar y quitar bordes
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
@@ -239,6 +374,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void onExit() {
         restoreMusicEffect();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        if (m_fields->m_commentsBlurClip) {
+            m_fields->m_commentsBlurClip->removeFromParent();
+            m_fields->m_commentsBlurClip = nullptr;
+            m_fields->m_commentsBlurSprite = nullptr;
+            m_fields->m_commentsBlurDark = nullptr;
+        }
         InfoLayer::onExit();
     }
 
