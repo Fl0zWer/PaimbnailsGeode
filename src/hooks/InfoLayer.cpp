@@ -12,6 +12,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include <algorithm>
+#include <string>
 
 using namespace geode::prelude;
 
@@ -59,18 +60,18 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         CCRect localRect = found->boundingBox();
         CCPoint worldMin = parent->convertToWorldSpace(localRect.origin);
-        CCPoint worldMax = parent->convertToWorldSpace({
+        CCPoint worldMax = parent->convertToWorldSpace(ccp(
             localRect.origin.x + localRect.size.width,
             localRect.origin.y + localRect.size.height
-        });
+        ));
 
         CCPoint layerMin = layer->convertToNodeSpace(worldMin);
         CCPoint layerMax = layer->convertToNodeSpace(worldMax);
 
         float width = std::max(1.0f, std::abs(layerMax.x - layerMin.x));
         float height = std::max(1.0f, std::abs(layerMax.y - layerMin.y));
-        outSize = {width, height};
-        outPos = {std::min(layerMin.x, layerMax.x), std::min(layerMin.y, layerMax.y)};
+        outSize = CCSize(width, height);
+        outPos = ccp(std::min(layerMin.x, layerMax.x), std::min(layerMin.y, layerMax.y));
         return true;
     }
 
@@ -282,8 +283,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             if (!children) return;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
-                auto childId = child->getID();
-                if (!childId.empty() && childId.find("paimon-infolayer-comments-blur") == 0) {
+                auto childId = std::string(child->getID());
+                if (!childId.empty() && childId.rfind("paimon-infolayer-comments-blur", 0) == 0) {
                     continue;
                 }
 
