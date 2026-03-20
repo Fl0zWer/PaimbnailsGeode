@@ -60,7 +60,6 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         bool m_fileDialogOpen = false;
         bool m_captureInProgress = false;
     };
-    void captureSafetyRestore(float dt);
     $override
     void customSetup() {
         PauseLayer::customSetup();
