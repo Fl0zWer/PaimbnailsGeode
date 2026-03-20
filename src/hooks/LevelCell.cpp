@@ -110,7 +110,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         float m_animTime = 0.0f;
         bool m_hasGif = false;
-        Ref<CCTexture2D> m_gifTexture = nullptr;
         Ref<CCTexture2D> m_staticTexture = nullptr;
         paimon::image::RetainedLazyTextureLoad m_staticThumbLoad;
         bool m_isHovering = false;
@@ -1593,7 +1592,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_thumbnailApplied = false;
                 fields->m_lastRequestedLevelID = levelID;
                 fields->m_hasGif = false;
-                fields->m_gifTexture = nullptr;
                 fields->m_staticTexture = nullptr;
                 fields->m_staticThumbLoad.reset();
                 fields->m_loadedInvalidationVersion = 0;
@@ -1607,7 +1605,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_thumbnailRequested = false;
                 fields->m_thumbnailApplied = false;
                 fields->m_hasGif = false;
-                fields->m_gifTexture = nullptr;
                 fields->m_staticTexture = nullptr;
                 fields->m_staticThumbLoad.reset();
             }
@@ -1619,6 +1616,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             int currentRequestId = fields->m_requestId;
             fields->m_thumbnailRequested = true;
             fields->m_lastRequestedLevelID = levelID;
+            fields->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
             
             std::string fileName = fmt::format("{}.png", levelID);
             
@@ -1641,6 +1639,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                     return;
                 }
 
+                auto fields = cell->m_fields.self();
+                if (fields) {
+                    fields->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
+                }
+
                 if (ThumbnailLoader::get().hasGIFData(levelID)) {
                     cell->applyStaticThumbnailTexture(levelID, currentRequestId, tex, enableSpinners);
                     return;
@@ -1648,19 +1651,6 @@ class $modify(PaimonLevelCell, LevelCell) {
 
                 cell->startLazyStaticThumbnailLoad(levelID, currentRequestId, enableSpinners, tex);
             });
-
-            // 2. Request GIF thumbnail (hover animation). Background blur uses the static thumbnail.
-            
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, currentRequestId](CCTexture2D* tex, bool success) {
-                auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
-                if (!cell || !cell->shouldHandleThumbnailCallback(levelID, currentRequestId)) return;
-                auto fields = cell->m_fields.self();
-
-                if (success && tex) {
-                    fields->m_hasGif = true;
-                    fields->m_gifTexture = tex;
-                }
-            }, 0, true); // isGif = true
     }
 
     $override void update(float dt) {
@@ -1695,7 +1685,11 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        if (fields->m_hasGif && fields->m_gifTexture && fields->m_thumbSprite) {
+        if (fields->m_hasGif && fields->m_thumbSprite) {
+            auto* animatedThumb = typeinfo_cast<AnimatedGIFSprite*>(fields->m_thumbSprite.data());
+            if (!animatedThumb) {
+                return;
+            }
             fields->m_hoverCheckAccumulator += dt;
 #if defined(GEODE_IS_WINDOWS)
             if (fields->m_hoverCheckAccumulator < 0.04f) {
@@ -1719,21 +1713,18 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             if (hovering && !fields->m_isHovering) {
                 fields->m_isHovering = true;
-                fields->m_thumbSprite->setTexture(fields->m_gifTexture);
-                fields->m_thumbSprite->setTextureRect({0, 0, fields->m_gifTexture->getContentSize().width, fields->m_gifTexture->getContentSize().height});
-            } else if (!hovering && fields->m_isHovering) {
-                fields->m_isHovering = false;
-                if (fields->m_staticTexture) {
-                    fields->m_thumbSprite->setTexture(fields->m_staticTexture);
-                    fields->m_thumbSprite->setTextureRect({0, 0, fields->m_staticTexture->getContentSize().width, fields->m_staticTexture->getContentSize().height});
+                animatedThumb->play();
+            } else if (!hovering) {
+                if (fields->m_isHovering) {
+                    fields->m_isHovering = false;
                 }
+                animatedThumb->pause();
             }
 #else
             // En movil: mostrar siempre el GIF animado
             if (!fields->m_isHovering) {
                 fields->m_isHovering = true;
-                fields->m_thumbSprite->setTexture(fields->m_gifTexture);
-                fields->m_thumbSprite->setTextureRect({0, 0, fields->m_gifTexture->getContentSize().width, fields->m_gifTexture->getContentSize().height});
+                animatedThumb->play();
             }
 #endif
         }
