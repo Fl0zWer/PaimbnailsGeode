@@ -5,6 +5,8 @@
 #include "ProfileThumbs.hpp"
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <mutex>
 
 /**
  * ProfileImageService — subida/bajada de imagenes y configuracion de perfil.
@@ -37,6 +39,9 @@ public:
     void uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& gifData,
                              std::string const& username, UploadCallback callback);
     void downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf = false);
+    std::string getProfileImgGifKey(int accountID) const;
+    void rememberProfileImgGifKey(int accountID, std::string const& gifKey);
+    void clearProfileImgGifKey(int accountID);
 
     // perfil pendiente (moderadores en centro de verificacion)
     void downloadPendingProfile(int accountID, DownloadCallback callback);
@@ -53,4 +58,6 @@ private:
 
     bool m_serverEnabled = true;
     int  m_uploadCount   = 0;
+    mutable std::mutex m_profileImgGifMutex;
+    std::unordered_map<int, std::string> m_profileImgGifKeys;
 };

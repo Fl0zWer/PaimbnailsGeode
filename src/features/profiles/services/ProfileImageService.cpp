@@ -1,6 +1,7 @@
 #include "ProfileImageService.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/GIFDecoder.hpp"
 #include "../../../utils/ImageLoadHelper.hpp"
 #include "ProfileThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
@@ -9,6 +10,24 @@
 #include <fstream>
 
 using namespace geode::prelude;
+
+std::string ProfileImageService::getProfileImgGifKey(int accountID) const {
+    std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
+    auto it = m_profileImgGifKeys.find(accountID);
+    if (it == m_profileImgGifKeys.end()) return "";
+    return it->second;
+}
+
+void ProfileImageService::rememberProfileImgGifKey(int accountID, std::string const& gifKey) {
+    if (gifKey.empty()) return;
+    std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
+    m_profileImgGifKeys[accountID] = gifKey;
+}
+
+void ProfileImageService::clearProfileImgGifKey(int accountID) {
+    std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
+    m_profileImgGifKeys.erase(accountID);
+}
 
 // ── banner (profile background) uploads ─────────────────────────────
 
@@ -113,8 +132,12 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadProfileImg(accountID,
-        [accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
-            if (!success || data.empty()) { callback(false, nullptr); return; }
+        [this, accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+            if (!success || data.empty()) {
+                clearProfileImgGifKey(accountID);
+                callback(false, nullptr);
+                return;
+            }
 
             // cache disco
             {
@@ -128,6 +151,27 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
                 }
             }
 
+            bool isGIF = GIFDecoder::isGIF(data.data(), data.size());
+            if (isGIF) {
+                std::string gifKey = fmt::format("profileimg_gif_{}", accountID);
+                AnimatedGIFSprite::createAsync(data, gifKey, [this, accountID, gifKey, callback](AnimatedGIFSprite* sprite) {
+                    if (!sprite || !sprite->getTexture()) {
+                        queueInMainThread([this, accountID, callback]() {
+                            clearProfileImgGifKey(accountID);
+                            callback(false, nullptr);
+                        });
+                        return;
+                    }
+                    auto* tex = sprite->getTexture();
+                    queueInMainThread([this, accountID, gifKey, callback, tex]() {
+                        rememberProfileImgGifKey(accountID, gifKey);
+                        callback(true, tex);
+                    });
+                });
+                return;
+            }
+
+            clearProfileImgGifKey(accountID);
             auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
             queueInMainThread([accountID, callback, dataCopy]() {
                 auto loaded = ImageLoadHelper::loadWithSTBFromMemory(dataCopy->data(), dataCopy->size());

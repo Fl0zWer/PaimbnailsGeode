@@ -38,7 +38,7 @@
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
 #include "../features/moderation/services/ModeratorCache.hpp"
-#include "../features/profiles/services/ProfileThumbs.hpp"
+#include "../features/profiles/services/ProfileImageService.hpp"
 #include "../utils/SpriteHelper.hpp"
 #include "../framework/compat/SceneLocators.hpp"
 #include "../utils/GIFDecoder.hpp"
@@ -521,75 +521,73 @@ class $modify(PaimonProfilePage, ProfilePage) {
             if (!self->getParent()) return;
 
             if (success && texture) {
+                auto gifKey = ProfileImageService::get().getProfileImgGifKey(accountID);
+                if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
+                    static_cast<PaimonProfilePage*>(self.data())->displayProfileGifByKey(accountID, gifKey);
+                    return;
+                }
                 // Ref<> hace retain en la asignacion y release del anterior automaticamente
                 cacheProfileImgTexture(accountID, texture);
                 static_cast<PaimonProfilePage*>(self.data())->displayProfileImg(accountID, texture);
             }
         }, isSelf);
 
-        // pipeline alterno: usa cache/cola de ProfileThumbs (mismo flujo que ScoreCell)
-        // para soportar perfiles GIF aunque no haya imageplus.
-        std::string username = getViewedUsername();
-        if (!username.empty()) {
-            Ref<ProfilePage> self2 = this;
-            ProfileThumbs::get().queueLoad(accountID, username, [self2, accountID](bool success, CCTexture2D* texture) {
-                if (!self2->getParent()) return;
-                auto* page = static_cast<PaimonProfilePage*>(self2.data());
-                if (success && texture) {
-                    page->displayProfileImg(accountID, texture);
-                    return;
-                }
+        // Nota: no usamos fallback de ProfileThumbs/ScoreCell aqui para no reemplazar
+        // la profileimg original del usuario.
+    }
 
-                auto cached = ProfileThumbs::get().getCachedProfile(accountID);
-                if (cached && !cached->gifKey.empty() && AnimatedGIFSprite::isCached(cached->gifKey)) {
-                    auto gif = AnimatedGIFSprite::createFromCache(cached->gifKey);
-                    if (!gif) return;
+    void displayProfileGifByKey(int accountID, std::string const& gifKey) {
+        if (gifKey.empty() || !AnimatedGIFSprite::isCached(gifKey)) return;
+        auto* gif = AnimatedGIFSprite::createFromCache(gifKey);
+        if (!gif) return;
 
-                    auto f = page->m_fields.self();
-                    if (f->m_profileImgClip) {
-                        f->m_profileImgClip->removeFromParent();
-                        f->m_profileImgClip = nullptr;
-                    }
+        auto f = m_fields.self();
+        if (f->m_profileImgClip) { f->m_profileImgClip->removeFromParent(); f->m_profileImgClip = nullptr; }
 
-                    auto layer = page->m_mainLayer;
-                    if (!layer) return;
-                    auto layerSize = layer->getContentSize();
-                    auto popupGeo = paimon::compat::InfoLayerLocator::findPopupGeometry(layer);
-                    CCSize popupSize = popupGeo.found ? popupGeo.size : CCSize(440.f, 290.f);
-                    CCPoint popupCenter = popupGeo.found ? popupGeo.center : ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
-                    float padding = 3.f;
-                    CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
+        auto layer = this->m_mainLayer;
+        if (!layer) return;
+        auto layerSize = layer->getContentSize();
 
-                    auto stencil = CCDrawNode::create();
-                    CCPoint rect[4] = {ccp(0, 0), ccp(imgArea.width, 0), ccp(imgArea.width, imgArea.height), ccp(0, imgArea.height)};
-                    ccColor4F white = {1, 1, 1, 1};
-                    stencil->drawPolygon(rect, 4, white, 0, white);
-
-                    auto clip = CCClippingNode::create();
-                    clip->setStencil(stencil);
-                    clip->setContentSize(imgArea);
-                    clip->setAnchorPoint(ccp(0.5f, 0.5f));
-                    clip->setPosition(popupCenter);
-
-                    float scaleX = imgArea.width / std::max(1.0f, gif->getContentWidth());
-                    float scaleY = imgArea.height / std::max(1.0f, gif->getContentHeight());
-                    gif->setScale(std::max(scaleX, scaleY));
-                    gif->setAnchorPoint(ccp(0.5f, 0.5f));
-                    gif->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
-                    gif->play();
-                    clip->addChild(gif);
-
-                    auto dark = CCLayerColor::create(ccc4(0, 0, 0, 70));
-                    dark->setContentSize(imgArea);
-                    dark->setAnchorPoint(ccp(0, 0));
-                    dark->setPosition(ccp(0, 0));
-                    clip->addChild(dark);
-
-                    layer->addChild(clip, Mod::get()->getSettingValue<int64_t>("profile-img-zlayer"));
-                    f->m_profileImgClip = clip;
-                }
-            });
+        CCSize popupSize = CCSize(440.f, 290.f);
+        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
+        auto popupGeo = paimon::compat::InfoLayerLocator::findPopupGeometry(layer);
+        if (popupGeo.found) {
+            popupSize = popupGeo.size;
+            popupCenter = popupGeo.center;
         }
+
+        float padding = 3.f;
+        CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
+
+        auto stencil = CCDrawNode::create();
+        CCPoint rect[4] = { ccp(0,0), ccp(imgArea.width,0), ccp(imgArea.width,imgArea.height), ccp(0,imgArea.height) };
+        ccColor4F white = {1,1,1,1};
+        stencil->drawPolygon(rect, 4, white, 0, white);
+
+        auto clip = CCClippingNode::create();
+        clip->setStencil(stencil);
+        clip->setContentSize(imgArea);
+        clip->setAnchorPoint(ccp(0.5f, 0.5f));
+        clip->setPosition(popupCenter);
+
+        float scaleX = imgArea.width / std::max(1.0f, gif->getContentWidth());
+        float scaleY = imgArea.height / std::max(1.0f, gif->getContentHeight());
+        gif->setScale(std::max(scaleX, scaleY));
+        gif->setAnchorPoint(ccp(0.5f, 0.5f));
+        gif->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
+        gif->play();
+        clip->addChild(gif);
+
+        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 70));
+        dark->setContentSize(imgArea);
+        dark->setAnchorPoint(ccp(0, 0));
+        dark->setPosition(ccp(0, 0));
+        dark->setID("paimon-profileimg-dark-overlay"_spr);
+        clip->addChild(dark);
+
+        layer->addChild(clip, Mod::get()->getSettingValue<int64_t>("profile-img-zlayer"));
+        f->m_profileImgClip = clip;
+        styleProfileInternalBgs(layer);
     }
 
     static bool isBrownColor(ccColor3B const& c) {
@@ -1265,28 +1263,14 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                     saveProfileImgToDisk(accountID, imgData);
 
-                    if (GIFDecoder::isGIF(imgData.data(), imgData.size())) {
-                        auto gif = GIFDecoder::decode(imgData.data(), imgData.size());
-                        if (!gif.frames.empty()) {
-                            auto const& frame = gif.frames.front();
-                            if (!frame.pixels.empty() && frame.width > 0 && frame.height > 0) {
-                                auto* tex = new CCTexture2D();
-                                if (tex->initWithData(
-                                    frame.pixels.data(),
-                                    kCCTexture2DPixelFormat_RGBA8888,
-                                    frame.width,
-                                    frame.height,
-                                    CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
-                                )) {
-                                    tex->autorelease();
-                                    cacheProfileImgTexture(accountID, tex);
-                                    static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
-                                } else {
-                                    tex->release();
-                                }
-                            }
-                        }
-                    }
+                    std::string gifKey = fmt::format("profileimg_gif_{}", accountID);
+                    ProfileImageService::get().rememberProfileImgGifKey(accountID, gifKey);
+                    AnimatedGIFSprite::createAsync(imgData, gifKey, [imgGifSafeRef, accountID, gifKey](AnimatedGIFSprite* gifSprite) {
+                        auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data());
+                        if (!page || !page->getParent() || !gifSprite || !gifSprite->getTexture()) return;
+                        cacheProfileImgTexture(accountID, gifSprite->getTexture());
+                        page->displayProfileGifByKey(accountID, gifKey);
+                    });
                 } else {
                     PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                 }
@@ -1343,6 +1327,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             if (loading) loading->removeFromParent();
 
                             if (success) {
+                                ProfileImageService::get().clearProfileImgGifKey(accountID);
                                 bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
 
                                 if (isPending) {
