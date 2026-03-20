@@ -211,6 +211,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         int m_fadeTotalSteps = 0;
         float m_fadeFromVol = 0.0f;
         float m_fadeToVol = 0.0f;
+        bool m_hasProfileBackdrop = false;
     };
 
     bool canShowModerationControls() {
@@ -557,6 +558,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         layer->addChild(clip, Mod::get()->getSettingValue<int64_t>("profile-img-zlayer"));
         f->m_profileImgClip = clip;
+        f->m_hasProfileBackdrop = true;
+        this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonProfilePage::tickStyleBgs), 0.0f);
+        styleProfileInternalBgs(layer);
     }
 
     void tryDisplayAnimatedProfileImg(int accountID) {
@@ -579,6 +584,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void addOrUpdateProfileImgOnPage(int accountID, bool isSelf = false) {
         auto f = m_fields.self();
+        f->m_hasProfileBackdrop = false;
+        this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
 
         // limpiar anteriores
         if (f->m_profileImgClip) { f->m_profileImgClip->removeFromParent(); f->m_profileImgClip = nullptr; }
@@ -751,8 +758,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     void getUserInfoFinished(GJUserScore* score) {
         ProfilePage::getUserInfoFinished(score);
-        if (auto* layer = this->m_mainLayer) {
-            styleProfileInternalBgs(layer);
+        if (m_fields->m_hasProfileBackdrop) {
+            if (auto* layer = this->m_mainLayer) {
+                styleProfileInternalBgs(layer);
+            }
         }
     }
 
@@ -834,8 +843,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     void loadPageFromUserInfo(GJUserScore* score) {
         ProfilePage::loadPageFromUserInfo(score);
-        if (auto* layer = this->m_mainLayer) {
-            styleProfileInternalBgs(layer);
+        if (m_fields->m_hasProfileBackdrop) {
+            if (auto* layer = this->m_mainLayer) {
+                styleProfileInternalBgs(layer);
+            }
         }
 
         if (!this->m_mainLayer) return;
@@ -1123,14 +1134,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
         layer->addChild(clip, Mod::get()->getSettingValue<int64_t>("profile-img-zlayer"));
         f->m_profileImgClip = clip;
+        f->m_hasProfileBackdrop = true;
 
         // aplicar estilos a nodos ya existentes
         styleProfileInternalBgs(layer);
+        this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonProfilePage::tickStyleBgs), 0.0f);
     }
 
     // Tick periodico: reaplica opacidad 0 a icon-background por si GD lo recrea
     // (e.g. al cambiar tab de comentarios).
     void tickStyleBgs(float) {
+        if (!m_fields->m_hasProfileBackdrop) return;
         if (auto* layer = this->m_mainLayer) {
             styleProfileInternalBgs(layer);
         }
@@ -1208,9 +1223,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
             // Cargar imagen de perfil (visible para todos)
             addOrUpdateProfileImgOnPage(accountID, ownProfile);
-
-            // schedule permanente: mantiene icon-background con opacidad 0
-            this->schedule(schedule_selector(PaimonProfilePage::tickStyleBgs), 0.01f);
 
             // schedule de verificacion de integridad de botones cada 0.5s
             this->schedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity), 0.5f);

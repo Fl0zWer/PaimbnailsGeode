@@ -10,6 +10,7 @@
 #include "../utils/Shaders.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../framework/compat/SceneLocators.hpp"
 #include <algorithm>
@@ -100,6 +101,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (level && level->m_levelID.value() > 0) {
             int32_t levelID = level->m_levelID.value();
             std::string fileName = fmt::format("{}.png", levelID);
+
+            // Si ya existe mini local, aplico al instante para evitar flicker.
+            if (auto* localTex = LocalThumbs::get().loadTexture(levelID)) {
+                applyCommentsBlurBackground(localTex);
+            }
+
             Ref<InfoLayer> safeRef = this;
             ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, fileName](CCTexture2D* texture, bool success) {
                 auto applyOnMain = [safeRef](CCTexture2D* tex) {
@@ -213,7 +220,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         m_fields->m_commentsBlurDark = dark;
 
         styleInfoLayerBgs(layer);
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
+        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
     }
 
     void applyBlurredBackground(CCTexture2D* tex) {
@@ -288,7 +296,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         styleInfoLayerBgs(layer);
 
         // re-aplicar estilos periodicamente
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
+        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
     }
 
     void styleInfoLayerBgs(CCNode* root) {
