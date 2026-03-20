@@ -300,7 +300,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                             if (id == "left-border" || id == "right-border" ||
                                 id == "top-border" || id == "bottom-border") {
                                 lc->setVisible(true);
-                                lc->setOpacity(190);
+                                if (auto* spr = typeinfo_cast<CCSprite*>(lc)) {
+                                    spr->setOpacity(190);
+                                } else if (auto* s9 = typeinfo_cast<CCScale9Sprite*>(lc)) {
+                                    s9->setOpacity(190);
+                                } else if (auto* col = typeinfo_cast<CCLayerColor*>(lc)) {
+                                    col->setOpacity(190);
+                                }
                             }
                             if (id.empty() && typeinfo_cast<CCLayerColor*>(lc)) {
                                 lc->setVisible(false);
