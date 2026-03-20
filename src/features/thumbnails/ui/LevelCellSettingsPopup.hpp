@@ -64,7 +64,7 @@ protected:
 
     geode::CopyableFunction<void()> m_onSettingsChanged;
 
-    bool init();
+    bool init() override;
     void loadSettings();
     void saveSettings();
     void checkScrollPosition(float dt);

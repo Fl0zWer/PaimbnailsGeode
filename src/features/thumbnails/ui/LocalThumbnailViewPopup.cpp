@@ -37,7 +37,7 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
-bool LocalThumbnailViewPopup::isUiAlive() const {
+bool LocalThumbnailViewPopup::isUiAlive() {
     return !m_isExiting && this->getParent() && m_mainLayer;
 }
 
