@@ -135,6 +135,7 @@ private:
     static std::condition_variable s_queueCV;
     static std::thread s_workerThread;
     static std::atomic<bool> s_workerRunning;
+    static std::atomic<bool> s_shutdownMode;
     static std::mutex s_workerLifecycleMutex;
     static void workerLoop();
     static void initWorker();

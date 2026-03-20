@@ -1296,6 +1296,7 @@ void PaiConfigLayer::onTransitions(CCObject*) {
 }
 
 void PaiConfigLayer::onClearAllCache(CCObject*) {
+    WeakRef<PaiConfigLayer> self = this;
     geode::createQuickPopup(
         "Clear All Cache",
         "This will <cr>delete all cached data</c>:\n"
@@ -1303,8 +1304,11 @@ void PaiConfigLayer::onClearAllCache(CCObject*) {
         "GIFs, and profile background settings.\n\n"
         "Are you sure?",
         "Cancel", "Clear",
-        [this](auto*, bool confirmed) {
+        [self](auto*, bool confirmed) {
             if (!confirmed) return;
+            auto layerRef = self.lock();
+            auto* layer = static_cast<PaiConfigLayer*>(layerRef.data());
+            if (!layer || !layer->getParent()) return;
 
             // 1) Parar musica de perfil si suena
             ProfileMusicManager::get().stopProfileMusic();
@@ -1344,7 +1348,7 @@ void PaiConfigLayer::onClearAllCache(CCObject*) {
             (void)Mod::get()->saveData();
 
             // 10) Rebuild preview si estamos en tab profile
-            rebuildProfilePreview();
+            layer->rebuildProfilePreview();
 
             log::info("[PaiConfigLayer] All caches cleared by user");
             PaimonNotify::create("All caches cleared!", NotificationIcon::Success)->show();

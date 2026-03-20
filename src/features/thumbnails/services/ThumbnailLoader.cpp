@@ -717,15 +717,16 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 
 void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success) {
     std::vector<LoadCallback> callbacks;
-    bool shouldNotify = !task->cancelled;
+    bool shuttingDown = m_shuttingDown.load(std::memory_order_acquire);
+    bool shouldNotify = !task->cancelled && !shuttingDown;
 
     // main thread: lock protege m_textureCache, m_failedCache, m_tasks
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
 
-        if (success && texture) {
+        if (!shuttingDown && success && texture) {
             addToCache(task->levelID, texture);
-        } else if (!task->cancelled) {
+        } else if (!shuttingDown && !task->cancelled) {
             m_failedCache[task->levelID] = std::chrono::steady_clock::now();
         }
 
@@ -737,8 +738,10 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
         m_tasks.erase(task->levelID);
         m_activeTaskCount.fetch_sub(1, std::memory_order_relaxed);
 
-        // proceso el siguiente
-        processQueue();
+        // proceso el siguiente solo si seguimos vivos
+        if (!shuttingDown) {
+            processQueue();
+        }
     }
 
     // callbacks fuera del lock para evitar deadlocks/re-entradas

@@ -653,6 +653,8 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
             std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
             Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, restoreAfter]() {
                 if (!m_isFadingOut) return;
+                auto engine = FMODAudioEngine::sharedEngine();
+                if (!engine || !engine->m_backgroundMusicChannel) return;
                 executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreAfter);
             });
         }).detach();
@@ -688,6 +690,8 @@ void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
             std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
             Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo]() {
                 if (!m_isFadingIn) return;
+                auto engine = FMODAudioEngine::sharedEngine();
+                if (!engine || !engine->m_backgroundMusicChannel) return;
                 executeDipFadeIn(next, totalSteps, volFrom, volTo);
             });
         }).detach();
@@ -1288,6 +1292,8 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
             std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
             Loader::get()->queueInMainThread([this, next, totalSteps, cutoffFrom, cutoffTo,
                                                freqFrom, freqTo, volFrom, volTo, applying]() {
+                auto engine = FMODAudioEngine::sharedEngine();
+                if (!engine || !engine->m_backgroundMusicChannel) return;
                 executeCaveTransitionStep(next, totalSteps, cutoffFrom, cutoffTo,
                     freqFrom, freqTo, volFrom, volTo, applying);
             });

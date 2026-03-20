@@ -43,10 +43,12 @@ std::mutex AnimatedGIFSprite::s_queueMutex;
 std::condition_variable AnimatedGIFSprite::s_queueCV;
 std::thread AnimatedGIFSprite::s_workerThread;
 std::atomic<bool> AnimatedGIFSprite::s_workerRunning = false;
+std::atomic<bool> AnimatedGIFSprite::s_shutdownMode = false;
 std::mutex AnimatedGIFSprite::s_workerLifecycleMutex;
 
 void AnimatedGIFSprite::initWorker() {
     std::lock_guard<std::mutex> lock(s_workerLifecycleMutex);
+    s_shutdownMode.store(false, std::memory_order_release);
     if (!s_workerRunning.load(std::memory_order_acquire)) {
         s_workerRunning.store(true, std::memory_order_release);
         s_workerThread = std::thread(workerLoop);
@@ -531,6 +533,10 @@ void AnimatedGIFSprite::workerLoop() {
             auto gifData = GIFDecoder::decode(task.data.data(), task.data.size());
             
             Loader::get()->queueInMainThread([key = task.key, gifData = std::move(gifData), cb = task.callback]() mutable {
+                if (s_shutdownMode.load(std::memory_order_acquire)) {
+                    if (cb) cb(nullptr);
+                    return;
+                }
                 if (gifData.frames.empty()) {
                     if (cb) cb(nullptr);
                     return;
@@ -623,6 +629,10 @@ void AnimatedGIFSprite::workerLoop() {
             DiskCacheEntry cachedEntry;
             if (loadFromDiskCache(task.path, cachedEntry)) {
                 Loader::get()->queueInMainThread([path = task.path, cachedEntry = std::move(cachedEntry), cb = task.callback]() mutable {
+                    if (s_shutdownMode.load(std::memory_order_acquire)) {
+                        if (cb) cb(nullptr);
+                        return;
+                    }
                     auto ret = new AnimatedGIFSprite();
                     if (ret) {
                         ret->m_filename = path;
@@ -708,6 +718,10 @@ void AnimatedGIFSprite::workerLoop() {
             saveToDiskCache(task.path, newCacheEntry);
             
             Loader::get()->queueInMainThread([path = task.path, gifData = std::move(gifData), cb = task.callback]() mutable {
+                if (s_shutdownMode.load(std::memory_order_acquire)) {
+                    if (cb) cb(nullptr);
+                    return;
+                }
                 if (gifData.frames.empty()) {
                     if (cb) cb(nullptr);
                     return;
@@ -750,6 +764,8 @@ void AnimatedGIFSprite::workerLoop() {
 }
 
 void AnimatedGIFSprite::clearCache() {
+    s_shutdownMode.store(true, std::memory_order_release);
+    shutdownWorker();
     std::lock_guard<std::mutex> lock(s_cacheMutex);
     for (auto& [key, data] : s_gifCache) {
         for (auto* tex : data.textures) {
@@ -761,7 +777,6 @@ void AnimatedGIFSprite::clearCache() {
     s_lruMap.clear();
     s_currentCacheSize = 0;
     PaimonDebug::log("[AnimatedGIFSprite] Cache cleared");
-    shutdownWorker();
 }
 
 void AnimatedGIFSprite::remove(std::string const& filename) {

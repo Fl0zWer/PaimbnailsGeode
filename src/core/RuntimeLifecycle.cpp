@@ -7,6 +7,7 @@
 #include <Geode/utils/string.hpp>
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/pet/services/PetManager.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/LocalThumbs.hpp"
@@ -84,8 +85,10 @@ $on_game(Exiting) {
     // 2. cache global de GIFs animados en RAM
     AnimatedGIFSprite::clearCache();
 
-    // 3. parar musica de perfiles (siempre)
-    ProfileMusicManager::get().stopProfileMusic();
+    // 3. detener audio dinamico/perfil de forma forzada (evita estados intermedios
+    // de fades/transiciones durante shutdown)
+    DynamicSongManager::get()->forceKill();
+    ProfileMusicManager::get().forceStop();
     PetManager::get().releaseSharedResources();
 
     // === Disk cleanup (solo si clear-cache-on-exit esta activado) ===

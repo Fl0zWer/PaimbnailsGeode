@@ -122,6 +122,14 @@ CapturePreviewPopup::~CapturePreviewPopup() {
     }
 }
 
+void CapturePreviewPopup::onExit() {
+    if (m_touchDelegateRegistered) {
+        CCDirector::sharedDirector()->getTouchDispatcher()->removeDelegate(this);
+        m_touchDelegateRegistered = false;
+    }
+    Popup::onExit();
+}
+
 // ─── updateContent ──────────────────────────────────────────────────
 void CapturePreviewPopup::updateContent(CCTexture2D* texture,
     std::shared_ptr<uint8_t> buffer, int width, int height)

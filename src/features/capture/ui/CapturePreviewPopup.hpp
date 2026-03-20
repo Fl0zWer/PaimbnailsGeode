@@ -50,6 +50,7 @@ protected:
     void ccTouchMoved(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchEnded(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
+    void onExit() override;
     void scrollWheel(float x, float y) override;
 
 private:

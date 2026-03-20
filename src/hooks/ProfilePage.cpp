@@ -1214,6 +1214,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         CC_SAFE_RETAIN(loaded.texture);
 
         int accountID = this->m_accountID;
+        Ref<ProfilePage> previewCbRef = this;
 
         auto popup = CapturePreviewPopup::create(
             loaded.texture,
@@ -1221,7 +1222,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
             loaded.buffer,
             loaded.width,
             loaded.height,
-            [this, accountID](bool ok, int id, std::shared_ptr<uint8_t> buf, int w, int h, std::string mode, std::string replaceId) {
+            [previewCbRef, accountID](bool ok, int id, std::shared_ptr<uint8_t> buf, int w, int h, std::string mode, std::string replaceId) {
+                auto* page = static_cast<PaimonProfilePage*>(previewCbRef.data());
+                if (!page || !page->getParent()) return;
                 if (ok && buf) {
                     // convertir buffer RGBA a PNG en memoria (Unicode-safe, sin archivo temporal)
                     std::vector<uint8_t> pngData;
@@ -1234,10 +1237,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         auto pngSpinner = geode::LoadingSpinner::create(30.f);
                         pngSpinner->setPosition(CCDirector::sharedDirector()->getWinSize() / 2);
                         pngSpinner->setID("paimon-loading-spinner"_spr);
-                        this->addChild(pngSpinner, 100);
+                        page->addChild(pngSpinner, 100);
                         Ref<geode::LoadingSpinner> loading = pngSpinner;
 
-                        Ref<ProfilePage> imgUploadRef = this;
+                        Ref<ProfilePage> imgUploadRef = previewCbRef;
 
                         ThumbnailAPI::get().uploadProfileImg(accountID, pngData, username, "image/png", [imgUploadRef, accountID, pngData, loading, buf, w, h](bool success, std::string const& msg) {
                             if (loading) loading->removeFromParent();
@@ -1410,6 +1413,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     void onClose(CCObject* sender) {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
+        this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
         ProfileMusicManager::get().stopProfileMusic();
         resumeMenuMusicIfNeeded();
         ProfilePage::onClose(sender);
@@ -1418,6 +1422,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     void onExit() {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
+        this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
         if (!ProfileMusicManager::get().isFadingOut()) {
             ProfileMusicManager::get().stopProfileMusic();
         }

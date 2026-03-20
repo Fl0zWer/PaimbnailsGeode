@@ -159,6 +159,8 @@ void LeaderboardHistoryLayer::onEnterTransitionDidFinish() {
 }
 
 void LeaderboardHistoryLayer::onExitTransitionDidStart() {
+    this->unscheduleUpdate();
+    CCDirector::sharedDirector()->getTouchDispatcher()->removeDelegate(this);
     CCLayer::onExitTransitionDidStart();
 }
 
@@ -619,7 +621,6 @@ void LeaderboardHistoryLayer::setupPageInfo(gd::string, char const*) {
 
 LeaderboardHistoryLayer::~LeaderboardHistoryLayer() {
     removeCaveEffect();
-    CCDirector::sharedDirector()->getTouchDispatcher()->removeDelegate(this);
     
     if (GameLevelManager::get()->m_levelManagerDelegate == this) {
         GameLevelManager::get()->m_levelManagerDelegate = nullptr;

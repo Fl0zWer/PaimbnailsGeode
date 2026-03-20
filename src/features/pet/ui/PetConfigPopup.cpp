@@ -314,15 +314,18 @@ void PetConfigPopup::onDeleteImage(CCObject* sender) {
 
     std::string filename = nameObj->getCString();
 
+    WeakRef<PetConfigPopup> self = this;
     geode::createQuickPopup(
         "Delete Pet",
         "Are you sure you want to <cr>delete</c> this pet image?\n<cy>" + filename + "</c>",
         "Cancel", "Delete",
-        [this, filename](auto*, bool confirmed) {
+        [self, filename](auto*, bool confirmed) {
             if (!confirmed) return;
+            auto popup = self.lock();
+            if (!popup || !popup->getParent()) return;
             PetManager::get().removeFromGallery(filename);
             PaimonNotify::create("Image removed", NotificationIcon::Info)->show();
-            refreshGallery();
+            static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         }
     );
 }
@@ -339,12 +342,15 @@ void PetConfigPopup::onDeleteAllImages(CCObject*) {
         images.size()
     );
 
+    WeakRef<PetConfigPopup> self = this;
     geode::createQuickPopup(
         "Delete All Pets",
         msg,
         "Cancel", "Delete All",
-        [this](auto*, bool confirmed) {
+        [self](auto*, bool confirmed) {
             if (!confirmed) return;
+            auto popup = self.lock();
+            if (!popup || !popup->getParent()) return;
 
             // also clean up any invalid images
             int cleaned = PetManager::get().cleanupInvalidImages();
@@ -356,7 +362,7 @@ void PetConfigPopup::onDeleteAllImages(CCObject*) {
                 note += fmt::format(" ({} corrupted files removed)", cleaned);
             }
             PaimonNotify::create(note, NotificationIcon::Success)->show();
-            refreshGallery();
+            static_cast<PetConfigPopup*>(popup.data())->refreshGallery();
         }
     );
 }
