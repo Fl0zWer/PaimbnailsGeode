@@ -23,6 +23,13 @@
 
 using namespace geode::prelude;
 
+static float getContentScaleFactorSafe() {
+    auto* director = CCDirector::sharedDirector();
+    float sf = director ? director->getContentScaleFactor() : 1.0f;
+    if (sf <= 0.0f) sf = 1.0f;
+    return sf;
+}
+
 ThumbnailLoader& ThumbnailLoader::get() {
     static ThumbnailLoader instance;
     return instance;
@@ -408,7 +415,8 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
                                 Loader::get()->queueInMainThread([this, task, rgbaData, finalW, finalH, realID]() {
                                     if (task->cancelled) { finishTask(task, nullptr, false); return; }
                                     auto tex = new CCTexture2D();
-                                    if (tex->initWithData(rgbaData.data(), kCCTexture2DPixelFormat_RGBA8888, finalW, finalH, CCSize((float)finalW, (float)finalH))) {
+                                    float sf = getContentScaleFactorSafe();
+                                    if (tex->initWithData(rgbaData.data(), kCCTexture2DPixelFormat_RGBA8888, finalW, finalH, CCSize((float)finalW / sf, (float)finalH / sf))) {
                                         tex->autorelease();
                                         PaimonDebug::log("[ThumbnailLoader] textura cargada desde LocalThumbs .rgb pal nivel {}", realID);
                                         finishTask(task, tex, true);
@@ -484,7 +492,8 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
                     if (task->cancelled) { finishTask(task, nullptr, false); return; }
                     
                     auto tex = new CCTexture2D();
-                    if (tex->initWithData(rawData.data(), kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize((float)w, (float)h))) {
+                    float sf = getContentScaleFactorSafe();
+                    if (tex->initWithData(rawData.data(), kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize((float)w / sf, (float)h / sf))) {
                         tex->autorelease();
                         finishTask(task, tex, true);
                 } else {
@@ -585,7 +594,8 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                                     if (task->cancelled) { finishTask(task, nullptr, false); return; }
                                     
                                     auto tex = new CCTexture2D();
-                                    if (tex->initWithData(rawData.data(), kCCTexture2DPixelFormat_RGBA8888, sw, sh, CCSize((float)sw, (float)sh))) {
+                                    float sf = getContentScaleFactorSafe();
+                                    if (tex->initWithData(rawData.data(), kCCTexture2DPixelFormat_RGBA8888, sw, sh, CCSize((float)sw / sf, (float)sh / sf))) {
                                         tex->autorelease();
                                         finishTask(task, tex, true);
                                     } else {

@@ -331,7 +331,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
 
-        Ref<LevelCell> safeRef = this;
+        WeakRef<PaimonLevelCell> safeRef = this;
         Ref<CCTexture2D> fallbackRef = fallbackTexture;
         fields->m_staticThumbLoad.loadFromFile(std::filesystem::path(*path), [
             safeRef,
@@ -340,7 +340,8 @@ class $modify(PaimonLevelCell, LevelCell) {
             enableSpinners,
             fallbackRef
         ](CCTexture2D* texture, bool success) {
-            auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
+            auto cellRef = safeRef.lock();
+            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
             if (!cell) {
                 return;
             }
@@ -411,9 +412,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF)) {
             auto path = ThumbnailLoader::get().getCachePath(levelIDForGIF, true);
             
-            Ref<LevelCell> safeRef = this;
+            WeakRef<PaimonLevelCell> safeRef = this;
             AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [safeRef, levelIDForGIF](AnimatedGIFSprite* anim) {
-                auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
+                auto cellRef = safeRef.lock();
+                auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+                if (!cell) return;
                 if (!cell->getParent()) return; // cell removed from scene
                 if (cell->m_level && cell->m_level->m_levelID == levelIDForGIF) {
                     auto fields = cell->m_fields.self();
@@ -618,9 +621,11 @@ class $modify(PaimonLevelCell, LevelCell) {
 
              if (ThumbnailLoader::get().hasGIFData(levelID)) {
                  auto path = ThumbnailLoader::get().getCachePath(levelID, true);
-                 Ref<LevelCell> gradSafeRef = this;
+                 WeakRef<PaimonLevelCell> gradSafeRef = this;
                  AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [gradSafeRef, levelID, blurIntensity](AnimatedGIFSprite* anim) {
-                     auto* self = static_cast<PaimonLevelCell*>(gradSafeRef.data());
+                     auto selfRef = gradSafeRef.lock();
+                     auto* self = static_cast<PaimonLevelCell*>(selfRef.data());
+                     if (!self) return;
                      if (!self->getParent()) return;
                      if (self->m_level && self->m_level->m_levelID == levelID) {
                          if (anim) {
@@ -1062,11 +1067,15 @@ class $modify(PaimonLevelCell, LevelCell) {
         this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
 
         if (auto fields = m_fields.self()) {
+            fields->m_isBeingDestroyed = true;
+            fields->m_requestId++;
+            fields->m_thumbnailRequested = false;
             fields->m_staticThumbLoad.reset();
         }
 
         if (m_level) {
             ThumbnailLoader::get().cancelLoad(m_level->m_levelID.value());
+            ThumbnailLoader::get().cancelLoad(m_level->m_levelID.value(), true);
         }
         LevelCell::onExit();
     }
@@ -1625,11 +1634,12 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             if (enableSpinners) showLoadingSpinner();
             
-            Ref<LevelCell> safeRef = this;
+            WeakRef<PaimonLevelCell> safeRef = this;
 
             // 1. Request Static Thumbnail
             ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool success) {
-                auto* cell = static_cast<PaimonLevelCell*>(safeRef.data());
+                auto cellRef = safeRef.lock();
+                auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
                 if (!cell || !cell->shouldHandleThumbnailCallback(levelID, currentRequestId)) {
                     return;
                 }
