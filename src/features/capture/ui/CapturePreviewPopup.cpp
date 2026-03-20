@@ -43,7 +43,10 @@ CCSize getSpriteLogicalSize(CCSprite* sprite) {
         return size;
     }
     if (auto* tex = sprite->getTexture()) {
-        return {tex->getPixelsWide(), tex->getPixelsHigh()};
+        return {
+            static_cast<float>(tex->getPixelsWide()),
+            static_cast<float>(tex->getPixelsHigh())
+        };
     }
     return {0.f, 0.f};
 }
