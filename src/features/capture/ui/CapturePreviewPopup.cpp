@@ -27,6 +27,7 @@
 #include <sstream>
 #include <future>
 #include <mutex>
+#include <algorithm>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -34,6 +35,30 @@ using namespace cocos2d;
 namespace {
 std::mutex s_downloadWorkerMutex;
 std::vector<std::future<void>> s_downloadWorkers;
+
+CCSize getSpriteLogicalSize(CCSprite* sprite) {
+    if (!sprite) return {0.f, 0.f};
+    auto size = sprite->getContentSize();
+    if (size.width > 0.f && size.height > 0.f) {
+        return size;
+    }
+    if (auto* tex = sprite->getTexture()) {
+        return {tex->getPixelsWide(), tex->getPixelsHigh()};
+    }
+    return {0.f, 0.f};
+}
+
+float computePreviewScale(CCSprite* sprite, float viewWidth, float viewHeight, bool fillMode) {
+    auto size = getSpriteLogicalSize(sprite);
+    if (viewWidth <= 0.f || viewHeight <= 0.f || size.width <= 0.f || size.height <= 0.f) {
+        return 1.f;
+    }
+    float scaleX = viewWidth / size.width;
+    float scaleY = viewHeight / size.height;
+    float scale = fillMode ? std::max(scaleX, scaleY) : std::min(scaleX, scaleY);
+    if (scale <= 0.f) return 1.f;
+    return std::clamp(scale, 0.01f, 64.0f);
+}
 
 void spawnDownloadWorker(std::function<void()> job) {
     std::lock_guard<std::mutex> lock(s_downloadWorkerMutex);
@@ -198,18 +223,10 @@ bool CapturePreviewPopup::init() {
     ccTexParams texParams{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     m_texture->setTexParameters(&texParams);
 
-    // Escalar para fill (max) — igual que LocalThumbnailViewPopup
-    float scaleX = maxWidth  / m_previewSprite->getContentSize().width;
-    float scaleY = maxHeight / m_previewSprite->getContentSize().height;
-    float scale  = std::max(scaleX, scaleY);
-
-    m_previewSprite->setScale(scale);
-    m_initialScale = scale;
-    m_minScale     = scale;
-    m_maxScale     = std::max(4.0f, scale * 6.0f);
-
+    // Normalizar con la misma rutina usada por recálculos (fit/fill)
     m_previewSprite->setPosition(ccp(maxWidth / 2, maxHeight / 2));
     m_clippingNode->addChild(m_previewSprite, 10);
+    updatePreviewScale();
 
     // ── boton X (reposicionar al borde del area preview) ────────
     if (m_closeBtn) {
@@ -308,13 +325,7 @@ bool CapturePreviewPopup::init() {
 void CapturePreviewPopup::updatePreviewScale() {
     if (!m_previewSprite || m_viewWidth < 1.f || m_viewHeight < 1.f) return;
 
-    float imgW = m_previewSprite->getContentSize().width;
-    float imgH = m_previewSprite->getContentSize().height;
-    if (imgW < 1.f || imgH < 1.f) return;
-
-    float scaleX = m_viewWidth  / imgW;
-    float scaleY = m_viewHeight / imgH;
-    float scale  = m_fillMode ? std::max(scaleX, scaleY) : std::min(scaleX, scaleY);
+    float scale = computePreviewScale(m_previewSprite, m_viewWidth, m_viewHeight, m_fillMode);
 
     m_previewSprite->setScale(scale);
     m_previewSprite->setAnchorPoint({0.5f, 0.5f});

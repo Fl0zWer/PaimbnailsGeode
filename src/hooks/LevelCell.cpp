@@ -5,6 +5,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include <cmath>
+#include <algorithm>
 #include <string_view>
 #include <unordered_set>
 #include "../features/thumbnails/services/LocalThumbs.hpp"
@@ -33,6 +34,15 @@ enum class PaimonAnimEffect : uint8_t {
 };
 
 enum class PaimonBgType : uint8_t { Gradient, Thumbnail };
+
+static float safeCoverScale(float targetWidth, float targetHeight, float contentWidth, float contentHeight, float fallback = 1.0f) {
+    if (targetWidth <= 0.0f || targetHeight <= 0.0f || contentWidth <= 0.0f || contentHeight <= 0.0f) {
+        return fallback;
+    }
+    float scale = std::max(targetWidth / contentWidth, targetHeight / contentHeight);
+    if (scale <= 0.0f) return fallback;
+    return std::clamp(scale, 0.01f, 64.0f);
+}
 
 static PaimonAnimType parseAnimType(std::string const& s) {
     if (s == "zoom-slide") return PaimonAnimType::ZoomSlide;
@@ -152,6 +162,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         const float contentWidth = sprite->getContentSize().width;
         const float contentHeight = sprite->getContentSize().height;
+        if (contentWidth <= 0.f || contentHeight <= 0.f || bgWidth <= 0.f || bgHeight <= 0.f) {
+            outScaleX = 1.f;
+            outScaleY = 1.f;
+            return;
+        }
         const float desiredWidth = bgWidth * widthFactor;
         
         // escalar pa cubrir altura exacta
@@ -169,12 +184,13 @@ class $modify(PaimonLevelCell, LevelCell) {
         
         const float contentWidth = sprite->getContentSize().width;
         const float contentHeight = sprite->getContentSize().height;
-        
+        if (contentWidth <= 0.f || contentHeight <= 0.f || targetWidth <= 0.f || targetHeight <= 0.f) {
+            outScale = 1.f;
+            return;
+        }
+
         // usar la escala mayor pa cubrir todo, con margen de seguridad
-        outScale = std::max(
-            targetWidth / contentWidth,
-            targetHeight / contentHeight
-        ) * 1.15f;
+        outScale = safeCoverScale(targetWidth, targetHeight, contentWidth, contentHeight, 1.f) * 1.15f;
     }
     
     void showLoadingSpinner() {
@@ -633,9 +649,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                                  if (auto clipper = bg->getChildByID("paimon-bg-clipper"_spr)) {
                                      clipper->removeAllChildren();
                                      
-                                     float targetW = clipper->getContentWidth();
-                                     float targetH = clipper->getContentHeight();
-                                     float scale = std::max(targetW / anim->getContentWidth(), targetH / anim->getContentHeight());
+                                    float targetW = clipper->getContentWidth();
+                                    float targetH = clipper->getContentHeight();
+                                    float scale = safeCoverScale(
+                                        targetW, targetH,
+                                        anim->getContentWidth(), anim->getContentHeight(),
+                                        1.0f
+                                    );
                                      anim->setScale(scale);
                                      anim->setPosition(clipper->getContentSize() / 2);
                                      
@@ -692,10 +712,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                  float targetW = bg->getContentWidth();
                  float targetH = bg->getContentHeight();
 
-                 float scale = std::max(
-                     targetW / bgSprite->getContentSize().width,
-                     targetH / bgSprite->getContentSize().height
-                 );
+                float scale = safeCoverScale(
+                    targetW, targetH,
+                    bgSprite->getContentSize().width, bgSprite->getContentSize().height,
+                    1.0f
+                );
                  bgSprite->setScale(scale);
                  
                  bgSprite->setPosition(bg->getContentSize() / 2);

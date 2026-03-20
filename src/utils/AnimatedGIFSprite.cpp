@@ -11,10 +11,10 @@
 using namespace geode::prelude;
 
 static float getContentScaleFactorSafe() {
-    auto* director = CCDirector::sharedDirector();
-    float sf = director ? director->getContentScaleFactor() : 1.0f;
-    if (sf <= 0.0f) sf = 1.0f;
-    return sf;
+    // NOTE: GD/Geode UI layout assumes these GIF frames in point-space 1:1.
+    // Using device contentScaleFactor here causes double-scaling in several
+    // containers (LevelCell/InfoLayer/preview). Keep logical scale at 1.
+    return 1.0f;
 }
 
 std::unordered_map<std::string, AnimatedGIFSprite::SharedGIFData> AnimatedGIFSprite::s_gifCache;

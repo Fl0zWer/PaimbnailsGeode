@@ -10,6 +10,7 @@
 #include "../utils/Shaders.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include <algorithm>
 
 using namespace geode::prelude;
 
@@ -97,6 +98,13 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         auto blurredSprite = Shaders::createBlurredSprite(tex, imgArea, 7.0f);
         if (!blurredSprite) return;
 
+        auto blurSize = blurredSprite->getContentSize();
+        if (blurSize.width > 0.f && blurSize.height > 0.f) {
+            float scale = std::max(imgArea.width / blurSize.width, imgArea.height / blurSize.height);
+            if (scale > 0.f) {
+                blurredSprite->setScale(std::clamp(scale, 0.01f, 64.0f));
+            }
+        }
         blurredSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
         // stencil geometrico, no sprites (pa no chocar con HappyTextures)
