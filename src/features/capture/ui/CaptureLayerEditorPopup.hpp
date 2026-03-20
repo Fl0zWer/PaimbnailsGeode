@@ -5,8 +5,7 @@
 #include <Geode/binding/CCMenuItemToggler.hpp>
 #include <vector>
 #include <string>
-
-class CapturePreviewPopup;
+#include "CapturePreviewPopup.hpp"
 
 class CaptureLayerEditorPopup : public geode::Popup {
 public:

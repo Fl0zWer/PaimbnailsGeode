@@ -7,6 +7,7 @@
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
+#include <Geode/binding/FLAlertLayer.hpp>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -165,7 +166,7 @@ void CaptureEditPopup::onLayerEditorBtn(CCObject* sender) {
         loc.getString("layers.beta_message").c_str(),
         loc.getString("layers.beta_cancel").c_str(),
         loc.getString("layers.beta_confirm").c_str(),
-        [self](auto, bool confirmed) {
+        [self](FLAlertLayer*, bool confirmed) {
             if (!confirmed) return;
             auto popup = self.lock();
             if (!popup) return;

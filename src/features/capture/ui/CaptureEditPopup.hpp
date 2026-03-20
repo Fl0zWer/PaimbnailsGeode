@@ -2,8 +2,7 @@
 #include <Geode/DefaultInclude.hpp>
 #include <cocos2d.h>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
-
-class CapturePreviewPopup;
+#include "CapturePreviewPopup.hpp"
 
 class CaptureEditPopup : public geode::Popup {
 public:

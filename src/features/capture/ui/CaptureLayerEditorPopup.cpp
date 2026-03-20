@@ -947,13 +947,14 @@ void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
     if (!sender) return;
 
     auto previewRef = m_previewPopup.lock();
+    auto* previewNode = static_cast<CCNode*>(previewRef.data());
     this->onClose(nullptr);
 
     // Also close the CaptureEditPopup so the user sees the recaptured preview immediately
     auto* scene = CCDirector::sharedDirector()->getRunningScene();
     if (scene) {
         for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
-            if (child != previewRef && typeinfo_cast<FLAlertLayer*>(child) && child != this) {
+            if (child != previewNode && typeinfo_cast<FLAlertLayer*>(child) && child != static_cast<CCNode*>(this)) {
                 auto* fla = static_cast<FLAlertLayer*>(child);
                 // Skip popups that are not the edit popup (e.g. PauseLayer)
                 if (typeinfo_cast<CaptureEditPopup*>(child)) {
