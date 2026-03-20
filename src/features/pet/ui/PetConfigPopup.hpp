@@ -4,6 +4,8 @@
 
 class PetConfigPopup : public geode::Popup {
 protected:
+    void onExit() override;
+
     // gallery
     cocos2d::CCNode* m_galleryContainer = nullptr;
     cocos2d::CCMenu* m_galleryMenu = nullptr;

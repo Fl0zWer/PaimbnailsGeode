@@ -5,6 +5,8 @@
 
 class LevelCellSettingsPopup : public geode::Popup {
 protected:
+    void onExit() override;
+
     // -- Background section --
     cocos2d::CCLabelBMFont* m_bgTypeLabel = nullptr;
     std::vector<std::string> m_bgTypes;

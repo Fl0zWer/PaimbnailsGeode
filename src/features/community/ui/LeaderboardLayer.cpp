@@ -293,6 +293,25 @@ void LeaderboardLayer::onEnterTransitionDidFinish() {
     this->scheduleOnce(schedule_selector(LeaderboardLayer::delaySilenceBg2), 0.7f);
 }
 
+void LeaderboardLayer::onExit() {
+    ++m_lifecycleToken;
+    m_isFadingCaveIn = false;
+    m_isFadingCaveOut = false;
+
+    this->unscheduleUpdate();
+    this->unschedule(schedule_selector(LeaderboardLayer::spawnThemeParticle));
+    this->unschedule(schedule_selector(LeaderboardLayer::delaySilenceBg));
+    this->unschedule(schedule_selector(LeaderboardLayer::delaySilenceBg2));
+    clearParticles();
+
+    if (GameLevelManager::get()->m_levelManagerDelegate == this) {
+        GameLevelManager::get()->m_levelManagerDelegate = nullptr;
+    }
+
+    killCaveMusic();
+    CCLayer::onExit();
+}
+
 void LeaderboardLayer::onExitTransitionDidStart() {
     CCLayer::onExitTransitionDidStart();
     // si es un push a nivel, pausar la cueva. Si es historial, dejarla sonando.
@@ -1296,13 +1315,15 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
 
     float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
     int next = step + 1;
+    int token = m_lifecycleToken;
 
     // Ref<> en vez de retain/release manual pa seguridad de memoria
     Ref<LeaderboardLayer> safeRef = this;
-    std::thread([safeRef, next, totalSteps, from, to, fadeOut, stepMs]() {
+    std::thread([safeRef, next, totalSteps, from, to, fadeOut, stepMs, token]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, fadeOut]() {
+        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, fadeOut, token]() {
             if (!safeRef->getParent()) return;
+            if (safeRef->m_lifecycleToken != token) return;
             if (fadeOut && !safeRef->m_isFadingCaveOut) return;
             if (!fadeOut && !safeRef->m_isFadingCaveIn) return;
             safeRef->executeCaveFade(next, totalSteps, from, to, fadeOut);
@@ -1401,12 +1422,14 @@ void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, flo
 
     float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
     int next = step + 1;
+    int token = m_lifecycleToken;
 
     Ref<LeaderboardLayer> safeRef = this;
-    std::thread([safeRef, next, totalSteps, from, to, stepMs]() {
+    std::thread([safeRef, next, totalSteps, from, to, stepMs, token]() {
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to]() {
+        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, token]() {
             if (!safeRef->getParent()) return;
+            if (safeRef->m_lifecycleToken != token) return;
             safeRef->executeMenuFade(next, totalSteps, from, to);
         });
     }).detach();
@@ -1429,8 +1452,6 @@ void LeaderboardLayer::delaySilenceBg2(float dt) {
 }
 
 LeaderboardLayer::~LeaderboardLayer() {
-    m_leavingForGood = true;
-    killCaveMusic();
     // restaurar BG inmediatamente en destructor (safety net)
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
@@ -1438,9 +1459,6 @@ LeaderboardLayer::~LeaderboardLayer() {
         bool isPaused = false;
         engine->m_backgroundMusicChannel->getPaused(&isPaused);
         if (isPaused) engine->m_backgroundMusicChannel->setPaused(false);
-    }
-    if (GameLevelManager::get()->m_levelManagerDelegate == this) {
-        GameLevelManager::get()->m_levelManagerDelegate = nullptr;
     }
     m_featuredLevel = nullptr;
 }

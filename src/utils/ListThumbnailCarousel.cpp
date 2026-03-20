@@ -10,14 +10,20 @@
 using namespace geode::prelude;
 
 ListThumbnailCarousel::~ListThumbnailCarousel() {
+    // safety-net only; lifecycle cleanup should happen in onExit
     if (m_alive) *m_alive = false;
-    
+}
+
+void ListThumbnailCarousel::onExit() {
+    if (m_alive) *m_alive = false;
+
     for (int id : m_levelIDs) {
         ThumbnailLoader::get().cancelLoad(id);
     }
 
     this->unschedule(schedule_selector(ListThumbnailCarousel::updateCarousel));
     this->unschedule(schedule_selector(ListThumbnailCarousel::updatePan));
+    CCNode::onExit();
 }
 
 ListThumbnailCarousel* ListThumbnailCarousel::create(std::vector<int> const& levelIDs, CCSize size) {

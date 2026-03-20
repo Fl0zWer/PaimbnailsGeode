@@ -54,6 +54,14 @@ std::string LevelCellSettingsPopup::getAnimEffectDisplayName(std::string const& 
     return effect;
 }
 
+void LevelCellSettingsPopup::onExit() {
+    this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
+    if (m_scrollArrow) {
+        m_scrollArrow->stopAllActions();
+    }
+    Popup::onExit();
+}
+
 // ────────────────────────────────────────────────────────────
 // load / save
 // ────────────────────────────────────────────────────────────
@@ -426,6 +434,7 @@ bool LevelCellSettingsPopup::init() {
 
         // ocultar flecha cuando el usuario scrollea hasta abajo
         m_scrollArrow = scrollArrow;
+        this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
         this->schedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition), 0.2f);
     }
 

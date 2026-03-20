@@ -15,6 +15,7 @@ public:
 protected:
     bool init() override;
     void keyBackClicked() override;
+    void onExit() override;
     void onEnterTransitionDidFinish() override;
     void onExitTransitionDidStart() override;
     
@@ -79,6 +80,7 @@ protected:
     static constexpr float AUDIO_FADE_MS = 500.f;
     bool m_isFadingCaveIn = false;
     bool m_isFadingCaveOut = false;
+    int m_lifecycleToken = 0;
     
     // audio-reactive visuals
     FMOD::DSP* m_fftDSP = nullptr;

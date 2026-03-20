@@ -380,6 +380,7 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
                 playLayer->m_percentageLabel->setVisible(false);
             }
             for (auto* child : CCArrayExt<CCNode*>(playLayer->getChildren())) {
+                if (!child) continue;
                 if (!child->isVisible()) continue;
                 std::string nid = child->getID();
                 if (nid.find("progress") != std::string::npos ||
@@ -393,6 +394,7 @@ void FramebufferCapture::doCaptureDirectWithScale(int targetWidth, int viewportW
 
         if (scene) {
             for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+                if (!child) continue;
                 if (!child->isVisible()) continue;
                 if (child == playLayer) continue;
 
@@ -674,6 +676,7 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
 
             // etiquetas progreso / porcentaje / intento por id en playlayer
             for (auto* child : CCArrayExt<CCNode*>(playLayer->getChildren())) {
+                if (!child) continue;
                 if (!child->isVisible()) continue;
                 std::string nid = child->getID();
                 if (nid.find("progress") != std::string::npos ||
@@ -686,6 +689,7 @@ void FramebufferCapture::doCaptureRerender(int targetWidth, int viewportW, int v
 
             // capas pausa, alertas, etc en raiz escena
             for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+                if (!child) continue;
                 if (child == playLayer || !child->isVisible()) continue;
 
                 auto cls = typeid(*child).name();
