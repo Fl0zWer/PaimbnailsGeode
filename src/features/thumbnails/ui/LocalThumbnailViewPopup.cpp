@@ -79,8 +79,13 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
                 long long timestamp = numResult.unwrap();
                 if (timestamp > 1600000000000) {
                     time_t timeSec = timestamp / 1000;
-                    struct tm tmBuf;
-                    if (localtime_s(&tmBuf, &timeSec) == 0) {
+                    struct tm tmBuf{};
+#ifdef _WIN32
+                    bool tmOk = (localtime_s(&tmBuf, &timeSec) == 0);
+#else
+                    bool tmOk = (localtime_r(&timeSec, &tmBuf) != nullptr);
+#endif
+                    if (tmOk) {
                         auto tmPtr = &tmBuf;
                         date = fmt::format("{:02}/{:02}/{:02} {:02}:{:02}",
                            tmPtr->tm_mday, tmPtr->tm_mon + 1, tmPtr->tm_year % 100,
