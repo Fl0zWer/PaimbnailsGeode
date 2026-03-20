@@ -640,7 +640,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                                      if (shader) {
                                          anim->setShaderProgram(shader);
                                          anim->m_intensity = blurIntensity;
-                                         anim->m_texSize = anim->getTexture()->getContentSizeInPixels();
+                                         if (auto* animTex = anim->getTexture()) {
+                                             anim->m_texSize = animTex->getContentSizeInPixels();
+                                         } else {
+                                             anim->m_texSize = anim->getContentSize();
+                                         }
                                      }
                                      
                                      clipper->addChild(anim);
@@ -1359,7 +1363,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                 if (psg) psg->m_time = t;
             };
             auto setTexSize = [&]() {
-                if (pss) pss->m_texSize = target->getTexture()->getContentSizeInPixels();
+                if (pss) {
+                    if (auto* targetTex = target->getTexture()) {
+                        pss->m_texSize = targetTex->getContentSizeInPixels();
+                    } else {
+                        pss->m_texSize = target->getContentSize();
+                    }
+                }
                 if (psg) psg->m_texSize = target->getContentSize();
             };
 
