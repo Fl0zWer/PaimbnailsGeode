@@ -11,6 +11,7 @@
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../framework/compat/SceneLocators.hpp"
 #include <algorithm>
 #include <string>
 
@@ -54,6 +55,22 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         if (!found) return false;
         outCommentNode = found;
+
+        // El blur de comentarios debe cubrir TODO el fondo del popup,
+        // no solo el bbox interno del GJCommentListLayer.
+        auto popupGeo = paimon::compat::InfoLayerLocator::findPopupGeometry(layer);
+        if (popupGeo.found) {
+            float padding = 3.f;
+            outSize = CCSize(
+                std::max(1.f, popupGeo.size.width - padding * 2.f),
+                std::max(1.f, popupGeo.size.height - padding * 2.f)
+            );
+            outPos = ccp(
+                popupGeo.center.x - outSize.width * 0.5f,
+                popupGeo.center.y - outSize.height * 0.5f
+            );
+            return true;
+        }
 
         auto parent = found->getParent();
         if (!parent) return false;

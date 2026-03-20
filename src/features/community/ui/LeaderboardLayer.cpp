@@ -1233,8 +1233,7 @@ void LeaderboardLayer::startCaveMusic() {
         m_levelMusicChannel->setPosition(dist(gen), FMOD_TIMEUNIT_MS);
     }
 
-    // aplicar DSPs de cueva ANTES de despausar
-    applyCaveEffect();
+    // Desactivado: no aplicar DSP "cueva" en daily/weekly.
 
     // FFT DSP para analisis de audio (visuales reactivos)
     if (!m_fftDSP) {
