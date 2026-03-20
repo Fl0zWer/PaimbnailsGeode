@@ -11,6 +11,13 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
+namespace {
+geode::Ref<CCTexture2D>& whiteTrailTexture() {
+    static geode::Ref<CCTexture2D> s_whiteTrailTex = nullptr;
+    return s_whiteTrailTex;
+}
+}
+
 // ════════════════════════════════════════════════════════════
 // singleton
 // ════════════════════════════════════════════════════════════
@@ -445,6 +452,10 @@ void PetManager::detachFromScene() {
     }
 }
 
+void PetManager::releaseSharedResources() {
+    whiteTrailTexture() = nullptr;
+}
+
 // ════════════════════════════════════════════════════════════
 // update (called every frame)
 // ════════════════════════════════════════════════════════════
@@ -592,27 +603,27 @@ void PetManager::updateTrail() {
 
     // create a small white texture programmatically (2x2 RGBA white)
     // this avoids depending on texture files that may not exist in GD
-    static CCTexture2D* s_whiteTrailTex = nullptr;
-    if (!s_whiteTrailTex) {
+    auto& trailTex = whiteTrailTexture();
+    if (!trailTex) {
         const int sz = 2;
         uint8_t pixels[sz * sz * 4];
         memset(pixels, 255, sizeof(pixels)); // all white, full alpha
-        s_whiteTrailTex = new CCTexture2D();
-        if (!s_whiteTrailTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
-            s_whiteTrailTex->release();
-            s_whiteTrailTex = nullptr;
+        auto* newTex = new CCTexture2D();
+        if (newTex->initWithData(pixels, kCCTexture2DPixelFormat_RGBA8888, sz, sz, CCSizeMake(sz, sz))) {
+            trailTex = newTex;
+        } else {
+            newTex->release();
         }
-        // keep retained forever (static singleton texture)
     }
 
-    if (!s_whiteTrailTex) return;
+    if (!trailTex) return;
 
     m_trail = CCMotionStreak::create(
         m_config.trailLength / 60.f,  // fade time
         1.f,                           // min seg
         m_config.trailWidth,           // stroke width
         ccc3(255, 255, 255),           // color
-        s_whiteTrailTex                // safe texture ptr
+        trailTex.data()                // safe texture ptr
     );
 
     if (m_trail && m_trail->getTexture()) {

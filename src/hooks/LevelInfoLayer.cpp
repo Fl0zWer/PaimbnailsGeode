@@ -42,6 +42,22 @@ using namespace Shaders;
 #include "../features/thumbnails/ui/ThumbnailSettingsPopup.hpp"
 
 class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
+    CCMenu* findLeftSideMenu() {
+        if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID("left-side-menu"))) {
+            return byId;
+        }
+        if (auto children = this->getChildren()) {
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                auto* menu = typeinfo_cast<CCMenu*>(child);
+                if (!menu) continue;
+                if (menu->getPositionX() < this->getContentSize().width * 0.5f) {
+                    return menu;
+                }
+            }
+        }
+        return nullptr;
+    }
+
     static void onModify(auto& self) {
         // Dependemos de node-ids para ubicar nodos y fondos con IDs estables.
         (void)self.setHookPriorityAfterPost("LevelInfoLayer::init", "geode.node-ids");
@@ -452,7 +468,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         );
         btn->setID("set-daily-weekly-button"_spr);
 
-        auto leftMenu = static_cast<CCMenu*>(this->getChildByID("left-side-menu"));
+        auto leftMenu = findLeftSideMenu();
         if (leftMenu) {
             leftMenu->addChild(btn);
             leftMenu->updateLayout();
@@ -536,7 +552,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             ButtonLayoutManager::get().load();
             
             // menu izq
-            auto leftMenu = this->getChildByID("left-side-menu");
+            auto leftMenu = findLeftSideMenu();
             if (!leftMenu) {
                 log::warn("Left side menu not found");
                 return true;

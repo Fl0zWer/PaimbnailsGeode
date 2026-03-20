@@ -13,6 +13,7 @@
 #include <Geode/utils/string.hpp>
 #include <matjson.hpp>
 #include <thread>
+#include <chrono>
 
 using namespace geode::prelude;
 
@@ -148,8 +149,11 @@ void ModeratorsLayer::fetchGDBrowserProfile(std::string const& username) {
     WeakRef<ModeratorsLayer> self = this;
 
     auto req = web::WebRequest();
+    req.timeout(std::chrono::seconds(10));
+    req.userAgent("Paimbnails/2.x (Geode)");
+    auto owner = std::make_unique<geode::async::TaskHolder<web::WebResponse>>();
 
-    WebHelper::dispatch(std::move(req), "GET", url, [self, username](web::WebResponse res) {
+    WebHelper::dispatchOwned(*owner, std::move(req), "GET", url, [self, username](web::WebResponse res) {
         std::string data = res.ok() ? res.string().unwrapOr("") : "";
         if (!res.ok()) {
             log::error("Failed to fetch profile for {}", username);
@@ -159,6 +163,7 @@ void ModeratorsLayer::fetchGDBrowserProfile(std::string const& username) {
             layer->onProfileFetched(username, data);
         }
     });
+    m_ownedRequests.push_back(std::move(owner));
 }
 
 void ModeratorsLayer::onProfileFetched(std::string const& username, std::string const& jsonData) {

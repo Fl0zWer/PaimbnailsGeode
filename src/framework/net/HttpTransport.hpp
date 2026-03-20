@@ -19,6 +19,8 @@
 #include <cctype>
 #include <iomanip>
 #include <sstream>
+#include <chrono>
+#include <span>
 
 namespace paimon::net {
 
@@ -63,6 +65,8 @@ public:
     ) {
         auto req = geode::utils::web::WebRequest();
         req.timeout(std::chrono::seconds(10));
+        req.userAgent("Paimbnails/2.x (Geode)");
+        req.acceptEncoding("gzip, deflate");
 
         bool hasExplicitModCode = false;
         for (auto const& h : headers) {
@@ -104,11 +108,16 @@ public:
     ) {
         auto req = geode::utils::web::WebRequest();
         req.timeout(std::chrono::seconds(15));
+        req.userAgent("Paimbnails/2.x (Geode)");
+        req.acceptEncoding("gzip, deflate");
 
         for (auto const& h : headers) {
             auto sep = h.find(':');
             if (sep == std::string::npos) continue;
-            req.header(h.substr(0, sep), h.substr(sep + 1));
+            std::string key = h.substr(0, sep);
+            std::string val = h.substr(sep + 1);
+            val.erase(0, val.find_first_not_of(" \t"));
+            req.header(key, val);
         }
 
         if (!m_modCode.empty()) {
@@ -162,6 +171,8 @@ public:
 
         auto req = geode::utils::web::WebRequest();
         req.timeout(std::chrono::seconds(30));
+        req.userAgent("Paimbnails/2.x (Geode)");
+        req.acceptEncoding("gzip, deflate");
 
         for (auto const& h : headers) {
             auto sep = h.find(':');

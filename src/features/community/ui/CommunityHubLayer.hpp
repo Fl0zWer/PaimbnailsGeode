@@ -5,7 +5,10 @@
 #include <Geode/binding/GJUserScore.hpp>
 #include <Geode/binding/CustomListView.hpp>
 #include <Geode/binding/GJListLayer.hpp>
+#include <Geode/utils/async.hpp>
+#include <Geode/utils/web.hpp>
 #include <fmod.hpp>
+#include <memory>
 
 class CommunityHubLayer : public cocos2d::CCLayer {
 public:
@@ -93,6 +96,7 @@ protected:
     float m_savedBgVolume = 1.0f;
     bool m_caveApplied = false;
     bool m_isExiting = false;
+    std::vector<std::unique_ptr<geode::async::TaskHolder<geode::utils::web::WebResponse>>> m_ownedRequests;
 
     void applyCaveEffect();
     void removeCaveEffect();

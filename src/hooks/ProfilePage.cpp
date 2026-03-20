@@ -16,6 +16,7 @@
 #include <fstream>
 #include <mutex>
 #include <atomic>
+#include <list>
 #include "../utils/FileDialog.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/capture/ui/CapturePreviewPopup.hpp"
@@ -38,6 +39,7 @@
 #include "../utils/PaimonNotification.hpp"
 #include "../features/moderation/services/ModeratorCache.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../framework/compat/SceneLocators.hpp"
 
 using namespace geode::prelude;
 
@@ -49,7 +51,32 @@ using namespace geode::prelude;
 // para evitar release() cuando el CCPoolManager ya este destruido.
 static std::mutex s_profileImgMutex;
 static std::unordered_map<int, geode::Ref<CCTexture2D>> s_profileImgCache;
+static std::list<int> s_profileImgLru;
+static std::unordered_map<int, std::list<int>::iterator> s_profileImgLruMap;
+static constexpr size_t MAX_PROFILEIMG_CACHE_SIZE = 64;
 static std::atomic<bool> s_profileImgShutdown{false};
+
+static void touchProfileImgCache(int accountID) {
+    auto it = s_profileImgLruMap.find(accountID);
+    if (it != s_profileImgLruMap.end()) {
+        s_profileImgLru.erase(it->second);
+    }
+    s_profileImgLru.push_back(accountID);
+    s_profileImgLruMap[accountID] = std::prev(s_profileImgLru.end());
+}
+
+static void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
+    if (!texture) return;
+    std::lock_guard<std::mutex> lock(s_profileImgMutex);
+    s_profileImgCache[accountID] = texture;
+    touchProfileImgCache(accountID);
+    while (s_profileImgCache.size() > MAX_PROFILEIMG_CACHE_SIZE && !s_profileImgLru.empty()) {
+        int removeID = s_profileImgLru.front();
+        s_profileImgLru.pop_front();
+        s_profileImgLruMap.erase(removeID);
+        s_profileImgCache.erase(removeID);
+    }
+}
 
 // Limpiar el cache de profileimg durante el cierre del juego.
 // Los destructores estaticos se ejecutan en orden indefinido y
@@ -62,6 +89,8 @@ $on_game(Exiting) {
         (void)ref.take();
     }
     s_profileImgCache.clear();
+    s_profileImgLru.clear();
+    s_profileImgLruMap.clear();
 }
 
 // Acceso externo al cache de profileimg (usado por InfoLayer hook).
@@ -69,7 +98,10 @@ CCTexture2D* getProfileImgCachedTexture(int accountID) {
     if (s_profileImgShutdown.load(std::memory_order_acquire)) return nullptr;
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
     auto it = s_profileImgCache.find(accountID);
-    if (it != s_profileImgCache.end()) return it->second;
+    if (it != s_profileImgCache.end()) {
+        touchProfileImgCache(accountID);
+        return it->second;
+    }
     return nullptr;
 }
 
@@ -86,6 +118,8 @@ static std::filesystem::path getProfileImgCachePath(int accountID) {
 void clearProfileImgCache() {
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
     s_profileImgCache.clear();
+    s_profileImgLru.clear();
+    s_profileImgLruMap.clear();
     std::error_code ec;
     auto dir = getProfileImgCacheDir();
     if (std::filesystem::exists(dir, ec)) {
@@ -109,20 +143,15 @@ static CCTexture2D* loadProfileImgFromDisk(int accountID) {
     if (!file.read(reinterpret_cast<char*>(data.data()), size)) return nullptr;
     file.close();
 
-    auto* img = new CCImage();
-    if (!img->initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
-        img->release();
+    CCImage img;
+    if (!img.initWithImageData(const_cast<uint8_t*>(data.data()), data.size())) {
         return nullptr;
     }
 
-    auto* tex = new CCTexture2D();
-    if (!tex->initWithImage(img)) {
-        tex->release();
-        img->release();
+    auto tex = geode::Ref<CCTexture2D>(new CCTexture2D());
+    if (!tex->initWithImage(&img)) {
         return nullptr;
     }
-    img->release();
-    tex->autorelease();
     return tex;
 }
 
@@ -460,7 +489,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             // 2) si hay cache en disco, cargar y mostrar
             if (auto* diskTex = loadProfileImgFromDisk(accountID)) {
                 // Ref<> hace retain en la asignacion y release del anterior automaticamente
-                s_profileImgCache[accountID] = diskTex;
+                cacheProfileImgTexture(accountID, diskTex);
                 this->displayProfileImg(accountID, diskTex);
             }
         }
@@ -473,7 +502,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
             if (success && texture) {
                 // Ref<> hace retain en la asignacion y release del anterior automaticamente
-                s_profileImgCache[accountID] = texture;
+                cacheProfileImgTexture(accountID, texture);
                 static_cast<PaimonProfilePage*>(self.data())->displayProfileImg(accountID, texture);
             }
         }, isSelf);
@@ -683,27 +712,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
     // Usamos el nodo "background" (asignado por node-ids) para centrar los menus
     CCPoint getPopupCenter() {
         if (!this->m_mainLayer) return CCDirector::sharedDirector()->getWinSize() / 2;
-        if (auto bg = this->m_mainLayer->getChildByID("background")) {
-            return bg->getPosition();
-        }
-        for (auto* child : CCArrayExt<CCNode*>(this->m_mainLayer->getChildren())) {
-            if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                return child->getPosition();
-            }
-        }
+        auto geo = paimon::compat::InfoLayerLocator::findPopupGeometry(this->m_mainLayer);
+        if (geo.found) return geo.center;
         return this->m_mainLayer->getContentSize() / 2;
     }
 
     CCSize getPopupSize() {
         if (!this->m_mainLayer) return {440.f, 290.f};
-        if (auto bg = this->m_mainLayer->getChildByID("background")) {
-            return bg->getScaledContentSize();
-        }
-        for (auto* child : CCArrayExt<CCNode*>(this->m_mainLayer->getChildren())) {
-            if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                return child->getScaledContentSize();
-            }
-        }
+        auto geo = paimon::compat::InfoLayerLocator::findPopupGeometry(this->m_mainLayer);
+        if (geo.found) return geo.size;
         return {440.f, 290.f};
     }
 
@@ -934,18 +951,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
         CCSize popupSize = CCSize(440.f, 290.f);
         CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
 
-        if (auto bg = layer->getChildByID("background")) {
-            popupSize = bg->getScaledContentSize();
-            popupCenter = bg->getPosition();
-        } else {
-            // fallback: primer CCScale9Sprite hijo directo
-            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
-                if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                    popupSize = child->getScaledContentSize();
-                    popupCenter = child->getPosition();
-                    break;
-                }
-            }
+        auto popupGeo = paimon::compat::InfoLayerLocator::findPopupGeometry(layer);
+        if (popupGeo.found) {
+            popupSize = popupGeo.size;
+            popupCenter = popupGeo.center;
         }
 
         float padding = 3.f;
@@ -1172,19 +1181,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                     saveProfileImgToDisk(accountID, imgData);
 
-                    auto* img = new CCImage();
-                    if (img->initWithImageData(const_cast<uint8_t*>(imgData.data()), imgData.size())) {
-                        auto tex = new CCTexture2D();
-                        if (tex->initWithImage(img)) {
-                            tex->autorelease();
+                    CCImage img;
+                    if (img.initWithImageData(const_cast<uint8_t*>(imgData.data()), imgData.size())) {
+                        auto tex = geode::Ref<CCTexture2D>(new CCTexture2D());
+                        if (tex->initWithImage(&img)) {
                             // Ref<> hace retain/release automaticamente
-                            s_profileImgCache[accountID] = tex;
+                            cacheProfileImgTexture(accountID, tex);
                             static_cast<PaimonProfilePage*>(imgGifSafeRef.data())->displayProfileImg(accountID, tex);
-                        } else {
-                            tex->release();
                         }
                     }
-                    img->release();
                 } else {
                     PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                 }
@@ -1248,19 +1253,15 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                                 saveProfileImgToDisk(accountID, pngData);
 
-                                auto* finalImg = new CCImage();
-                                if (finalImg->initWithImageData(buf.get(), w * h * 4, CCImage::kFmtRawData, w, h)) {
-                                    auto finalTex = new CCTexture2D();
-                                    if (finalTex->initWithImage(finalImg)) {
-                                        finalTex->autorelease();
+                                CCImage finalImg;
+                                if (finalImg.initWithImageData(buf.get(), w * h * 4, CCImage::kFmtRawData, w, h)) {
+                                    auto finalTex = geode::Ref<CCTexture2D>(new CCTexture2D());
+                                    if (finalTex->initWithImage(&finalImg)) {
                                         // Ref<> hace retain/release automaticamente
-                                        s_profileImgCache[accountID] = finalTex;
+                                        cacheProfileImgTexture(accountID, finalTex);
                                         static_cast<PaimonProfilePage*>(imgUploadRef.data())->displayProfileImg(accountID, finalTex);
-                                    } else {
-                                        finalTex->release();
                                     }
                                 }
-                                finalImg->release();
                             } else {
                                 PaimonNotify::create("Upload failed: " + msg, NotificationIcon::Error)->show();
                             }

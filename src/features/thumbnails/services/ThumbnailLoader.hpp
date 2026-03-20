@@ -14,6 +14,8 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
+#include <future>
+#include <functional>
 #include "../../../utils/GIFDecoder.hpp"
 
 /**
@@ -89,6 +91,8 @@ private:
     std::list<int> m_lruOrder;
     std::unordered_map<int, std::list<int>::iterator> m_lruMap; // key -> iterador en m_lruOrder
     size_t const MAX_CACHE_SIZE = 60;
+    size_t m_textureCacheBytes = 0;
+    size_t const MAX_CACHE_BYTES = 160 * 1024 * 1024;
 
     // indice cache disco
     std::unordered_set<int> m_diskCache;
@@ -120,4 +124,10 @@ private:
     // Worker methods
     void workerLoadFromDisk(std::shared_ptr<Task> task);
     void workerDownload(std::shared_ptr<Task> task);
+    void spawnBackground(std::function<void()> job);
+    void waitBackgroundWorkers();
+    void pruneFinishedWorkers();
+
+    std::vector<std::future<void>> m_backgroundWorkers;
+    mutable std::mutex m_workerMutex;
 };

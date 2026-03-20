@@ -12,6 +12,7 @@
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/utils/web.hpp>
 #include <matjson.hpp>
+#include <chrono>
 
 using namespace geode::prelude;
 
@@ -342,13 +343,17 @@ void CommunityHubLayer::fetchGDBrowserProfile(std::string const& username, std::
 
     WeakRef<CommunityHubLayer> self = this;
     auto req = web::WebRequest();
+    req.timeout(std::chrono::seconds(10));
+    req.userAgent("Paimbnails/2.x (Geode)");
+    auto owner = std::make_unique<geode::async::TaskHolder<web::WebResponse>>();
 
-    WebHelper::dispatch(std::move(req), "GET", url, [self, username, role](web::WebResponse res) {
+    WebHelper::dispatchOwned(*owner, std::move(req), "GET", url, [self, username, role](web::WebResponse res) {
         std::string data = res.ok() ? res.string().unwrapOr("") : "";
         if (auto layer = self.lock()) {
             layer->onProfileFetched(username, data, role);
         }
     });
+    m_ownedRequests.push_back(std::move(owner));
 }
 
 void CommunityHubLayer::onProfileFetched(std::string const& username, std::string const& jsonData, std::string const& role) {

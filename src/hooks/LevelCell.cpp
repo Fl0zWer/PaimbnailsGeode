@@ -114,6 +114,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         Ref<CCTexture2D> m_staticTexture = nullptr;
         paimon::image::RetainedLazyTextureLoad m_staticThumbLoad;
         bool m_isHovering = false;
+        float m_hoverCheckAccumulator = 0.0f;
 
         // cache de settings pa no leerlas cada frame (60fps)
         bool m_settingsCached = false;
@@ -1685,6 +1686,13 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
 
         if (fields->m_hasGif && fields->m_gifTexture && fields->m_thumbSprite) {
+            fields->m_hoverCheckAccumulator += dt;
+#if defined(GEODE_IS_WINDOWS)
+            if (fields->m_hoverCheckAccumulator < 0.04f) {
+                return;
+            }
+            fields->m_hoverCheckAccumulator = 0.0f;
+#endif
 #if defined(GEODE_IS_WINDOWS)
             // Check hover (solo Windows - getMousePosition solo existe en Windows)
             auto winSize = CCDirector::sharedDirector()->getWinSize();

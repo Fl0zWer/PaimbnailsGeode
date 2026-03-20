@@ -11,6 +11,7 @@
 #include <Geode/utils/cocos.hpp>
 #include <Geode/utils/string.hpp>
 #include <fstream>
+#include <algorithm>
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../utils/FileDialog.hpp"
 #include "../utils/SpriteHelper.hpp"
@@ -121,13 +122,35 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void updateTabColors(LeaderboardType type) {
+        auto getTabMenu = [this](std::string const& tabID, size_t fallbackIndex) -> CCMenu* {
+            if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(tabID))) {
+                return byId;
+            }
+            std::vector<CCMenu*> topMenus;
+            auto winH = CCDirector::sharedDirector()->getWinSize().height;
+            for (auto* node : CCArrayExt<CCNode*>(this->getChildren())) {
+                auto menu = typeinfo_cast<CCMenu*>(node);
+                if (!menu) continue;
+                if (menu->getPositionY() > winH * 0.55f && menu->getChildrenCount() >= 1) {
+                    topMenus.push_back(menu);
+                }
+            }
+            std::sort(topMenus.begin(), topMenus.end(), [](CCMenu* a, CCMenu* b) {
+                return a->getPositionX() < b->getPositionX();
+            });
+            if (fallbackIndex < topMenus.size()) {
+                return topMenus[fallbackIndex];
+            }
+            return nullptr;
+        };
+
         // usar node IDs oficiales de geode.node-ids para tabs
         // cada tab es un menu separado: top-100-menu, global-menu, creators-menu, friends-menu
         std::vector<std::string> tabIDs = {"top-100-menu", "global-menu", "creators-menu", "friends-menu"};
 
         // reset todos los tabs
-        for (auto const& tabID : tabIDs) {
-            if (auto menu = this->getChildByID(tabID)) {
+        for (size_t i = 0; i < tabIDs.size(); ++i) {
+            if (auto menu = getTabMenu(tabIDs[i], i)) {
                 if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
                     btn->setColor({255, 255, 255});
                 }
@@ -146,7 +169,9 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
 
         // resaltar tab activo
         if (!activeID.empty()) {
-            if (auto menu = this->getChildByID(activeID)) {
+            auto it = std::find(tabIDs.begin(), tabIDs.end(), activeID);
+            size_t idx = it == tabIDs.end() ? 0 : static_cast<size_t>(std::distance(tabIDs.begin(), it));
+            if (auto menu = getTabMenu(activeID, idx)) {
                 if (auto btn = menu->getChildByType<CCMenuItemSpriteExtra>(0)) {
                     btn->setColor({0, 255, 0});
                 }

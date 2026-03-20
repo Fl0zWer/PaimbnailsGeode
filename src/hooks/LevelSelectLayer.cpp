@@ -24,6 +24,11 @@ class $modify(PaimonGameManager, GameManager) {
 
     $override
     void fadeInMenuMusic() {
+        bool passthrough = Mod::get()->getSavedValue<bool>("music-hook-passthrough", false);
+        if (passthrough) {
+            GameManager::fadeInMenuMusic();
+            return;
+        }
         auto* dsm = DynamicSongManager::get();
         // bloquear si dynamic song esta sonando en un layer valido
         if (dsm->m_isDynamicSongActive && dsm->isInValidLayer()) {
@@ -47,6 +52,11 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
 
     $override
     void playMusic(gd::string path, bool shouldLoop, float fadeInTime, int channel) {
+        bool passthrough = Mod::get()->getSavedValue<bool>("music-hook-passthrough", false);
+        if (passthrough) {
+            FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
+            return;
+        }
         if (!DynamicSongManager::s_selfPlayMusic) {
             auto* dsm = DynamicSongManager::get();
             if (dsm->m_isDynamicSongActive && dsm->isInValidLayer()) {

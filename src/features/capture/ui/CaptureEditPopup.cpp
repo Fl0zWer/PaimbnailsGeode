@@ -45,10 +45,11 @@ bool CaptureEditPopup::init() {
     };
 
     // Dynamic label based on current hide state
-    std::string p1Label = (m_previewPopup && m_previewPopup->isPlayer1Hidden())
+    auto preview = m_previewPopup.lock();
+    std::string p1Label = (preview && preview->isPlayer1Hidden())
         ? Localization::get().getString("edit.show_player1")
         : Localization::get().getString("edit.hide_player1");
-    std::string p2Label = (m_previewPopup && m_previewPopup->isPlayer2Hidden())
+    std::string p2Label = (preview && preview->isPlayer2Hidden())
         ? Localization::get().getString("edit.show_player2")
         : Localization::get().getString("edit.hide_player2");
 
@@ -92,18 +93,34 @@ bool CaptureEditPopup::init() {
 }
 
 void CaptureEditPopup::onClose(CCObject* sender) {
-    // Notify parent that child popup is closing
-    if (m_previewPopup) {
-        m_previewPopup->setChildPopupOpen(false);
-    }
+    notifyParentClosed();
     Popup::onClose(sender);
 }
 
+void CaptureEditPopup::keyBackClicked() {
+    notifyParentClosed();
+    Popup::keyBackClicked();
+}
+
+void CaptureEditPopup::onExit() {
+    notifyParentClosed();
+    Popup::onExit();
+}
+
+void CaptureEditPopup::notifyParentClosed() {
+    if (m_parentNotifiedClosed) return;
+    m_parentNotifiedClosed = true;
+    if (auto preview = m_previewPopup.lock()) {
+        preview->setChildPopupOpen(false);
+    }
+}
+
 void CaptureEditPopup::onTogglePlayer1Btn(CCObject* sender) {
-    if (!m_previewPopup) return;
-    m_previewPopup->onTogglePlayer1Btn(sender);
+    auto preview = m_previewPopup.lock();
+    if (!preview) return;
+    preview->onTogglePlayer1Btn(sender);
     if (m_player1Btn) {
-        std::string label = m_previewPopup->isPlayer1Hidden()
+        std::string label = preview->isPlayer1Hidden()
             ? Localization::get().getString("edit.show_player1")
             : Localization::get().getString("edit.hide_player1");
         auto newSpr = ButtonSprite::create(label.c_str(), 130, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.5f);
@@ -112,10 +129,11 @@ void CaptureEditPopup::onTogglePlayer1Btn(CCObject* sender) {
 }
 
 void CaptureEditPopup::onTogglePlayer2Btn(CCObject* sender) {
-    if (!m_previewPopup) return;
-    m_previewPopup->onTogglePlayer2Btn(sender);
+    auto preview = m_previewPopup.lock();
+    if (!preview) return;
+    preview->onTogglePlayer2Btn(sender);
     if (m_player2Btn) {
-        std::string label = m_previewPopup->isPlayer2Hidden()
+        std::string label = preview->isPlayer2Hidden()
             ? Localization::get().getString("edit.show_player2")
             : Localization::get().getString("edit.hide_player2");
         auto newSpr = ButtonSprite::create(label.c_str(), 130, true, "bigFont.fnt", "GJ_button_01.png", 28.f, 0.5f);
@@ -124,30 +142,37 @@ void CaptureEditPopup::onTogglePlayer2Btn(CCObject* sender) {
 }
 
 void CaptureEditPopup::onCropBtn(CCObject* sender) {
-    if (m_previewPopup) {
-        m_previewPopup->onCropBtn(sender);
+    if (auto preview = m_previewPopup.lock()) {
+        preview->onCropBtn(sender);
     }
 }
 
 void CaptureEditPopup::onToggleFillBtn(CCObject* sender) {
-    if (m_previewPopup) {
-        m_previewPopup->onToggleFillBtn(sender);
+    if (auto preview = m_previewPopup.lock()) {
+        preview->onToggleFillBtn(sender);
     }
 }
 
 void CaptureEditPopup::onLayerEditorBtn(CCObject* sender) {
-    if (!sender || !m_previewPopup) return;
+    if (!sender) return;
+    auto preview = m_previewPopup.lock();
+    if (!preview) return;
 
     auto& loc = Localization::get();
+    WeakRef<CaptureEditPopup> self = this;
     geode::createQuickPopup(
         loc.getString("layers.beta_title").c_str(),
         loc.getString("layers.beta_message").c_str(),
         loc.getString("layers.beta_cancel").c_str(),
         loc.getString("layers.beta_confirm").c_str(),
-        [this](auto, bool confirmed) {
+        [self](auto, bool confirmed) {
             if (!confirmed) return;
+            auto popup = self.lock();
+            if (!popup) return;
             log::info("[CaptureEditPopup] Opening layer editor");
-            auto* editor = CaptureLayerEditorPopup::create(m_previewPopup);
+            auto previewPopup = popup->m_previewPopup.lock();
+            if (!previewPopup) return;
+            auto* editor = CaptureLayerEditorPopup::create(previewPopup.data());
             if (editor) {
                 editor->show();
             }

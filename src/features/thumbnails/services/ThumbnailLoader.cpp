@@ -17,6 +17,7 @@
 #include <fstream>
 #include <atomic>
 #include <thread>
+#include <future>
 #include <cmath>
 #include <algorithm>
 
@@ -35,6 +36,7 @@ ThumbnailLoader::ThumbnailLoader() {
 ThumbnailLoader::~ThumbnailLoader() {
     // le aviso a los threads de background que paren
     m_shuttingDown = true;
+    waitBackgroundWorkers();
 
     // durante el cierre del proceso (destructores estaticos) el orden de destruccion
     // es indefinido: Cocos2d, el autorelease pool y otros singletons pueden ya estar muertos.
@@ -48,7 +50,7 @@ ThumbnailLoader::~ThumbnailLoader() {
 
 void ThumbnailLoader::initDiskCache() {
     // hilo de I/O de disco — no migrable a WebTask (no es peticion web)
-    std::thread([this]() {
+    spawnBackground([this]() {
         geode::utils::thread::setName("ThumbnailLoader Cache Init");
         std::lock_guard<std::mutex> lock(m_diskMutex);
         auto path = Mod::get()->getSaveDir() / "cache";
@@ -119,7 +121,7 @@ void ThumbnailLoader::initDiskCache() {
         }
         
         PaimonDebug::log("[ThumbnailLoader] cache de disco lista. borrados: {}, guardados: {}", deletedCount, keptCount);
-    }).detach();
+    });
 }
 
 void ThumbnailLoader::setMaxConcurrentTasks(int max) {
@@ -291,7 +293,7 @@ void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
     // siempre tiro de disco primero para evitar carreras con initDiskCache
     // workerLoadFromDisk mira el FS y si no encuentra descarga
     // hilo de I/O de disco + decodificacion CPU — no migrable a WebTask
-    std::thread([this, task]() {
+    spawnBackground([this, task]() {
         if (m_shuttingDown.load(std::memory_order_relaxed)) {
             Loader::get()->queueInMainThread([this, task]() {
                 finishTask(task, nullptr, false);
@@ -300,7 +302,7 @@ void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
         }
         geode::utils::thread::setName("ThumbnailLoader Disk Worker");
         workerLoadFromDisk(task);
-    }).detach();
+    });
 }
 
 void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
@@ -525,7 +527,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                 if (success && !data.empty()) {
                     // empiezo procesamiento en thread background
                     // hilo de I/O disco + decodificacion stb_image — no migrable a WebTask
-                    std::thread([this, task, data, realID]() {
+                    spawnBackground([this, task, data, realID]() {
                         geode::utils::thread::setName("ThumbnailLoader Download Worker");
                         // 1. guardo en disco con nombre segun formato real
                         // asi no se duplica si el request estatico baja un GIF
@@ -598,7 +600,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                                 });
                             }
                         }
-                    }).detach();
+                    });
                 } else {
                     finishTask(task, nullptr, false);
                 }
@@ -643,8 +645,20 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
 
 void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
     if (!texture) return;
+
+    auto estimateTextureBytes = [](CCTexture2D* tex) -> size_t {
+        if (!tex) return 0;
+        return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
+    };
+    size_t incomingBytes = estimateTextureBytes(texture);
+    if (auto oldIt = m_textureCache.find(levelID); oldIt != m_textureCache.end() && oldIt->second) {
+        size_t oldBytes = estimateTextureBytes(oldIt->second);
+        if (m_textureCacheBytes >= oldBytes) m_textureCacheBytes -= oldBytes;
+        else m_textureCacheBytes = 0;
+    }
     
     m_textureCache[levelID] = texture;
+    m_textureCacheBytes += incomingBytes;
     
     // LRU O(1): quito el viejo iterador si existe, agrego al final
     auto lruIt = m_lruMap.find(levelID);
@@ -655,10 +669,15 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
     m_lruMap[levelID] = std::prev(m_lruOrder.end());
     
     // recorto cache si pasa del maximo
-    while (m_lruOrder.size() > MAX_CACHE_SIZE) {
+    while ((m_lruOrder.size() > MAX_CACHE_SIZE || m_textureCacheBytes > MAX_CACHE_BYTES) && !m_lruOrder.empty()) {
         int removeID = m_lruOrder.front();
         m_lruOrder.pop_front();
         m_lruMap.erase(removeID);
+        if (auto removeIt = m_textureCache.find(removeID); removeIt != m_textureCache.end() && removeIt->second) {
+            size_t removedBytes = estimateTextureBytes(removeIt->second);
+            if (m_textureCacheBytes >= removedBytes) m_textureCacheBytes -= removedBytes;
+            else m_textureCacheBytes = 0;
+        }
         m_textureCache.erase(removeID);
     }
 }
@@ -668,6 +687,7 @@ void ThumbnailLoader::clearCache() {
     m_textureCache.clear();
     m_lruOrder.clear();
     m_lruMap.clear();
+    m_textureCacheBytes = 0;
     m_failedCache.clear();
     m_gifLevels.clear();
 }
@@ -683,6 +703,11 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         // quito la entrada de la RAM
         auto it = m_textureCache.find(key);
         if (it != m_textureCache.end()) {
+            if (it->second) {
+                size_t bytes = static_cast<size_t>(it->second->getPixelsWide()) * static_cast<size_t>(it->second->getPixelsHigh()) * 4;
+                if (m_textureCacheBytes >= bytes) m_textureCacheBytes -= bytes;
+                else m_textureCacheBytes = 0;
+            }
             m_textureCache.erase(it);
             auto lruIt = m_lruMap.find(key);
             if (lruIt != m_lruMap.end()) {
@@ -698,7 +723,7 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
 
     // borro ambos formatos en disco para no dejar huerfanos
     // hilo de I/O de disco - no migrable a WebTask
-    std::thread([this, levelID]() {
+    spawnBackground([this, levelID]() {
         geode::utils::thread::setName("ThumbnailLoader Invalidator");
         std::error_code ec;
         auto pngPath = getCachePath(levelID, false);
@@ -712,7 +737,7 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         std::lock_guard<std::mutex> lock(m_diskMutex);
         m_diskCache.erase(levelID);
         m_diskCache.erase(-levelID);
-    }).detach();
+    });
 }
 
 int ThumbnailLoader::getInvalidationVersion(int levelID) const {
@@ -723,7 +748,7 @@ int ThumbnailLoader::getInvalidationVersion(int levelID) const {
 
 void ThumbnailLoader::clearDiskCache() {
     // hilo de I/O de disco — no migrable a WebTask
-    std::thread([this]() {
+    spawnBackground([this]() {
         geode::utils::thread::setName("ThumbnailLoader Disk Clear");
         std::error_code ec;
         std::filesystem::remove_all(Mod::get()->getSaveDir() / "cache", ec);
@@ -733,7 +758,7 @@ void ThumbnailLoader::clearDiskCache() {
         std::lock_guard<std::mutex> lock(m_diskMutex);
         m_diskCache.clear();
         initDiskCache(); // vuelvo a crear la carpeta
-    }).detach();
+    });
 }
 
 void ThumbnailLoader::clearPendingQueue() {
@@ -751,8 +776,42 @@ void ThumbnailLoader::updateSessionCache(int levelID, cocos2d::CCTexture2D* text
 }
 
 void ThumbnailLoader::cleanup() {
+    m_shuttingDown.store(true, std::memory_order_release);
     clearPendingQueue();
+    waitBackgroundWorkers();
     clearCache();
+}
+
+void ThumbnailLoader::spawnBackground(std::function<void()> job) {
+    std::lock_guard<std::mutex> lock(m_workerMutex);
+    pruneFinishedWorkers();
+    m_backgroundWorkers.emplace_back(std::async(std::launch::async, [job = std::move(job)]() mutable {
+        job();
+    }));
+}
+
+void ThumbnailLoader::pruneFinishedWorkers() {
+    auto it = m_backgroundWorkers.begin();
+    while (it != m_backgroundWorkers.end()) {
+        if (!it->valid() || it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            it = m_backgroundWorkers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void ThumbnailLoader::waitBackgroundWorkers() {
+    std::vector<std::future<void>> workers;
+    {
+        std::lock_guard<std::mutex> lock(m_workerMutex);
+        workers.swap(m_backgroundWorkers);
+    }
+    for (auto& worker : workers) {
+        if (worker.valid()) {
+            worker.wait();
+        }
+    }
 }
 
 bool ThumbnailLoader::isTextureSane(cocos2d::CCTexture2D* tex) {

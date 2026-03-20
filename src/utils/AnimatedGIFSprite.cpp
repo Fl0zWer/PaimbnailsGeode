@@ -44,14 +44,29 @@ std::deque<AnimatedGIFSprite::GIFTask> AnimatedGIFSprite::s_taskQueue;
 std::mutex AnimatedGIFSprite::s_queueMutex;
 std::condition_variable AnimatedGIFSprite::s_queueCV;
 std::thread AnimatedGIFSprite::s_workerThread;
-bool AnimatedGIFSprite::s_workerRunning = false;
+std::atomic<bool> AnimatedGIFSprite::s_workerRunning = false;
+std::mutex AnimatedGIFSprite::s_workerLifecycleMutex;
 
 void AnimatedGIFSprite::initWorker() {
-    if (!s_workerRunning) {
-        s_workerRunning = true;
+    std::lock_guard<std::mutex> lock(s_workerLifecycleMutex);
+    if (!s_workerRunning.load(std::memory_order_acquire)) {
+        s_workerRunning.store(true, std::memory_order_release);
         s_workerThread = std::thread(workerLoop);
-        s_workerThread.detach();
         PaimonDebug::log("[AnimatedGIFSprite] Worker thread started");
+    }
+}
+
+void AnimatedGIFSprite::shutdownWorker() {
+    std::lock_guard<std::mutex> lock(s_workerLifecycleMutex);
+    if (!s_workerRunning.load(std::memory_order_acquire)) return;
+    s_workerRunning.store(false, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> queueLock(s_queueMutex);
+        s_taskQueue.clear();
+    }
+    s_queueCV.notify_all();
+    if (s_workerThread.joinable()) {
+        s_workerThread.join();
     }
 }
 
@@ -157,22 +172,24 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
             sharedData.frameRects.push_back(CCRect(0, 0, frame.width, frame.height));
         }
         
-        // guardo la entrada en cache
-        s_gifCache[filename] = sharedData;
-        
-        // calculo tamano aproximado en RAM
-        size_t entrySize = 0;
-        for (auto* tex : sharedData.textures) {
-            entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
-        }
-        s_currentCacheSize += entrySize;
+        {
+            std::lock_guard<std::mutex> lock(s_cacheMutex);
+            // guardo la entrada en cache
+            s_gifCache[filename] = sharedData;
 
-        if (!isPinned(filename)) {
-            s_lruList.push_back(filename);
-            s_lruMap[filename] = std::prev(s_lruList.end());
+            // calculo tamano aproximado en RAM
+            size_t entrySize = 0;
+            for (auto* tex : sharedData.textures) {
+                entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
+            }
+            s_currentCacheSize += entrySize;
+
+            if (!isPinned(filename)) {
+                s_lruList.push_back(filename);
+                s_lruMap[filename] = std::prev(s_lruList.end());
+            }
+            evictIfNeeded();
         }
-        
-        evictIfNeeded();
         
         // lo vuelvo a inicializar pero ya tirando del cache
         ret->initFromCache(filename);
@@ -248,27 +265,29 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
             cacheEntry.frameRects.push_back(frame->rect);
         }
         
-        s_gifCache[m_filename] = cacheEntry;
-        
-        // calculo tamano
-        size_t entrySize = 0;
-        for (auto* tex : cacheEntry.textures) {
-            // RGBA8888 = 4 bytes por pixel
-            entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
-        }
-        s_currentCacheSize += entrySize;
-
-        // actualizo lru O(1)
-        if (!isPinned(m_filename)) {
-            auto lruIt = s_lruMap.find(m_filename);
-            if (lruIt != s_lruMap.end()) {
-                s_lruList.erase(lruIt->second);
+        {
+            std::lock_guard<std::mutex> lock(s_cacheMutex);
+            s_gifCache[m_filename] = cacheEntry;
+            
+            // calculo tamano
+            size_t entrySize = 0;
+            for (auto* tex : cacheEntry.textures) {
+                // RGBA8888 = 4 bytes por pixel
+                entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
             }
-            s_lruList.push_back(m_filename);
-            s_lruMap[m_filename] = std::prev(s_lruList.end());
+            s_currentCacheSize += entrySize;
+
+            // actualizo lru O(1)
+            if (!isPinned(m_filename)) {
+                auto lruIt = s_lruMap.find(m_filename);
+                if (lruIt != s_lruMap.end()) {
+                    s_lruList.erase(lruIt->second);
+                }
+                s_lruList.push_back(m_filename);
+                s_lruMap[m_filename] = std::prev(s_lruList.end());
+            }
+            evictIfNeeded();
         }
-        
-        evictIfNeeded();
 
         this->scheduleUpdate();
         return;
@@ -441,13 +460,13 @@ void AnimatedGIFSprite::saveToDiskCache(std::string const& path, DiskCacheEntry 
 }
 
 void AnimatedGIFSprite::workerLoop() {
-    while (s_workerRunning) {
+    while (true) {
         GIFTask task;
         {
             std::unique_lock<std::mutex> lock(s_queueMutex);
-            s_queueCV.wait(lock, []{ return !s_taskQueue.empty() || !s_workerRunning; });
+            s_queueCV.wait(lock, []{ return !s_taskQueue.empty() || !s_workerRunning.load(std::memory_order_acquire); });
             
-            if (!s_workerRunning) break;
+            if (!s_workerRunning.load(std::memory_order_acquire) && s_taskQueue.empty()) break;
             
             task = s_taskQueue.front();
             s_taskQueue.pop_front();
@@ -528,11 +547,13 @@ void AnimatedGIFSprite::workerLoop() {
                         cacheEntry.frameRects.push_back(frame->rect);
                     }
 
-                    s_gifCache[key] = cacheEntry;
-
-                    if (!isPinned(key)) {
-                        s_lruList.push_back(key);
-                        s_lruMap[key] = std::prev(s_lruList.end());
+                    {
+                        std::lock_guard<std::mutex> lock(s_cacheMutex);
+                        s_gifCache[key] = cacheEntry;
+                        if (!isPinned(key)) {
+                            s_lruList.push_back(key);
+                            s_lruMap[key] = std::prev(s_lruList.end());
+                        }
                     }
 
                     log::info("[AnimatedGIFSprite] Cached complete GIF from data with key: {} ({} frames)", key, ret->m_frames.size());
@@ -692,6 +713,7 @@ void AnimatedGIFSprite::clearCache() {
     s_lruMap.clear();
     s_currentCacheSize = 0;
     PaimonDebug::log("[AnimatedGIFSprite] Cache cleared");
+    shutdownWorker();
 }
 
 void AnimatedGIFSprite::remove(std::string const& filename) {
@@ -738,23 +760,25 @@ AnimatedGIFSprite::~AnimatedGIFSprite() {
 bool AnimatedGIFSprite::initFromCache(std::string const& cacheKey) {
     m_filename = cacheKey;
 
-    // comprobar cache primero
-    auto it = s_gifCache.find(cacheKey);
-    if (it == s_gifCache.end()) {
-        return false;
-    }
+    SharedGIFData cachedData;
+    {
+        std::lock_guard<std::mutex> lock(s_cacheMutex);
+        auto it = s_gifCache.find(cacheKey);
+        if (it == s_gifCache.end()) {
+            return false;
+        }
+        cachedData = it->second;
 
-    auto const& cachedData = it->second;
+        // actualizar LRU O(1)
+        auto lruIt = s_lruMap.find(cacheKey);
+        if (lruIt != s_lruMap.end()) {
+            s_lruList.erase(lruIt->second);
+        }
+        s_lruList.push_back(cacheKey);
+        s_lruMap[cacheKey] = std::prev(s_lruList.end());
+    }
     m_canvasWidth = cachedData.width;
     m_canvasHeight = cachedData.height;
-    
-    // actualizar LRU O(1)
-    auto lruIt = s_lruMap.find(cacheKey);
-    if (lruIt != s_lruMap.end()) {
-        s_lruList.erase(lruIt->second);
-    }
-    s_lruList.push_back(cacheKey);
-    s_lruMap[cacheKey] = std::prev(s_lruList.end());
     
     PaimonDebug::log("[AnimatedGIFSprite] Cache hit for: {}, size: {}x{}, frames: {}", 
         cacheKey, m_canvasWidth, m_canvasHeight, cachedData.textures.size());

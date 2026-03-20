@@ -25,9 +25,31 @@
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+#include <future>
+#include <mutex>
 
 using namespace geode::prelude;
 using namespace cocos2d;
+
+namespace {
+std::mutex s_downloadWorkerMutex;
+std::vector<std::future<void>> s_downloadWorkers;
+
+void spawnDownloadWorker(std::function<void()> job) {
+    std::lock_guard<std::mutex> lock(s_downloadWorkerMutex);
+    auto it = s_downloadWorkers.begin();
+    while (it != s_downloadWorkers.end()) {
+        if (!it->valid() || it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            it = s_downloadWorkers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    s_downloadWorkers.emplace_back(std::async(std::launch::async, [job = std::move(job)]() mutable {
+        job();
+    }));
+}
+}
 
 // ─── helpers ────────────────────────────────────────────────────────
 float CapturePreviewPopup::clampF(float value, float mn, float mx) {
@@ -347,6 +369,9 @@ void CapturePreviewPopup::onRecenterBtn(CCObject*) {
 }
 
 void CapturePreviewPopup::onClose(CCObject* sender) {
+    m_childPopupOpen = false;
+    m_recapturePending = false;
+    this->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
     CaptureLayerEditorPopup::restoreAllLayers();
 
     // Cancel any pending recapture to avoid callbacks targeting a destroyed popup
@@ -393,12 +418,16 @@ void CapturePreviewPopup::recapture() {
 
     Ref<CapturePreviewPopup> safeRef = this;
     this->setVisible(false);
+    m_recapturePending = true;
+    this->scheduleOnce(schedule_selector(CapturePreviewPopup::onRecaptureTimeout), 5.0f);
 
     FramebufferCapture::requestCapture(m_levelID,
         [safeRef](bool success, CCTexture2D* texture,
                std::shared_ptr<uint8_t> rgbaData, int width, int height) {
             Loader::get()->queueInMainThread(
                 [safeRef, success, texture, rgbaData, width, height]() {
+                    safeRef->m_recapturePending = false;
+                    safeRef->unschedule(schedule_selector(CapturePreviewPopup::onRecaptureTimeout));
                     if (!safeRef->getParent()) return;
                     if (success && texture && rgbaData) {
                         safeRef->updateContent(texture, rgbaData, width, height);
@@ -410,6 +439,14 @@ void CapturePreviewPopup::recapture() {
                     safeRef->setVisible(true);
                 });
         });
+}
+
+void CapturePreviewPopup::onRecaptureTimeout(float) {
+    if (!m_recapturePending) return;
+    m_recapturePending = false;
+    FramebufferCapture::cancelPending();
+    this->setVisible(true);
+    PaimonNotify::create(Localization::get().getString("layers.recapture_error").c_str(), NotificationIcon::Warning)->show();
 }
 
 void CapturePreviewPopup::liveRecapture(bool updateBuffer) {
@@ -537,7 +574,11 @@ void CapturePreviewPopup::onEditBtn(CCObject* sender) {
     if (!sender) return;
     m_childPopupOpen = true;
     auto editPopup = CaptureEditPopup::create(this);
-    if (editPopup) editPopup->show();
+    if (editPopup) {
+        editPopup->show();
+    } else {
+        m_childPopupOpen = false;
+    }
 }
 
 void CapturePreviewPopup::onCancelBtn(CCObject* sender) {
@@ -672,7 +713,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
     int levelID = m_levelID;
 
     // stbi_write_png_to_func + std::ofstream(path) = Unicode-safe en Windows
-    std::thread([bufCopy, w, h, filePath, levelID]() {
+    spawnDownloadWorker([bufCopy, w, h, filePath, levelID]() {
         if (ImageConverter::saveRGBAToPNG(bufCopy.get(), w, h, filePath)) {
             geode::Loader::get()->queueInMainThread([filePath, levelID]() {
                 PaimonNotify::create(Localization::get().getString("preview.downloaded").c_str(),
@@ -685,7 +726,7 @@ void CapturePreviewPopup::onDownloadBtn(CCObject* sender) {
                     geode::NotificationIcon::Error)->show();
             });
         }
-    }).detach();
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════

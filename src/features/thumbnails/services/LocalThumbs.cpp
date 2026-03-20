@@ -8,6 +8,7 @@
 #include <fstream>
 #include <sstream>
 #include <unordered_set>
+#include <future>
 
 using namespace geode::prelude;
 
@@ -22,9 +23,9 @@ struct RGBHeader {
 
 LocalThumbs::LocalThumbs() {
     // hilo de I/O de disco para escanear cache — no migrable a WebTask
-    std::thread([this]() {
+    m_initFuture = std::async(std::launch::async, [this]() {
         initCache();
-    }).detach();
+    });
 }
 
 void LocalThumbs::initCache() {
@@ -40,6 +41,9 @@ void LocalThumbs::initCache() {
 
     // que niveles tienen capturas
     for (auto const& entry : std::filesystem::directory_iterator(d, ec)) {
+        if (m_shuttingDown.load(std::memory_order_relaxed)) {
+            break;
+        }
         if (ec) break;
         if (entry.is_regular_file() && entry.path().extension() == ".rgb") {
             auto stemStr = geode::utils::string::pathToString(entry.path().stem());
@@ -336,5 +340,12 @@ void LocalThumbs::saveMappings() {
         out << levelID << " " << fileName << "\n";
     }
     log::debug("se guardaron {} mappings", m_fileMapping.size());
+}
+
+void LocalThumbs::shutdown() {
+    m_shuttingDown.store(true, std::memory_order_release);
+    if (m_initFuture.valid()) {
+        m_initFuture.wait();
+    }
 }
 

@@ -83,6 +83,18 @@ namespace {
         }
         return false;
     }
+
+    static bool hasLiveCaptureEditPopup() {
+        auto* scene = CCDirector::sharedDirector()->getRunningScene();
+        if (!scene) return false;
+        for (auto* child : CCArrayExt<CCNode*>(scene->getChildren())) {
+            if (!child || !child->getParent()) continue;
+            if (typeinfo_cast<CaptureEditPopup*>(child)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 // ─── api estatica ────────────────────────────────────────────────
@@ -210,6 +222,21 @@ bool CaptureLayerEditorPopup::init() {
 
     paimon::markDynamicPopup(this);
     return true;
+}
+
+void CaptureLayerEditorPopup::onClose(CCObject* sender) {
+    notifyPreviewIfNoEditPopup();
+    Popup::onClose(sender);
+}
+
+void CaptureLayerEditorPopup::keyBackClicked() {
+    notifyPreviewIfNoEditPopup();
+    Popup::keyBackClicked();
+}
+
+void CaptureLayerEditorPopup::onExit() {
+    notifyPreviewIfNoEditPopup();
+    Popup::onExit();
 }
 
 // ─── enumeracion de capas ─────────────────────────────────────────
@@ -908,10 +935,18 @@ void CaptureLayerEditorPopup::closeFilterDropdown() {
     if (m_listRoot) m_listRoot->setVisible(true);
 }
 
+void CaptureLayerEditorPopup::notifyPreviewIfNoEditPopup() {
+    if (m_previewCloseNotified) return;
+    m_previewCloseNotified = true;
+    if (auto preview = m_previewPopup.lock(); preview && !hasLiveCaptureEditPopup()) {
+        preview->setChildPopupOpen(false);
+    }
+}
+
 void CaptureLayerEditorPopup::onDoneBtn(CCObject* sender) {
     if (!sender) return;
 
-    auto previewRef = m_previewPopup;
+    auto previewRef = m_previewPopup.lock();
     this->onClose(nullptr);
 
     // Also close the CaptureEditPopup so the user sees the recaptured preview immediately

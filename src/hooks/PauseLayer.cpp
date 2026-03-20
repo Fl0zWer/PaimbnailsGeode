@@ -58,7 +58,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 // busca items con id de camara o captura
     struct Fields {
         bool m_fileDialogOpen = false;
+        bool m_captureInProgress = false;
     };
+    void captureSafetyRestore(float dt);
     $override
     void customSetup() {
         PauseLayer::customSetup();
@@ -86,9 +88,31 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             return;
         }
 
-        auto rightMenu = this->getChildByID("right-button-menu");
+        auto findButtonMenu = [this](char const* id, bool rightSide) -> CCMenu* {
+            if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID(id))) {
+                return byId;
+            }
+            auto winSize = CCDirector::sharedDirector()->getWinSize();
+            CCMenu* best = nullptr;
+            float bestScore = 0.f;
+            for (auto* node : CCArrayExt<CCNode*>(this->getChildren())) {
+                auto menu = typeinfo_cast<CCMenu*>(node);
+                if (!menu) continue;
+                float x = menu->getPositionX();
+                bool sideMatch = rightSide ? (x > winSize.width * 0.5f) : (x < winSize.width * 0.5f);
+                if (!sideMatch) continue;
+                float score = menu->getChildrenCount();
+                if (!best || score > bestScore) {
+                    best = menu;
+                    bestScore = score;
+                }
+            }
+            return best;
+        };
+
+        auto rightMenu = findButtonMenu("right-button-menu", true);
         if (!rightMenu) {
-            log::error("Right button menu not found in PauseLayer");
+            log::error("Right button menu not found in PauseLayer (including fallback)");
             return;
         }
 
@@ -177,8 +201,8 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             };
 
             // prueba ambos menus
-            rewireScreenshotInMenu(this->getChildByID("right-button-menu"));
-            rewireScreenshotInMenu(this->getChildByID("left-button-menu"));
+            rewireScreenshotInMenu(findButtonMenu("right-button-menu", true));
+            rewireScreenshotInMenu(findButtonMenu("left-button-menu", false));
 
             // no llama updateLayout para mantener posiciones
             log::info("Thumbnail capture + extra buttons added successfully");
@@ -186,6 +210,10 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
     void onScreenshot(CCObject*) {
         log::info("[PauseLayer] Capture button pressed; hiding pause menu");
+        if (m_fields->m_captureInProgress) {
+            log::warn("[PauseLayer] Capture already in progress, ignoring duplicate request");
+            return;
+        }
 
         auto pl = PlayLayer::get();
         if (!pl) {
@@ -196,9 +224,12 @@ class $modify(PaimonPauseLayer, PauseLayer) {
 
         // oculta menu de pausa temporalmente
         this->setVisible(false);
+        m_fields->m_captureInProgress = true;
 
         // muestra circulo de carga inmediatamente
         showLoadingOverlay();
+        // Guard rail: si el callback de captura nunca vuelve, restaurar UI.
+        this->scheduleOnce(schedule_selector(PaimonPauseLayer::captureSafetyRestore), 8.0f);
 
         // programa captura y restaura menu
         auto scheduler = CCDirector::sharedDirector()->getScheduler();
@@ -215,6 +246,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     void showLoadingOverlay() {
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
+        if (auto existing = scene->getChildByID("paimon-loading-overlay"_spr)) {
+            existing->removeFromParentAndCleanup(true);
+        }
 
         auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -241,6 +275,9 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         scheduler->unscheduleSelector(
             schedule_selector(PaimonPauseLayer::reShowOverlay), this
         );
+        scheduler->unscheduleSelector(
+            schedule_selector(PaimonPauseLayer::captureSafetyRestore), this
+        );
 
         auto scene = CCDirector::sharedDirector()->getRunningScene();
         if (!scene) return;
@@ -248,8 +285,20 @@ class $modify(PaimonPauseLayer, PauseLayer) {
         if (overlay) overlay->removeFromParentAndCleanup(true);
     }
 
+    void captureSafetyRestore(float) {
+        if (!m_fields->m_captureInProgress) return;
+        log::warn("[PauseLayer] Capture watchdog restored UI state");
+        m_fields->m_captureInProgress = false;
+        removeLoadingOverlay();
+        this->setVisible(true);
+        PaimonNotify::create(Localization::get().getString("pause.capture_error").c_str(), NotificationIcon::Warning)->show();
+    }
+
     void performCaptureAndRestore(float dt) {
         log::info("[PauseLayer] Performing capture");
+        CCDirector::sharedDirector()->getScheduler()->unscheduleSelector(
+            schedule_selector(PaimonPauseLayer::performCaptureAndRestore), this
+        );
 
             auto* pl = PlayLayer::get();
             if (!pl || !pl->m_level) {
@@ -283,6 +332,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 Loader::get()->queueInMainThread([safeRef, success, texture, rgbData, width, height, levelID]() {
                     auto* self = static_cast<PaimonPauseLayer*>(safeRef.data());
                     self->removeLoadingOverlay();
+                    self->m_fields->m_captureInProgress = false;
                     if (!self->getParent()) return;
 
                     if (success && texture && rgbData) {
@@ -407,6 +457,18 @@ class $modify(PaimonPauseLayer, PauseLayer) {
                 });
             });
 
+    }
+
+    $override
+    void onExit() {
+        m_fields->m_captureInProgress = false;
+        m_fields->m_fileDialogOpen = false;
+        auto scheduler = CCDirector::sharedDirector()->getScheduler();
+        scheduler->unscheduleSelector(
+            schedule_selector(PaimonPauseLayer::performCaptureAndRestore), this
+        );
+        removeLoadingOverlay();
+        PauseLayer::onExit();
     }
 
     void restorePauseMenu(float dt) {
@@ -808,14 +870,16 @@ class $modify(PaimonPauseLayer, PauseLayer) {
             int levelID = pl->m_level->m_levelID;
 
             m_fields->m_fileDialogOpen = true;
-            Ref<PaimonPauseLayer> self = this;
+            WeakRef<PaimonPauseLayer> self = this;
             pt::openImageFileDialog([self, levelID](std::optional<std::filesystem::path> result) {
-                self->m_fields->m_fileDialogOpen = false;
+                auto layer = self.lock();
+                if (!layer) return;
+                layer->m_fields->m_fileDialogOpen = false;
 
                 if (result.has_value()) {
                     auto path = result.value();
                     if (!path.empty()) {
-                        self->processSelectedFile(path, levelID);
+                        layer->processSelectedFile(path, levelID);
                     } else {
                         log::warn("[PauseLayer] User cancelled file picker");
                     }

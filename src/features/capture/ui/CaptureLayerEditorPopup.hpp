@@ -16,9 +16,12 @@ public:
 
 protected:
     bool init() override;
+    void onClose(cocos2d::CCObject*) override;
+    void keyBackClicked() override;
+    void onExit() override;
 
 private:
-    CapturePreviewPopup* m_previewPopup = nullptr;
+    geode::WeakRef<CapturePreviewPopup> m_previewPopup = nullptr;
     cocos2d::CCSprite* m_miniPreview = nullptr;
     geode::ScrollLayer* m_scrollView = nullptr;
     cocos2d::CCNode* m_listRoot = nullptr;
@@ -42,6 +45,7 @@ private:
     };
 
     std::vector<LayerEntry> m_layers;
+    bool m_previewCloseNotified = false;
 
     void populateLayers();
     void buildList();
@@ -54,6 +58,7 @@ private:
     void onFilterBtn(cocos2d::CCObject* sender);
     void onFilterSelect(cocos2d::CCObject* sender);
     void closeFilterDropdown();
+    void notifyPreviewIfNoEditPopup();
     void onDoneBtn(cocos2d::CCObject* sender);
     void onRestoreAllBtn(cocos2d::CCObject* sender);
 };

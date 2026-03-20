@@ -6,6 +6,9 @@
 #include <Geode/binding/UserInfoDelegate.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
 #include <Geode/binding/GJUserScore.hpp>
+#include <Geode/utils/async.hpp>
+#include <Geode/utils/web.hpp>
+#include <memory>
 
 class ModeratorsLayer : public geode::Popup, public UserInfoDelegate {
 protected:
@@ -15,6 +18,7 @@ protected:
     geode::LoadingSpinner* m_loadingSpinner = nullptr;
     int m_pendingRequests = 0;
     std::vector<std::string> m_moderatorNames;
+    std::vector<std::unique_ptr<geode::async::TaskHolder<geode::utils::web::WebResponse>>> m_ownedRequests;
 
     bool init() override;
     void setup();

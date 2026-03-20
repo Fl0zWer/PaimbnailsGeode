@@ -7,7 +7,9 @@
 #include <Geode/utils/string.hpp>
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../features/pet/services/PetManager.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include <filesystem>
@@ -62,6 +64,8 @@ $on_game(Exiting) {
     // cancelar tareas pendientes de ThumbnailLoader ANTES de limpiar disco
     // para que los hilos de fondo no reescriban archivos que vamos a borrar
     ThumbnailLoader::get().cleanup();
+    LocalThumbs::get().shutdown();
+    ProfileThumbs::get().shutdown();
 
     // forzar escritura de colores pendientes antes del cierre
     LevelColors::get().flushIfDirty();
@@ -82,6 +86,7 @@ $on_game(Exiting) {
 
     // 3. parar musica de perfiles (siempre)
     ProfileMusicManager::get().stopProfileMusic();
+    PetManager::get().releaseSharedResources();
 
     // === Disk cleanup (solo si clear-cache-on-exit esta activado) ===
 

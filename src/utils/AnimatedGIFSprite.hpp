@@ -14,6 +14,7 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <atomic>
 
 // Animated sprite that plays GIF frames with caching and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
@@ -126,9 +127,11 @@ private:
     static std::mutex s_queueMutex;
     static std::condition_variable s_queueCV;
     static std::thread s_workerThread;
-    static bool s_workerRunning;
+    static std::atomic<bool> s_workerRunning;
+    static std::mutex s_workerLifecycleMutex;
     static void workerLoop();
     static void initWorker();
+    static void shutdownWorker();
 
 public:
     void play() { m_isPlaying = true; }

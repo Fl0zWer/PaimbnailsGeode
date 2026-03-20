@@ -9,6 +9,9 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+#include <future>
+#include <vector>
+#include <functional>
 
 #include <unordered_set>
 
@@ -104,6 +107,7 @@ public:
 
     // limpia callbacks y cola de descarga pendientes (para shutdown seguro)
     void clearPendingDownloads();
+    void shutdown();
 
 private:
     ProfileThumbs() = default;
@@ -128,5 +132,11 @@ private:
     std::unordered_map<int, std::vector<geode::CopyableFunction<void(bool, cocos2d::CCTexture2D*)>>> m_pendingCallbacks;
     int m_activeDownloads = 0;
     const int MAX_CONCURRENT_DOWNLOADS = 50;
+
+    void spawnBackground(std::function<void()> job);
+    void pruneFinishedWorkers();
+    void waitBackgroundWorkers();
+    std::vector<std::future<void>> m_backgroundWorkers;
+    std::mutex m_workerMutex;
 };
 

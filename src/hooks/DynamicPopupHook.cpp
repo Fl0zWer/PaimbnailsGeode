@@ -71,6 +71,7 @@ class $modify(PaimonDynamicPopupHook, FLAlertLayer) {
     }
 
     CCPoint worldToMLParent(CCPoint wp) {
+        if (!m_mainLayer) return wp;
         auto* p = m_mainLayer->getParent();
         return p ? p->convertToNodeSpace(wp) : wp;
     }

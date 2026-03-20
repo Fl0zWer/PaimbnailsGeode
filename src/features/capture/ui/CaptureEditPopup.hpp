@@ -12,11 +12,15 @@ public:
 protected:
     bool init() override;
     void onClose(cocos2d::CCObject*) override;
+    void keyBackClicked() override;
+    void onExit() override;
 
 private:
-    CapturePreviewPopup* m_previewPopup = nullptr;
+    geode::WeakRef<CapturePreviewPopup> m_previewPopup = nullptr;
     CCMenuItemSpriteExtra* m_player1Btn = nullptr;
     CCMenuItemSpriteExtra* m_player2Btn = nullptr;
+    bool m_parentNotifiedClosed = false;
+    void notifyParentClosed();
 
     void onTogglePlayer1Btn(cocos2d::CCObject*);
     void onTogglePlayer2Btn(cocos2d::CCObject*);

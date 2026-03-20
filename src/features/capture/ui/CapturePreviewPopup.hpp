@@ -78,6 +78,7 @@ private:
     bool m_isCropped = false;
     bool m_fillMode = true;
     bool m_callbackExecuted = false;
+    bool m_recapturePending = false;
 
     // Zoom/pan state (mirrors LocalThumbnailViewPopup)
     float m_viewWidth = 0.f;
@@ -92,6 +93,7 @@ private:
     bool m_wasZooming = false;
 
     void updatePreviewScale();
+    void onRecaptureTimeout(float dt);
     void onClose(cocos2d::CCObject*) override;
 
     void onAcceptBtn(cocos2d::CCObject*);

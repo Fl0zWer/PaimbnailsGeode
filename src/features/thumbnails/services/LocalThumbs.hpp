@@ -9,6 +9,7 @@
 #include <vector>
 #include <mutex>
 #include <atomic>
+#include <future>
 
 class LocalThumbs {
 public:
@@ -39,6 +40,7 @@ public:
     std::optional<std::string> getFileName(int32_t levelID) const;
     void loadMappings();
     void saveMappings();
+    void shutdown();
 
 private:
     LocalThumbs(); // privado
@@ -50,6 +52,8 @@ private:
     std::unordered_set<int32_t> m_availableLevels;
     mutable std::mutex m_mutex;
     std::atomic<bool> m_cacheInitialized{false};
+    std::atomic<bool> m_shuttingDown{false};
+    mutable std::future<void> m_initFuture;
     void initCache();
 };
 

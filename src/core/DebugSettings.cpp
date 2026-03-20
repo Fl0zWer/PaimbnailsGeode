@@ -4,6 +4,20 @@
 
 using namespace geode::prelude;
 
+namespace {
+bool canEnableDebugLogs() {
+    // Evita secretos hardcodeados en binario: el token se inyecta por launch arg.
+    // Ejemplo: --geode:flozwer.paimbnails.debug-token=mi_token
+    auto expectedToken = Mod::get()->getLaunchArgument("debug-token");
+    if (!expectedToken.has_value() || expectedToken->empty()) {
+        return false;
+    }
+
+    auto enteredToken = Mod::get()->getSettingValue<std::string>("debug-password");
+    return enteredToken == *expectedToken;
+}
+} // namespace
+
 $execute {
     // aplicar optimizer lo antes posible (desactiva todos los logs de Geode)
     bool optimizerEnabled = Mod::get()->getSettingValue<bool>("optimizer");
@@ -26,15 +40,12 @@ $execute {
 
     geode::listenForSettingChanges<bool>("enable-debug-logs", +[](bool value) {
         if (value) {
-            auto password = Mod::get()->getSettingValue<std::string>("debug-password");
-            // hash simple pa no dejar password en texto plano en el binario
-            uint64_t h = static_cast<uint64_t>(std::hash<std::string>{}(password));
-            if (h == 0xB9A7C3D2E1F05486ULL) { // hash precalculado
+            if (canEnableDebugLogs()) {
                 PaimonDebug::setEnabled(true);
                 log::info("Paimbnails Debug Logs Enabled");
                 PaimonNotify::create("Debug Logs Enabled", NotificationIcon::Success)->show();
             } else {
-                PaimonNotify::create("Incorrect Password", NotificationIcon::Error)->show();
+                PaimonNotify::create("Debug token missing/invalid", NotificationIcon::Error)->show();
                 PaimonDebug::setEnabled(false);
                 
                 // Revert the setting to false

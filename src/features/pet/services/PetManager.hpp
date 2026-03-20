@@ -65,6 +65,7 @@ public:
     void update(float dt);
     void attachToScene(cocos2d::CCScene* scene);
     void detachFromScene();
+    void releaseSharedResources();
 
     // config
     PetConfig& config() { return m_config; }

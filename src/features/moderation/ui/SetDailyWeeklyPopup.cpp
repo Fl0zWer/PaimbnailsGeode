@@ -78,12 +78,15 @@ SetDailyWeeklyPopup* SetDailyWeeklyPopup::create(int levelID) {
 }
 
 void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
+    WeakRef<SetDailyWeeklyPopup> self = this;
     createQuickPopup(
         "Confirm",
         "Set this level as <cy>Daily</c>?",
         "Cancel", "Set",
-        [this](auto, bool btn2) {
+        [self](auto, bool btn2) {
             if (btn2) {
+                auto popup = self.lock();
+                if (!popup) return;
                 auto gm = GameManager::get();
                 std::string username = gm->m_playerName;
                 int accountID = GJAccountManager::get()->m_accountID;
@@ -95,11 +98,8 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
                 });
                 
                 auto overlay = PaimonLoadingOverlay::create("Setting daily...");
-                overlay->show(this->m_mainLayer, 200);
+                overlay->show(popup->m_mainLayer, 200);
                 Ref<PaimonLoadingOverlay> loadingRef = overlay;
-                
-                // weakref para no crash si cierra antes
-                WeakRef<SetDailyWeeklyPopup> self = this;
                 
                 HttpClient::get().post("/api/daily/set", json.dump(), [self, loadingRef](bool success, std::string const& msg) {
                     if (loadingRef) loadingRef->dismiss();
@@ -118,12 +118,15 @@ void SetDailyWeeklyPopup::onSetDaily(CCObject* sender) {
 }
 
 void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
+    WeakRef<SetDailyWeeklyPopup> self = this;
     createQuickPopup(
         "Confirm",
         "Set this level as <cy>Weekly</c>?",
         "Cancel", "Set",
-        [this](auto, bool btn2) {
+        [self](auto, bool btn2) {
             if (btn2) {
+                auto popup = self.lock();
+                if (!popup) return;
                 auto gm = GameManager::get();
                 std::string username = gm->m_playerName;
                 int accountID = GJAccountManager::get()->m_accountID;
@@ -135,11 +138,8 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
                 });
                 
                 auto overlay = PaimonLoadingOverlay::create("Setting weekly...");
-                overlay->show(this->m_mainLayer, 200);
+                overlay->show(popup->m_mainLayer, 200);
                 Ref<PaimonLoadingOverlay> loadingRef = overlay;
-                
-                // usar weakref por seguridad
-                WeakRef<SetDailyWeeklyPopup> self = this;
 
                 HttpClient::get().post("/api/weekly/set", json.dump(), [self, loadingRef](bool success, std::string const& msg) {
                     if (loadingRef) loadingRef->dismiss();
@@ -158,12 +158,15 @@ void SetDailyWeeklyPopup::onSetWeekly(CCObject* sender) {
 }
 
 void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
+    WeakRef<SetDailyWeeklyPopup> self = this;
     createQuickPopup(
         "Confirm",
         "Unset this level from Daily/Weekly?",
         "Cancel", "Unset",
-        [this](auto, bool btn2) {
+        [self](auto, bool btn2) {
              if (btn2) {
+                auto popup = self.lock();
+                if (!popup) return;
                  auto gm = GameManager::get();
                  std::string username = gm->m_playerName;
 
@@ -174,10 +177,8 @@ void SetDailyWeeklyPopup::onUnset(CCObject* sender) {
                 });
                 
                 auto overlay = PaimonLoadingOverlay::create("Unsetting...");
-                overlay->show(this->m_mainLayer, 200);
+                overlay->show(popup->m_mainLayer, 200);
                 Ref<PaimonLoadingOverlay> loadingRef = overlay;
-                
-                WeakRef<SetDailyWeeklyPopup> self = this;
 
                 HttpClient::get().post("/api/admin/set-daily", json.dump(), [self, loadingRef](bool success, std::string const& msg) {
                     if (loadingRef) loadingRef->dismiss();

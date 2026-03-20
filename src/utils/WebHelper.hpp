@@ -5,6 +5,9 @@
 #include <Geode/utils/async.hpp>
 #include <Geode/utils/function.hpp>
 #include <string>
+#include <algorithm>
+#include <cctype>
+#include <memory>
 
 /**
  * WebHelper — Centralized async web dispatch for Paimbnails.
@@ -13,6 +16,16 @@
  * The callback is guaranteed to run on the main (Cocos2d-x) thread.
  */
 namespace WebHelper {
+
+inline std::string normalizeMethod(std::string method) {
+    std::transform(
+        method.begin(),
+        method.end(),
+        method.begin(),
+        [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); }
+    );
+    return method;
+}
 
 /**
  * Dispatch a web request asynchronously (fire-and-forget).
@@ -29,13 +42,28 @@ inline void dispatch(
     std::string const& url,
     geode::CopyableFunction<void(geode::utils::web::WebResponse)> cb
 ) {
-    auto future = (method == "POST")
-        ? req.post(url)
-        : req.get(url);
+    auto future = req.send(normalizeMethod(method), url);
 
     auto safeCb = std::make_shared<decltype(cb)>(std::move(cb));
 
-    geode::async::spawn(std::move(future), [safeCb](geode::utils::web::WebResponse res) {
+    auto handle = geode::async::spawn(std::move(future), [safeCb](geode::utils::web::WebResponse res) {
+        if (safeCb && *safeCb) {
+            (*safeCb)(std::move(res));
+        }
+    });
+    handle.setName("Paimbnails WebRequest");
+}
+
+inline void dispatchOwned(
+    geode::async::TaskHolder<geode::utils::web::WebResponse>& owner,
+    geode::utils::web::WebRequest&& req,
+    std::string const& method,
+    std::string const& url,
+    geode::CopyableFunction<void(geode::utils::web::WebResponse)> cb
+) {
+    auto future = req.send(normalizeMethod(method), url);
+    auto safeCb = std::make_shared<decltype(cb)>(std::move(cb));
+    owner.spawn("Paimbnails WebRequest", std::move(future), [safeCb](geode::utils::web::WebResponse res) {
         if (safeCb && *safeCb) {
             (*safeCb)(std::move(res));
         }

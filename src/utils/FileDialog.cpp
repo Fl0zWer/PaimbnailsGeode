@@ -2,33 +2,41 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/utils/file.hpp>
+#include <atomic>
 
 using namespace geode::prelude;
 using namespace geode::utils::file;
 
 namespace pt {
-    static bool s_dialogOpen = false;
+    static std::atomic_bool s_dialogOpen = false;
 
     static void pickFile(PickMode mode, FilePickOptions options, FileCallback callback) {
-        if (s_dialogOpen) {
+        bool expected = false;
+        if (!s_dialogOpen.compare_exchange_strong(expected, true)) {
             if (callback) callback(std::nullopt);
             return;
         }
-        s_dialogOpen = true;
 
         auto future = pick(mode, std::move(options));
         auto cb = std::make_shared<FileCallback>(std::move(callback));
 
         geode::async::spawn(std::move(future), [cb](PickResult result) {
-            s_dialogOpen = false;
+            s_dialogOpen.store(false, std::memory_order_release);
             if (!cb || !*cb) return;
 
+            std::optional<std::filesystem::path> outPath = std::nullopt;
             if (result.isOk()) {
-                (*cb)(result.unwrap());
+                outPath = result.unwrap();
             } else {
                 log::warn("[FileDialog] pick failed: {}", result.unwrapErr());
-                (*cb)(std::nullopt);
             }
+
+            // Garantiza que todo callback que toque UI/cocos corra en main thread.
+            Loader::get()->queueInMainThread([cb, outPath]() {
+                if (cb && *cb) {
+                    (*cb)(outPath);
+                }
+            });
         });
     }
 

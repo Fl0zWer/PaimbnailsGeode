@@ -129,21 +129,16 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
 
             auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
             queueInMainThread([accountID, callback, dataCopy]() {
-                auto* img = new CCImage();
-                if (!img->initWithImageData(const_cast<uint8_t*>(dataCopy->data()), dataCopy->size())) {
-                    img->release();
+                CCImage img;
+                if (!img.initWithImageData(const_cast<uint8_t*>(dataCopy->data()), dataCopy->size())) {
                     callback(false, nullptr);
                     return;
                 }
-                auto* tex = new CCTexture2D();
-                if (!tex->initWithImage(img)) {
-                    tex->release();
-                    img->release();
+                auto tex = geode::Ref<CCTexture2D>(new CCTexture2D());
+                if (!tex->initWithImage(&img)) {
                     callback(false, nullptr);
                     return;
                 }
-                img->release();
-                tex->autorelease();
                 callback(true, tex);
             });
         }, isSelf);

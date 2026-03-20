@@ -8,6 +8,7 @@
 #include <fstream>
 #include <algorithm>
 #include <deque>
+#include <future>
 
 #include "../../../utils/Shaders.hpp"
 
@@ -88,18 +89,15 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
         
         // guardo a disco en otro thread para no frenar la UI
         // hilo de I/O de disco — no migrable a WebTask
-        std::thread([accountID, width, height, path, data = std::move(rgbCopy)]() {
+        spawnBackground([accountID, width, height, path, data = std::move(rgbCopy)]() {
             std::ofstream out(path, std::ios::binary);
             if (out) {
                 Header h{width, height, 24};
                 out.write(reinterpret_cast<char const*>(&h), sizeof(h));
                 out.write(reinterpret_cast<char const*>(data.data()), data.size());
-                // uso queueInMainThread solo para loguear sin romper nada
-                geode::Loader::get()->queueInMainThread([accountID]() {
-                     log::debug("[ProfileThumbs] Saved profile to disk asynchronously for account {}", accountID);
-                });
+                log::debug("[ProfileThumbs] Saved profile to disk asynchronously for account {}", accountID);
             }
-        }).detach();
+        });
 
         // actualizo cache
         // intento preservar colores/ancho que ya tenia el usuario
@@ -427,6 +425,42 @@ void ProfileThumbs::clearPendingDownloads() {
     m_downloadQueue.clear();
     m_usernameMap.clear();
     m_activeDownloads = 0;
+}
+
+void ProfileThumbs::spawnBackground(std::function<void()> job) {
+    std::lock_guard<std::mutex> lock(m_workerMutex);
+    pruneFinishedWorkers();
+    m_backgroundWorkers.emplace_back(std::async(std::launch::async, [job = std::move(job)]() mutable {
+        job();
+    }));
+}
+
+void ProfileThumbs::pruneFinishedWorkers() {
+    auto it = m_backgroundWorkers.begin();
+    while (it != m_backgroundWorkers.end()) {
+        if (!it->valid() || it->wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            it = m_backgroundWorkers.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void ProfileThumbs::waitBackgroundWorkers() {
+    std::vector<std::future<void>> workers;
+    {
+        std::lock_guard<std::mutex> lock(m_workerMutex);
+        workers.swap(m_backgroundWorkers);
+    }
+    for (auto& worker : workers) {
+        if (worker.valid()) {
+            worker.wait();
+        }
+    }
+}
+
+void ProfileThumbs::shutdown() {
+    waitBackgroundWorkers();
 }
 
 CCNode* ProfileThumbs::createProfileNode(CCTexture2D* texture, ProfileConfig const& config, CCSize cs, bool onlyBackground) {
@@ -777,10 +811,15 @@ void ProfileThumbs::processQueue() {
                 // sigo con la cola
                 m_activeDownloads--;
                 
-                // vuelvo a llamar processQueue en el siguiente frame (stack limpio)
-                Loader::get()->queueInMainThread([this]() {
-                    processQueue();
-                });
+                // vuelvo a llamar processQueue en el siguiente frame (stack limpio),
+                // salvo que estemos cerrando juego.
+                if (!ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) {
+                    Loader::get()->queueInMainThread([this]() {
+                        if (!ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) {
+                            processQueue();
+                        }
+                    });
+                }
             });
         });
     }

@@ -4,6 +4,7 @@
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../framework/compat/SceneLocators.hpp"
 
 using namespace geode::prelude;
 
@@ -58,7 +59,13 @@ class $modify(MyLevelSearchLayer, LevelSearchLayer) {
             menu->addChild(btn);
             menu->updateLayout();
         } else {
-            log::warn("Could not find 'other-filter-menu' in LevelSearchLayer");
+            if (auto fallbackMenu = paimon::compat::LevelBrowserLocator::findSearchMenu(this)) {
+                fallbackMenu->addChild(btn);
+                fallbackMenu->updateLayout();
+                log::warn("Using fallback menu locator in LevelSearchLayer");
+            } else {
+                log::warn("Could not find 'other-filter-menu' nor fallback menu in LevelSearchLayer");
+            }
         }
 
         return true;

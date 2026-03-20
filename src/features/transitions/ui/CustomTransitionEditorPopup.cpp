@@ -914,12 +914,15 @@ void CustomTransitionEditorPopup::onSelectImage(CCObject*) {
     }
 
     // Open file dialog for image selection
-    pt::openImageFileDialog([this](std::optional<std::filesystem::path> path) {
+    WeakRef<CustomTransitionEditorPopup> self = this;
+    pt::openImageFileDialog([self](std::optional<std::filesystem::path> path) {
         if (!path) return;
-        if (m_selectedIdx >= 0 && m_selectedIdx < static_cast<int>(m_commands.size())) {
-            m_commands[m_selectedIdx].imagePath = path->string();
-            m_statusLabel->setString("Image set!");
-            updateEditorPanel();
+        auto popup = self.lock();
+        if (!popup) return;
+        if (popup->m_selectedIdx >= 0 && popup->m_selectedIdx < static_cast<int>(popup->m_commands.size())) {
+            popup->m_commands[popup->m_selectedIdx].imagePath = path->string();
+            popup->m_statusLabel->setString("Image set!");
+            popup->updateEditorPanel();
         }
     });
 }
@@ -1029,14 +1032,16 @@ void CustomTransitionEditorPopup::onLoadPreset(CCObject*) {
         "<cy>5</c> Shake + Fade\n"
         "<cy>6</c> Dramatic Cinematic",
         "Cancel", "1",
-        [this](auto*, bool btn2) {
+        [self = WeakRef<CustomTransitionEditorPopup>(this)](auto*, bool btn2) {
             if (!btn2) return;
+            auto popup = self.lock();
+            if (!popup) return;
             // Load preset 1: Simple fade
-            m_commands.clear();
-            m_commands.push_back({CommandAction::FadeOut, "from", 0.3f, 0,0,0,0, 255.f, 0.f});
-            m_commands.push_back({CommandAction::FadeIn, "to", 0.3f, 0,0,0,0, 0.f, 255.f});
-            selectCommand(0);
-            m_statusLabel->setString("Preset: Fade");
+            popup->m_commands.clear();
+            popup->m_commands.push_back({CommandAction::FadeOut, "from", 0.3f, 0,0,0,0, 255.f, 0.f});
+            popup->m_commands.push_back({CommandAction::FadeIn, "to", 0.3f, 0,0,0,0, 0.f, 255.f});
+            popup->selectCommand(0);
+            popup->m_statusLabel->setString("Preset: Fade");
         }
     );
 
