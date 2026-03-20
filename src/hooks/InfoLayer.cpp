@@ -12,6 +12,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include <algorithm>
+#include <string>
 
 using namespace geode::prelude;
 
@@ -69,8 +70,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
         float width = std::max(1.0f, std::abs(layerMax.x - layerMin.x));
         float height = std::max(1.0f, std::abs(layerMax.y - layerMin.y));
-        outSize = {width, height};
-        outPos = {std::min(layerMin.x, layerMax.x), std::min(layerMin.y, layerMax.y)};
+        outSize.width = width;
+        outSize.height = height;
+        outPos.x = std::min(layerMin.x, layerMax.x);
+        outPos.y = std::min(layerMin.y, layerMax.y);
         return true;
     }
 
@@ -282,8 +285,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             if (!children) return;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
-                auto childId = child->getID();
-                if (!childId.empty() && childId.find("paimon-infolayer-comments-blur") == 0) {
+                auto childId = std::string(child->getID());
+                if (!childId.empty() && childId.rfind("paimon-infolayer-comments-blur", 0) == 0) {
                     continue;
                 }
 
