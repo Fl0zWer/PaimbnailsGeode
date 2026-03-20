@@ -1,4 +1,5 @@
 #include "CustomTransitionScene.hpp"
+#include <exception>
 
 using namespace cocos2d;
 using namespace geode::prelude;
@@ -50,6 +51,7 @@ bool CustomTransitionScene::initWithScenes(
         if (children) {
             auto copy = CCArray::createWithArray(children);
             for (auto* node : CCArrayExt<CCNode*>(copy)) {
+                if (!node) continue;
                 NodeState state;
                 state.position = node->getPosition();
                 state.scale = node->getScale();
@@ -84,6 +86,7 @@ bool CustomTransitionScene::initWithScenes(
         if (children) {
             auto copy = CCArray::createWithArray(children);
             for (auto* node : CCArrayExt<CCNode*>(copy)) {
+                if (!node) continue;
                 NodeState state;
                 state.position = node->getPosition();
                 state.scale = node->getScale();
@@ -135,13 +138,36 @@ CustomTransitionScene::~CustomTransitionScene() {
     CC_SAFE_RELEASE_NULL(m_destScene);
 }
 
+void CustomTransitionScene::triggerSafeFallback(char const* where, char const* reason) {
+    if (reason) {
+        log::warn("[CustomTransition] Runtime error at {}: {}", where, reason);
+        std::string msg = where ? where : "unknown";
+        msg += ": ";
+        msg += reason;
+        TransitionManager::get().tripCustomSafeMode(msg);
+    } else {
+        log::warn("[CustomTransition] Runtime error at {}", where);
+        TransitionManager::get().tripCustomSafeMode(where ? where : "unknown");
+    }
+
+    if (!m_finished) {
+        finishTransition();
+    }
+}
+
 void CustomTransitionScene::onEnter() {
     CCScene::onEnter();
     this->scheduleUpdate();
 
     // Begin first command
     if (m_currentCommandIdx < static_cast<int>(m_commands.size())) {
-        beginCommand(m_commands[m_currentCommandIdx]);
+        try {
+            beginCommand(m_commands[m_currentCommandIdx]);
+        } catch (std::exception const& e) {
+            triggerSafeFallback("onEnter.beginCommand", e.what());
+        } catch (...) {
+            triggerSafeFallback("onEnter.beginCommand");
+        }
     }
 }
 
@@ -151,31 +177,37 @@ void CustomTransitionScene::onExit() {
 }
 
 void CustomTransitionScene::update(float dt) {
-    if (m_finished) return;
+    try {
+        if (m_finished) return;
 
-    // Safety timeout: if transition takes too long, force finish
-    m_globalElapsed += dt;
-    if (m_globalElapsed > m_totalDuration) {
-        log::warn("[CustomTransition] Safety timeout reached ({:.1f}s), forcing finish", m_globalElapsed);
-        finishTransition();
-        return;
-    }
+        // Safety timeout: if transition takes too long, force finish
+        m_globalElapsed += dt;
+        if (m_globalElapsed > m_totalDuration) {
+            log::warn("[CustomTransition] Safety timeout reached ({:.1f}s), forcing finish", m_globalElapsed);
+            finishTransition();
+            return;
+        }
 
-    if (m_currentCommandIdx >= static_cast<int>(m_commands.size())) {
-        finishTransition();
-        return;
-    }
+        if (m_currentCommandIdx >= static_cast<int>(m_commands.size())) {
+            finishTransition();
+            return;
+        }
 
-    auto& cmd = m_commands[m_currentCommandIdx];
-    m_commandElapsed += dt;
+        auto& cmd = m_commands[m_currentCommandIdx];
+        m_commandElapsed += dt;
 
-    float duration = std::max(cmd.duration, 0.001f);
-    float progress = std::min(m_commandElapsed / duration, 1.0f);
+        float duration = std::max(cmd.duration, 0.001f);
+        float progress = std::min(m_commandElapsed / duration, 1.0f);
 
-    updateCommand(cmd, progress);
+        updateCommand(cmd, progress);
 
-    if (progress >= 1.0f) {
-        finishCurrentCommand();
+        if (progress >= 1.0f) {
+            finishCurrentCommand();
+        }
+    } catch (std::exception const& e) {
+        triggerSafeFallback("update", e.what());
+    } catch (...) {
+        triggerSafeFallback("update");
     }
 }
 
@@ -357,6 +389,7 @@ void CustomTransitionScene::finishTransition() {
         if (children) {
             auto copy = CCArray::createWithArray(children);
             for (auto* node : CCArrayExt<CCNode*>(copy)) {
+                if (!node) continue;
                 node->retain();
                 node->removeFromParentAndCleanup(false);
 

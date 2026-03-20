@@ -4,6 +4,7 @@
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
 #include "../../../layers/PaimonInfoPopup.hpp"
+#include <exception>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -45,6 +46,10 @@ std::vector<CommandAction> const& CustomTransitionEditorPopup::allActions() {
         CommandAction::Image,
     };
     return actions;
+}
+
+int CustomTransitionEditorPopup::validateAndSanitizeForSave(std::vector<TransitionCommand>& commands) {
+    return TransitionManager::sanitizeCommands(commands);
 }
 
 std::string CustomTransitionEditorPopup::actionDisplayName(CommandAction a) {
@@ -676,6 +681,7 @@ void CustomTransitionEditorPopup::updateEditorPanel() {
 void CustomTransitionEditorPopup::refreshDisplay() {
     rebuildCommandList();
     updateEditorPanel();
+    updatePreviewArea();
 }
 
 // ════════════════════════════════════════════════════════════
@@ -799,7 +805,6 @@ void CustomTransitionEditorPopup::onTargetToggle(CCObject*) {
     if (m_selectedIdx < 0) return;
     auto& cmd = selectedCmd();
     if (cmd.target == "from") cmd.target = "to";
-    else if (cmd.target == "to") cmd.target = "overlay";
     else cmd.target = "from";
     refreshDisplay();
 }
@@ -956,9 +961,13 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
     sub->setScale(0.5f);
     destScene->addChild(sub);
 
+    // Use a sanitized copy for preview so invalid edits never crash the editor.
+    auto previewCommands = m_commands;
+    validateAndSanitizeForSave(previewCommands);
+
     // Calculate total duration from commands
     float totalDur = 0.f;
-    for (auto const& cmd : m_commands) totalDur += cmd.duration + cmd.delay;
+    for (auto const& cmd : previewCommands) totalDur += cmd.duration + cmd.delay;
 
     // Add auto-return
     class ReturnNode : public CCNode {
@@ -983,7 +992,14 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
 
     // Create custom transition from current commands
     auto fromScene = director->getRunningScene();
-    auto* transScene = CustomTransitionScene::create(fromScene, destScene, m_commands, false);
+    CustomTransitionScene* transScene = nullptr;
+    try {
+        transScene = CustomTransitionScene::create(fromScene, destScene, previewCommands, false);
+    } catch (std::exception const& e) {
+        log::warn("[CustomTransitionEditorPopup] Preview failed: {}", e.what());
+    } catch (...) {
+        log::warn("[CustomTransitionEditorPopup] Preview failed with unknown exception");
+    }
 
     // Keep the popup alive locally so onClose can't destroy it mid-function.
     [[maybe_unused]] Ref<CustomTransitionEditorPopup> safeSelf = this;
@@ -1002,7 +1018,10 @@ void CustomTransitionEditorPopup::onPreviewTransition(CCObject*) {
 void CustomTransitionEditorPopup::onSave(CCObject*) {
     if (!m_config) return;
 
-    m_config->commands = m_commands;
+    auto safeCommands = m_commands;
+    int fixes = validateAndSanitizeForSave(safeCommands);
+
+    m_config->commands = safeCommands;
     m_config->type = TransitionType::Custom;
 
     auto& tm = TransitionManager::get();
@@ -1013,8 +1032,19 @@ void CustomTransitionEditorPopup::onSave(CCObject*) {
     }
     tm.saveConfig();
 
-    m_statusLabel->setString("Saved!");
-    PaimonNotify::create("Custom transition saved!", NotificationIcon::Success)->show();
+    if (fixes > 0) {
+        char msg[80];
+        snprintf(msg, sizeof(msg), "Saved with %d safety fixes", fixes);
+        m_statusLabel->setString(msg);
+        PaimonNotify::create(msg, NotificationIcon::Warning)->show();
+    } else {
+        m_statusLabel->setString("Saved!");
+        PaimonNotify::create("Custom transition saved!", NotificationIcon::Success)->show();
+    }
+
+    // Mirror sanitized values in editor state so UI matches persisted config.
+    m_commands = safeCommands;
+    refreshDisplay();
 }
 
 // ════════════════════════════════════════════════════════════

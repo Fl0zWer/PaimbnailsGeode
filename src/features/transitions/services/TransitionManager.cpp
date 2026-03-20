@@ -4,6 +4,8 @@
 #include <Geode/loader/Log.hpp>
 #include <matjson.hpp>
 #include <filesystem>
+#include <cmath>
+#include <exception>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -20,6 +22,20 @@ TransitionManager::TransitionManager() {
 TransitionManager& TransitionManager::get() {
     static TransitionManager instance;
     return instance;
+}
+
+void TransitionManager::tripCustomSafeMode(std::string const& reason) {
+    if (!m_customSafeModeTripped) {
+        log::warn("[TransitionManager] Custom safe mode activated: {}", reason);
+    }
+    m_customSafeModeTripped = true;
+}
+
+void TransitionManager::resetCustomSafeMode() {
+    if (m_customSafeModeTripped) {
+        log::info("[TransitionManager] Custom safe mode reset");
+    }
+    m_customSafeModeTripped = false;
 }
 
 // ════════════════════════════════════════════════════════════
@@ -244,6 +260,135 @@ std::string TransitionManager::actionToString(CommandAction a) {
     return "wait";
 }
 
+bool TransitionManager::isValidTarget(std::string const& target) {
+    return target == "from" || target == "to";
+}
+
+int TransitionManager::sanitizeCommand(TransitionCommand& cmd) {
+    int fixes = 0;
+
+    auto sanitizeFloat = [&fixes](float& value, float fallback) {
+        if (!std::isfinite(value)) {
+            value = fallback;
+            fixes++;
+        }
+    };
+
+    sanitizeFloat(cmd.duration, 0.3f);
+    sanitizeFloat(cmd.delay, 0.f);
+    sanitizeFloat(cmd.fromX, 0.f);
+    sanitizeFloat(cmd.fromY, 0.f);
+    sanitizeFloat(cmd.toX, 0.f);
+    sanitizeFloat(cmd.toY, 0.f);
+    sanitizeFloat(cmd.fromVal, 1.f);
+    sanitizeFloat(cmd.toVal, 1.f);
+    sanitizeFloat(cmd.intensity, 5.f);
+
+    if (!isValidTarget(cmd.target)) {
+        cmd.target = "from";
+        fixes++;
+    }
+
+    if (cmd.duration < 0.01f) {
+        cmd.duration = 0.01f;
+        fixes++;
+    } else if (cmd.duration > 30.f) {
+        cmd.duration = 30.f;
+        fixes++;
+    }
+
+    if (cmd.delay < 0.f) {
+        cmd.delay = 0.f;
+        fixes++;
+    } else if (cmd.delay > 10.f) {
+        cmd.delay = 10.f;
+        fixes++;
+    }
+
+    if (cmd.action == CommandAction::Scale) {
+        float newFrom = std::clamp(cmd.fromVal, 0.01f, 10.f);
+        float newTo = std::clamp(cmd.toVal, 0.01f, 10.f);
+        if (newFrom != cmd.fromVal) { cmd.fromVal = newFrom; fixes++; }
+        if (newTo != cmd.toVal) { cmd.toVal = newTo; fixes++; }
+    } else if (
+        cmd.action == CommandAction::FadeOut ||
+        cmd.action == CommandAction::FadeIn ||
+        cmd.action == CommandAction::EaseIn ||
+        cmd.action == CommandAction::EaseOut ||
+        cmd.action == CommandAction::Bounce
+    ) {
+        float newFrom = std::clamp(cmd.fromVal, 0.f, 255.f);
+        float newTo = std::clamp(cmd.toVal, 0.f, 255.f);
+        if (newFrom != cmd.fromVal) { cmd.fromVal = newFrom; fixes++; }
+        if (newTo != cmd.toVal) { cmd.toVal = newTo; fixes++; }
+    }
+
+    if (cmd.action == CommandAction::Color) {
+        int nr = std::clamp(cmd.r, 0, 255);
+        int ng = std::clamp(cmd.g, 0, 255);
+        int nb = std::clamp(cmd.b, 0, 255);
+        if (nr != cmd.r) { cmd.r = nr; fixes++; }
+        if (ng != cmd.g) { cmd.g = ng; fixes++; }
+        if (nb != cmd.b) { cmd.b = nb; fixes++; }
+    }
+
+    if (cmd.action == CommandAction::Shake) {
+        float ni = std::clamp(cmd.intensity, 0.5f, 50.f);
+        if (ni != cmd.intensity) {
+            cmd.intensity = ni;
+            fixes++;
+        }
+    }
+
+    if (cmd.action == CommandAction::Spawn) {
+        int sc = std::clamp(cmd.spawnCount, 0, 16);
+        if (sc != cmd.spawnCount) {
+            cmd.spawnCount = sc;
+            fixes++;
+        }
+    }
+
+    return fixes;
+}
+
+int TransitionManager::sanitizeCommands(std::vector<TransitionCommand>& commands) {
+    int fixes = 0;
+    for (auto& cmd : commands) {
+        fixes += sanitizeCommand(cmd);
+    }
+
+    if (commands.empty()) {
+        commands.push_back({CommandAction::FadeOut, "from", 0.15f, 0, 0, 0, 0, 255.f, 0.f});
+        commands.push_back({CommandAction::FadeIn, "to", 0.15f, 0, 0, 0, 0, 0.f, 255.f});
+        fixes += 2;
+    }
+    return fixes;
+}
+
+int TransitionManager::sanitizeConfig(TransitionConfig& cfg) {
+    int fixes = 0;
+    if (!std::isfinite(cfg.duration) || cfg.duration < 0.01f) {
+        cfg.duration = 0.5f;
+        fixes++;
+    } else if (cfg.duration > 30.f) {
+        cfg.duration = 30.f;
+        fixes++;
+    }
+
+    int nr = std::clamp(cfg.colorR, 0, 255);
+    int ng = std::clamp(cfg.colorG, 0, 255);
+    int nb = std::clamp(cfg.colorB, 0, 255);
+    if (nr != cfg.colorR) { cfg.colorR = nr; fixes++; }
+    if (ng != cfg.colorG) { cfg.colorG = ng; fixes++; }
+    if (nb != cfg.colorB) { cfg.colorB = nb; fixes++; }
+
+    if (cfg.type == TransitionType::Custom) {
+        fixes += sanitizeCommands(cfg.commands);
+    }
+
+    return fixes;
+}
+
 // ════════════════════════════════════════════════════════════
 // Config path
 // ════════════════════════════════════════════════════════════
@@ -258,6 +403,7 @@ std::filesystem::path TransitionManager::getConfigPath() const {
 
 static TransitionCommand parseCommand(matjson::Value const& obj) {
     TransitionCommand cmd;
+    if (!obj.isObject()) return cmd;
     if (obj.contains("action"))   cmd.action   = TransitionManager::actionFromString(obj["action"].asString().unwrapOr("wait"));
     if (obj.contains("target"))   cmd.target   = obj["target"].asString().unwrapOr("from");
     if (obj.contains("duration")) cmd.duration = static_cast<float>(obj["duration"].asDouble().unwrapOr(0.3));
@@ -279,6 +425,7 @@ static TransitionCommand parseCommand(matjson::Value const& obj) {
 
 static TransitionConfig parseConfig(matjson::Value const& obj) {
     TransitionConfig cfg;
+    if (!obj.isObject()) return cfg;
     if (obj.contains("type"))     cfg.type     = TransitionManager::typeFromString(obj["type"].asString().unwrapOr("fade"));
     if (obj.contains("duration")) cfg.duration = static_cast<float>(obj["duration"].asDouble().unwrapOr(0.5));
     if (obj.contains("color") && obj["color"].isArray()) {
@@ -381,25 +528,39 @@ void TransitionManager::loadConfig() {
     if (!parseRes) { m_loaded = true; return; }
 
     auto& root = parseRes.unwrap();
+    if (!root.isObject()) {
+        m_loaded = true;
+        log::warn("[TransitionManager] Invalid config root type, using defaults");
+        return;
+    }
 
     if (root.contains("enabled"))
         m_enabled = root["enabled"].asBool().unwrapOr(true);
 
-    if (root.contains("global"))
+    if (root.contains("global") && root["global"].isObject())
         m_globalConfig = parseConfig(root["global"]);
+    else if (root.contains("global"))
+        log::warn("[TransitionManager] Invalid global config type, using defaults");
 
-    if (root.contains("level_entry")) {
+    if (root.contains("level_entry") && root["level_entry"].isObject()) {
         m_levelEntryConfig = parseConfig(root["level_entry"]);
         m_hasLevelEntryConfig = true;
         if (!m_levelEntryConfig.scriptPath.empty() && m_levelEntryConfig.commands.empty()) {
             m_levelEntryConfig.commands = parseScriptFile(m_levelEntryConfig.scriptPath);
             if (!m_levelEntryConfig.commands.empty()) m_levelEntryConfig.type = TransitionType::Custom;
         }
+    } else if (root.contains("level_entry")) {
+        log::warn("[TransitionManager] Invalid level_entry config type, ignoring");
     }
 
     if (!m_globalConfig.scriptPath.empty() && m_globalConfig.commands.empty()) {
         m_globalConfig.commands = parseScriptFile(m_globalConfig.scriptPath);
         if (!m_globalConfig.commands.empty()) m_globalConfig.type = TransitionType::Custom;
+    }
+
+    sanitizeConfig(m_globalConfig);
+    if (m_hasLevelEntryConfig) {
+        sanitizeConfig(m_levelEntryConfig);
     }
 
     m_loaded = true;
@@ -447,20 +608,32 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
 
     if (cfg.type == TransitionType::None) return dest;
 
-    if (cfg.type == TransitionType::Custom) {
-        auto commands = cfg.commands;
-        if (commands.empty() && !cfg.scriptPath.empty())
-            commands = parseScriptFile(cfg.scriptPath);
+    TransitionConfig safeCfg = cfg;
+    sanitizeConfig(safeCfg);
 
-        if (!commands.empty()) {
+    if (safeCfg.type == TransitionType::Custom) {
+        if (m_customSafeModeTripped) {
+            return CCTransitionFade::create(safeCfg.duration, dest);
+        }
+
+        auto commands = safeCfg.commands;
+        if (commands.empty() && !safeCfg.scriptPath.empty())
+            commands = parseScriptFile(safeCfg.scriptPath);
+        sanitizeCommands(commands);
+
+        try {
             auto fromScene = CCDirector::sharedDirector()->getRunningScene();
             auto* transScene = CustomTransitionScene::create(fromScene, dest, commands, false);
             if (transScene) return transScene;
+        } catch (std::exception const& e) {
+            tripCustomSafeMode(std::string("createTransition exception: ") + e.what());
+        } catch (...) {
+            tripCustomSafeMode("createTransition unknown exception");
         }
-        return CCTransitionFade::create(cfg.duration, dest);
+        return CCTransitionFade::create(safeCfg.duration, dest);
     }
 
-    auto* trans = createNativeTransition(cfg, dest);
+    auto* trans = createNativeTransition(safeCfg, dest);
     return trans ? static_cast<CCScene*>(trans) : dest;
 }
 
@@ -476,24 +649,40 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
 void TransitionManager::replaceScene(CCScene* dest) {
     if (!dest) return;
 
-    if (m_enabled) {
-        if (!m_loaded) loadConfig();
-        auto* trans = createTransition(m_globalConfig, dest);
-        CCDirector::sharedDirector()->replaceScene(trans ? trans : dest);
-    } else {
-        CCDirector::sharedDirector()->replaceScene(dest);
+    try {
+        if (m_enabled) {
+            if (!m_loaded) loadConfig();
+            auto* trans = createTransition(m_globalConfig, dest);
+            CCDirector::sharedDirector()->replaceScene(trans ? trans : dest);
+        } else {
+            CCDirector::sharedDirector()->replaceScene(dest);
+        }
+    } catch (std::exception const& e) {
+        tripCustomSafeMode(std::string("replaceScene exception: ") + e.what());
+        CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.3f, dest));
+    } catch (...) {
+        tripCustomSafeMode("replaceScene unknown exception");
+        CCDirector::sharedDirector()->replaceScene(CCTransitionFade::create(0.3f, dest));
     }
 }
 
 void TransitionManager::pushScene(CCScene* dest) {
     if (!dest) return;
 
-    if (m_enabled) {
-        if (!m_loaded) loadConfig();
-        auto* trans = createTransition(m_globalConfig, dest);
-        CCDirector::sharedDirector()->pushScene(trans ? trans : dest);
-    } else {
-        CCDirector::sharedDirector()->pushScene(dest);
+    try {
+        if (m_enabled) {
+            if (!m_loaded) loadConfig();
+            auto* trans = createTransition(m_globalConfig, dest);
+            CCDirector::sharedDirector()->pushScene(trans ? trans : dest);
+        } else {
+            CCDirector::sharedDirector()->pushScene(dest);
+        }
+    } catch (std::exception const& e) {
+        tripCustomSafeMode(std::string("pushScene exception: ") + e.what());
+        CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.3f, dest));
+    } catch (...) {
+        tripCustomSafeMode("pushScene unknown exception");
+        CCDirector::sharedDirector()->pushScene(CCTransitionFade::create(0.3f, dest));
     }
 }
 
@@ -572,8 +761,13 @@ std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string co
     std::string line;
 
     while (std::getline(stream, line)) {
-        line.erase(0, line.find_first_not_of(" \t\r\n"));
-        line.erase(line.find_last_not_of(" \t\r\n") + 1);
+        auto first = line.find_first_not_of(" \t\r\n");
+        if (first == std::string::npos) continue;
+        line.erase(0, first);
+
+        auto last = line.find_last_not_of(" \t\r\n");
+        if (last == std::string::npos) continue;
+        line.erase(last + 1);
         if (line.empty() || line[0] == '#') continue;
 
         std::istringstream ls(line);
@@ -582,35 +776,38 @@ std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string co
         std::transform(verb.begin(), verb.end(), verb.begin(), ::tolower);
 
         TransitionCommand cmd;
+        bool valid = true;
 
         if (verb == "fade_out") {
             cmd.action = CommandAction::FadeOut; cmd.target = "from";
-            ls >> cmd.duration; cmd.fromVal = 255.f; cmd.toVal = 0.f;
+            valid = static_cast<bool>(ls >> cmd.duration); cmd.fromVal = 255.f; cmd.toVal = 0.f;
         } else if (verb == "fade_in") {
             cmd.action = CommandAction::FadeIn; cmd.target = "to";
-            ls >> cmd.duration; cmd.fromVal = 0.f; cmd.toVal = 255.f;
+            valid = static_cast<bool>(ls >> cmd.duration); cmd.fromVal = 0.f; cmd.toVal = 255.f;
         } else if (verb == "move") {
             cmd.action = CommandAction::Move;
-            ls >> cmd.target >> cmd.fromX >> cmd.fromY >> cmd.toX >> cmd.toY >> cmd.duration;
+            valid = static_cast<bool>(ls >> cmd.target >> cmd.fromX >> cmd.fromY >> cmd.toX >> cmd.toY >> cmd.duration);
         } else if (verb == "scale") {
             cmd.action = CommandAction::Scale;
-            ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration;
+            valid = static_cast<bool>(ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration);
         } else if (verb == "rotate") {
             cmd.action = CommandAction::Rotate;
-            ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration;
+            valid = static_cast<bool>(ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration);
         } else if (verb == "wait") {
             cmd.action = CommandAction::Wait;
-            ls >> cmd.duration;
+            valid = static_cast<bool>(ls >> cmd.duration);
         } else if (verb == "ease_in") {
             cmd.action = CommandAction::EaseIn;
-            ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration;
+            valid = static_cast<bool>(ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration);
         } else if (verb == "ease_out") {
             cmd.action = CommandAction::EaseOut;
-            ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration;
+            valid = static_cast<bool>(ls >> cmd.target >> cmd.fromVal >> cmd.toVal >> cmd.duration);
         } else {
             continue;
         }
 
+        if (!valid) continue;
+        TransitionManager::sanitizeCommand(cmd);
         commands.push_back(cmd);
     }
     return commands;

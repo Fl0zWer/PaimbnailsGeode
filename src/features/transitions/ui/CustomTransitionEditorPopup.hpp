@@ -94,6 +94,7 @@ protected:
     // ── Helpers ──
     static std::string actionDisplayName(CommandAction a);
     static std::vector<CommandAction> const& allActions();
+    static int validateAndSanitizeForSave(std::vector<TransitionCommand>& commands);
     TransitionCommand& selectedCmd();
 
 public:

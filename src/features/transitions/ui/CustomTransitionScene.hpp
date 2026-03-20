@@ -42,6 +42,7 @@ public:
     ~CustomTransitionScene();
 
 private:
+    void triggerSafeFallback(char const* where, char const* reason = nullptr);
     void beginCommand(TransitionCommand const& cmd);
     void updateCommand(TransitionCommand const& cmd, float progress);
     void finishCurrentCommand();
