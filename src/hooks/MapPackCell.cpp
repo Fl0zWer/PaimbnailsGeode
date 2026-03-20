@@ -37,7 +37,8 @@ class $modify(PaimonMapPackCell, MapPackCell) {
             auto cell = self.lock();
             if (!cell || !cell->getParent()) return;
             auto* typed = static_cast<PaimonMapPackCell*>(cell.data());
-            if (!typed->m_fields || typed->m_fields->m_requestToken != token) return;
+            auto fields = typed->m_fields.self();
+            if (!fields || fields->m_requestToken != token) return;
             typed->createCarousel();
         });
     }
