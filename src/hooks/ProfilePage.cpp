@@ -647,8 +647,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                 // GJCommentListLayer: opacidad 0 + ocultar bordes y fondos
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
-                    commentList->setOpacity(0);
-
                     auto* listChildren = commentList->getChildren();
                     if (listChildren) {
                         for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
@@ -657,10 +655,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             // Bordes con node ID conocido
                             if (id == "left-border" || id == "right-border" ||
                                 id == "top-border" || id == "bottom-border") {
-                                lc->setVisible(false);
+                                lc->setVisible(true);
+                                lc->setOpacity(190);
                             }
                             // Nodos sin ID: fondos/separadores decorativos
-                            if (id.empty()) {
+                            if (id.empty() && typeinfo_cast<CCLayerColor*>(lc)) {
                                 lc->setVisible(false);
                             }
                         }

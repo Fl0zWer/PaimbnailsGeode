@@ -13,6 +13,8 @@
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include <algorithm>
 #include <string>
+#include <cmath>
+#include <vector>
 
 using namespace geode::prelude;
 
@@ -148,9 +150,30 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         blurred->setID("paimon-infolayer-comments-blur-sprite"_spr);
 
         auto stencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(panelSize.width,0), ccp(panelSize.width,panelSize.height), ccp(0,panelSize.height) };
+        float clipW = panelSize.width;
+        float clipH = panelSize.height;
+        float r = 6.f;
+        int segs = 8;
+        std::vector<CCPoint> verts;
+        constexpr float kPi = 3.14159265358979323846f;
+        for (int i = 0; i <= segs; i++) {
+            float a = kPi + (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
+            verts.push_back(ccp(r + r * std::cos(a), r + r * std::sin(a)));
+        }
+        for (int i = 0; i <= segs; i++) {
+            float a = 3.0f * kPi / 2.0f + (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
+            verts.push_back(ccp(clipW - r + r * std::cos(a), r + r * std::sin(a)));
+        }
+        for (int i = 0; i <= segs; i++) {
+            float a = (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
+            verts.push_back(ccp(clipW - r + r * std::cos(a), clipH - r + r * std::sin(a)));
+        }
+        for (int i = 0; i <= segs; i++) {
+            float a = kPi / 2.0f + (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
+            verts.push_back(ccp(r + r * std::cos(a), clipH - r + r * std::sin(a)));
+        }
         ccColor4F white = {1,1,1,1};
-        stencil->drawPolygon(rect, 4, white, 0, white);
+        stencil->drawPolygon(verts.data(), static_cast<int>(verts.size()), white, 0, white);
 
         auto clip = CCClippingNode::create();
         clip->setStencil(stencil);
@@ -269,8 +292,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
                 // GJCommentListLayer: transparentar y quitar bordes
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
-                    commentList->setOpacity(0);
-
                     auto* listChildren = commentList->getChildren();
                     if (listChildren) {
                         for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
@@ -278,9 +299,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                             auto id = lc->getID();
                             if (id == "left-border" || id == "right-border" ||
                                 id == "top-border" || id == "bottom-border") {
-                                lc->setVisible(false);
+                                lc->setVisible(true);
+                                lc->setOpacity(190);
                             }
-                            if (id.empty()) {
+                            if (id.empty() && typeinfo_cast<CCLayerColor*>(lc)) {
                                 lc->setVisible(false);
                             }
                         }
