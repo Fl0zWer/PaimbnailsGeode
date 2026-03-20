@@ -44,6 +44,45 @@ static float safeCoverScale(float targetWidth, float targetHeight, float content
     return std::clamp(scale, 0.01f, 64.0f);
 }
 
+static CCDrawNode* createRoundedRectStencil(float width, float height, float radius, int cornerSegments = 8) {
+    auto draw = CCDrawNode::create();
+    if (!draw || width <= 0.f || height <= 0.f) return draw;
+
+    float maxRadius = std::min(width, height) * 0.5f;
+    float r = std::clamp(radius, 0.f, maxRadius);
+
+    if (r <= 0.01f) {
+        CCPoint rect[4] = { ccp(0, 0), ccp(width, 0), ccp(width, height), ccp(0, height) };
+        ccColor4F white = {1.f, 1.f, 1.f, 1.f};
+        draw->drawPolygon(rect, 4, white, 0, white);
+        draw->setContentSize({width, height});
+        return draw;
+    }
+
+    int seg = std::max(2, cornerSegments);
+    std::vector<CCPoint> verts;
+    verts.reserve(static_cast<size_t>(seg * 4 + 4));
+
+    auto appendArc = [&verts, seg](float cx, float cy, float rad, float startDeg, float endDeg) {
+        for (int i = 0; i <= seg; ++i) {
+            float t = static_cast<float>(i) / static_cast<float>(seg);
+            float deg = startDeg + (endDeg - startDeg) * t;
+            float a = CC_DEGREES_TO_RADIANS(deg);
+            verts.push_back(ccp(cx + cosf(a) * rad, cy + sinf(a) * rad));
+        }
+    };
+
+    appendArc(r, r, r, 180.f, 270.f);               // bottom-left
+    appendArc(width - r, r, r, 270.f, 360.f);       // bottom-right
+    appendArc(width - r, height - r, r, 0.f, 90.f); // top-right
+    appendArc(r, height - r, r, 90.f, 180.f);       // top-left
+
+    ccColor4F white = {1.f, 1.f, 1.f, 1.f};
+    draw->drawPolygon(verts.data(), static_cast<unsigned int>(verts.size()), white, 0, white);
+    draw->setContentSize({width, height});
+    return draw;
+}
+
 static PaimonAnimType parseAnimType(std::string const& s) {
     if (s == "zoom-slide") return PaimonAnimType::ZoomSlide;
     if (s == "zoom") return PaimonAnimType::Zoom;
@@ -527,12 +566,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         CCSize scaledSize{ desiredWidth, sprite->getContentHeight() * scaleY };
         
         CCNode* mask = nullptr;
-        // CCDrawNode geometrico con skew — evita conflictos con HappyTextures
-        // que hookea CCScale9Sprite::visit y puede alterar el rendering de CCLayerColor
-        auto drawStencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(scaledSize.width,0), ccp(scaledSize.width,scaledSize.height), ccp(0,scaledSize.height) };
-        ccColor4F white = {1,1,1,1};
-        drawStencil->drawPolygon(rect, 4, white, 0, white);
+        float cornerRadius = std::clamp(scaledSize.height * 0.12f, 6.f, 14.f);
+        auto drawStencil = createRoundedRectStencil(scaledSize.width, scaledSize.height, cornerRadius, 8);
+        if (!drawStencil) return;
         drawStencil->setContentSize(scaledSize);
         drawStencil->setAnchorPoint({1,0});
         drawStencil->ignoreAnchorPointForPosition(true);
@@ -688,15 +724,12 @@ class $modify(PaimonLevelCell, LevelCell) {
              }
              
              if (bgSprite) {
-                 // Create Clipper
-                 auto stencil = CCDrawNode::create();
-                 CCPoint rect[4];
-                 rect[0] = ccp(0, 0);
-                 rect[1] = ccp(bg->getContentWidth(), 0);
-                 rect[2] = ccp(bg->getContentWidth(), bg->getContentHeight());
-                 rect[3] = ccp(0, bg->getContentHeight());
-                 ccColor4F white = {1, 1, 1, 1};
-                 stencil->drawPolygon(rect, 4, white, 0, white);
+                // Create rounded clipper to match thumbnail border style.
+                float clipW = bg->getContentWidth();
+                float clipH = bg->getContentHeight();
+                float cornerRadius = std::clamp(clipH * 0.12f, 6.f, 14.f);
+                auto stencil = createRoundedRectStencil(clipW, clipH, cornerRadius, 8);
+                if (!stencil) return;
                  
                  auto clipper = CCClippingNode::create(stencil);
                  clipper->setContentSize(bg->getContentSize());
@@ -722,9 +755,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                  GLubyte opacity = static_cast<GLubyte>(std::clamp(darkness, 0.0f, 1.0f) * 255.0f);
 
                  auto overlay = CCLayerColor::create({0, 0, 0, opacity});
-                 overlay->setContentSize({bg->getContentWidth(), bg->getContentHeight() + 1.0f});
+                 overlay->setContentSize({bg->getContentWidth(), bg->getContentHeight()});
                  overlay->setPosition({0, 0});
                  clipper->addChild(overlay);
+                 fields->m_darkOverlay = overlay;
 
                  bg->addChild(clipper);
                  bg->reorderChild(clipper, 10);

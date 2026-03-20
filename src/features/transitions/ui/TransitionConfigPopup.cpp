@@ -2,7 +2,6 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../layers/PaimonInfoPopup.hpp"
 #include "CustomTransitionScene.hpp"
-#include "CustomTransitionEditorPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 
 using namespace geode::prelude;
@@ -436,11 +435,19 @@ void TransitionConfigPopup::onLevelColor(CCObject*) {
 // ════════════════════════════════════════════════════════════
 
 void TransitionConfigPopup::onGlobalCustom(CCObject*) {
-    CustomTransitionEditorPopup::create(&m_editingGlobal, true)->show();
+    PaimonInfoPopup::create(
+        "Custom Transitions",
+        "This editor will be available in <cy>version 2.4.0</c>.\n\n"
+        "For now, please use the built-in transition types."
+    )->show();
 }
 
 void TransitionConfigPopup::onLevelCustom(CCObject*) {
-    CustomTransitionEditorPopup::create(&m_editingLevel, false)->show();
+    PaimonInfoPopup::create(
+        "Custom Transitions",
+        "This editor will be available in <cy>version 2.4.0</c>.\n\n"
+        "For now, please use the built-in transition types."
+    )->show();
 }
 
 // ════════════════════════════════════════════════════════════
