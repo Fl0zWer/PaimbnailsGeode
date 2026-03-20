@@ -32,48 +32,30 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         bool m_hasCaveEffect = false;
     };
 
-    bool getCommentsPanelGeometry(CCPoint& outPos, CCSize& outSize, CCNode*& outCommentNode) {
+    bool getPopupInteriorGeometry(CCPoint& outCenter, CCSize& outSize) {
         auto layer = this->m_mainLayer;
         if (!layer) return false;
-
-        CCNode* found = nullptr;
-        auto dfs = [&](auto const& self, CCNode* node) -> void {
-            if (!node || found) return;
-            if (typeinfo_cast<GJCommentListLayer*>(node)) {
-                found = node;
-                return;
+        auto layerSize = layer->getContentSize();
+        CCSize popupSize = CCSize(440.f, 290.f);
+        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
+        if (auto bg = layer->getChildByID("background")) {
+            popupSize = bg->getScaledContentSize();
+            popupCenter = bg->getPosition();
+        } else {
+            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
+                if (typeinfo_cast<CCScale9Sprite*>(child)) {
+                    popupSize = child->getScaledContentSize();
+                    popupCenter = child->getPosition();
+                    break;
+                }
             }
-            auto children = node->getChildren();
-            if (!children) return;
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                self(self, child);
-                if (found) return;
-            }
-        };
-        dfs(dfs, layer);
-
-        if (!found) return false;
-        outCommentNode = found;
-
-        auto parent = found->getParent();
-        if (!parent) return false;
-
-        CCRect localRect = found->boundingBox();
-        CCPoint worldMin = parent->convertToWorldSpace(localRect.origin);
-        CCPoint worldMax = parent->convertToWorldSpace({
-            localRect.origin.x + localRect.size.width,
-            localRect.origin.y + localRect.size.height
-        });
-
-        CCPoint layerMin = layer->convertToNodeSpace(worldMin);
-        CCPoint layerMax = layer->convertToNodeSpace(worldMax);
-
-        float width = std::max(1.0f, std::abs(layerMax.x - layerMin.x));
-        float height = std::max(1.0f, std::abs(layerMax.y - layerMin.y));
-        outSize.width = width;
-        outSize.height = height;
-        outPos.x = std::min(layerMin.x, layerMax.x);
-        outPos.y = std::min(layerMin.y, layerMax.y);
+        }
+        float padding = 3.f;
+        outSize = CCSize(
+            std::max(1.0f, popupSize.width - padding * 2.f),
+            std::max(1.0f, popupSize.height - padding * 2.f)
+        );
+        outCenter = popupCenter;
         return true;
     }
 
@@ -149,10 +131,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         auto layer = this->m_mainLayer;
         if (!layer) return;
 
-        CCPoint panelPos;
+        CCPoint panelCenter;
         CCSize panelSize;
-        CCNode* commentNode = nullptr;
-        if (!getCommentsPanelGeometry(panelPos, panelSize, commentNode)) return;
+        if (!getPopupInteriorGeometry(panelCenter, panelSize)) return;
 
         if (m_fields->m_commentsBlurClip) {
             m_fields->m_commentsBlurClip->removeFromParent();
@@ -174,8 +155,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         auto clip = CCClippingNode::create();
         clip->setStencil(stencil);
         clip->setContentSize(panelSize);
-        clip->setAnchorPoint({0.f, 0.f});
-        clip->setPosition(panelPos);
+        clip->setAnchorPoint(ccp(0.5f, 0.5f));
+        clip->setPosition(panelCenter);
         clip->setID("paimon-infolayer-comments-blur-clip"_spr);
 
         clip->addChild(blurred);
@@ -187,11 +168,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         dark->setID("paimon-infolayer-comments-blur-dark"_spr);
         clip->addChild(dark);
 
-        int z = 0;
-        if (commentNode && commentNode->getParent() == layer) {
-            z = commentNode->getZOrder() - 1;
-        }
-        layer->addChild(clip, z);
+        layer->addChild(clip, -1);
 
         m_fields->m_commentsBlurClip = clip;
         m_fields->m_commentsBlurSprite = blurred;
