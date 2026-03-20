@@ -137,6 +137,11 @@ public:
     bool isEnabled() const { return m_enabled; }
     void setEnabled(bool v) { m_enabled = v; }
 
+    // ── Safe mode de sesion para transiciones custom ──
+    void tripCustomSafeMode(std::string const& reason);
+    bool isCustomSafeModeTripped() const { return m_customSafeModeTripped; }
+    void resetCustomSafeMode();
+
     // ── Utilidades de conversion ──
     static TransitionType typeFromString(std::string const& s);
     static std::string typeToString(TransitionType t);
@@ -144,6 +149,10 @@ public:
     static std::string typeDescription(TransitionType t);
     static CommandAction actionFromString(std::string const& s);
     static std::string actionToString(CommandAction a);
+    static bool isValidTarget(std::string const& target);
+    static int sanitizeCommand(TransitionCommand& cmd);
+    static int sanitizeCommands(std::vector<TransitionCommand>& commands);
+    static int sanitizeConfig(TransitionConfig& cfg);
 
     // ── Tipos disponibles para UI ──
     static std::vector<TransitionType> const& allTypes();
@@ -162,4 +171,5 @@ private:
     bool m_hasLevelEntryConfig = false;
     bool m_enabled = true;
     bool m_loaded = false;
+    bool m_customSafeModeTripped = false;
 };

@@ -14,6 +14,7 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/modify/CCDirector.hpp>
+#include <exception>
 #include "../services/TransitionManager.hpp"
 #include "../ui/CustomTransitionScene.hpp"
 
@@ -64,6 +65,25 @@ static TransitionConfig selectConfig(CCScene* destScene) {
     return tm.getGlobalConfig();
 }
 
+static CCScene* createTransitionSafe(CCScene* realDest, TransitionConfig const& cfg) {
+    auto& tm = TransitionManager::get();
+    try {
+        auto* trans = tm.createTransition(cfg, realDest);
+        return trans ? trans : realDest;
+    } catch (std::exception const& e) {
+        tm.tripCustomSafeMode(std::string("hook exception: ") + e.what());
+        log::warn("[TransitionHook] createTransition failed: {}", e.what());
+    } catch (...) {
+        tm.tripCustomSafeMode("hook unknown exception");
+        log::warn("[TransitionHook] createTransition failed with unknown exception");
+    }
+
+    auto fallbackCfg = cfg;
+    fallbackCfg.type = TransitionType::Fade;
+    auto* fallback = tm.createNativeTransition(fallbackCfg, realDest);
+    return fallback ? static_cast<CCScene*>(fallback) : realDest;
+}
+
 class $modify(PaimonDirector, CCDirector) {
     static void onModify(auto& self) {
         (void)self.setHookPriorityPre("cocos2d::CCDirector::replaceScene", geode::Priority::Last);
@@ -109,7 +129,7 @@ class $modify(PaimonDirector, CCDirector) {
         Ref<CCScene> safeDest = realDest;
         auto cfg = selectConfig(realDest);
         ApplyingGuard guard;
-        auto* ourTrans = TransitionManager::get().createTransition(cfg, realDest);
+        auto* ourTrans = createTransitionSafe(realDest, cfg);
         return CCDirector::replaceScene(ourTrans ? ourTrans : realDest);
     }
 
@@ -130,7 +150,7 @@ class $modify(PaimonDirector, CCDirector) {
         Ref<CCScene> safeDest = realDest;
         auto cfg = selectConfig(realDest);
         ApplyingGuard guard;
-        auto* ourTrans = TransitionManager::get().createTransition(cfg, realDest);
+        auto* ourTrans = createTransitionSafe(realDest, cfg);
         return CCDirector::pushScene(ourTrans ? ourTrans : realDest);
     }
 
@@ -164,7 +184,7 @@ class $modify(PaimonDirector, CCDirector) {
         CCDirector::popScene();
 
         // Ahora reemplazar con nuestra transicion
-        auto* ourTrans = TransitionManager::get().createTransition(cfg, destScene);
+        auto* ourTrans = createTransitionSafe(destScene, cfg);
         CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
 
         return true;
@@ -196,7 +216,7 @@ class $modify(PaimonDirector, CCDirector) {
 
         ApplyingGuard guard;
         CCDirector::popScene();
-        auto* ourTrans = TransitionManager::get().createTransition(cfg, destScene);
+        auto* ourTrans = createTransitionSafe(destScene, cfg);
         CCDirector::replaceScene(ourTrans ? ourTrans : destScene);
     }
 };
