@@ -192,6 +192,9 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
     // Si no hay cache o se agoto, recrear la lista completa
     auto it = m_songRotationCache.find(levelId);
     if (it == m_songRotationCache.end() || it->second.empty()) {
+        if (m_songRotationCache.size() >= MAX_ROTATION_CACHE_LEVELS) {
+            m_songRotationCache.clear();
+        }
         m_songRotationCache[levelId] = allPaths;
         it = m_songRotationCache.find(levelId);
         log::info("[DynamicSong] Rotacion reiniciada para nivel {} ({} canciones)", levelId, allPaths.size());

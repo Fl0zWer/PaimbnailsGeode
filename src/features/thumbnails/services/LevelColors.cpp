@@ -184,52 +184,51 @@ void processCachedImage(std::filesystem::path const& filepath, int32_t levelID) 
 
 void LevelColors::extractColorsFromCache() {
     log::info("[LevelColors] extrayendo colores de cache...");
-    
-    auto cacheDir = Mod::get()->getSaveDir() / "thumbnails";
+
     std::error_code ecCache;
-    if (!std::filesystem::exists(cacheDir, ecCache)) {
-        log::warn("[LevelColors] directorio cache no existe");
-        return;
-    }
-    
     int processed = 0;
     int success = 0;
     int skipped = 0;
-    
-    // escanear miniaturas cacheadas (.png/.webp).
-    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ecCache)) {
-        if (!entry.is_regular_file()) continue;
-        
-        auto filepath = entry.path();
-        auto ext = geode::utils::string::pathToString(filepath.extension());
-        if (!(ext == ".png" || ext == ".webp")) continue;
-        
-        std::string filename = geode::utils::string::pathToString(filepath.stem());
-        auto levelIDResult = geode::utils::numFromString<int32_t>(filename);
-        if (!levelIDResult.isOk()) {
-            log::debug("[LevelColors] saltando archivo no-numerico: {}", filename);
-            continue;
+
+    auto scanDir = [&](std::filesystem::path const& cacheDir) {
+        std::error_code existsEc;
+        if (!std::filesystem::exists(cacheDir, existsEc) || existsEc) return;
+
+        for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ecCache)) {
+            if (ecCache || !entry.is_regular_file()) continue;
+
+            auto filepath = entry.path();
+            auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(filepath.extension()));
+            if (!(ext == ".png" || ext == ".webp" || ext == ".jpg" || ext == ".jpeg")) continue;
+
+            std::string filename = geode::utils::string::pathToString(filepath.stem());
+            auto levelIDResult = geode::utils::numFromString<int32_t>(filename);
+            if (!levelIDResult.isOk()) {
+                log::debug("[LevelColors] saltando archivo no-numerico: {}", filename);
+                continue;
+            }
+            int32_t levelID = levelIDResult.unwrap();
+
+            if (getPair(levelID).has_value()) {
+                skipped++;
+                continue;
+            }
+
+            processed++;
+            processCachedImage(filepath, levelID);
+            if (getPair(levelID).has_value()) {
+                success++;
+            }
+
+            if (success % 10 == 0 && success > 0) {
+                log::info("[LevelColors] progreso: {} ok, {} saltado", success, skipped);
+            }
         }
-        int32_t levelID = levelIDResult.unwrap();
-        
-        // saltar si ya cacheado.
-        if (getPair(levelID).has_value()) {
-            skipped++;
-            continue;
-        }
-        
-        processed++;
-        processCachedImage(filepath, levelID);
-        
-        // processCachedImage llama set().
-        if (getPair(levelID).has_value()) {
-            success++;
-        }
-        
-        if (success % 10 == 0 && success > 0) {
-            log::info("[LevelColors] progreso: {} ok, {} saltado", success, skipped);
-        }
-    }
+    };
+
+    // coherencia: escanear ambos orígenes de thumbnails
+    scanDir(Mod::get()->getSaveDir() / "thumbnails");
+    scanDir(Mod::get()->getSaveDir() / "cache");
     
     log::info("[LevelColors] listo: {} ok, {} saltado, {} procesado", 
               success, skipped, processed);

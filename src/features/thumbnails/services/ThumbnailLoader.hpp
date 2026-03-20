@@ -101,6 +101,8 @@ private:
     // cache fallidos con TTL (5 minutos)
     std::unordered_map<int, std::chrono::steady_clock::time_point> m_failedCache;
     static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(5);
+    static constexpr auto FAILED_CACHE_PRUNE_INTERVAL = std::chrono::minutes(1);
+    std::chrono::steady_clock::time_point m_lastFailedCachePrune = std::chrono::steady_clock::time_point::min();
     
     // cache gifs
     std::unordered_set<int> m_gifLevels;
@@ -120,6 +122,8 @@ private:
     
     void addToCache(int levelID, cocos2d::CCTexture2D* texture);
     void initDiskCache();
+    void pruneFailedCacheLocked(std::chrono::steady_clock::time_point now);
+    void pruneDiskCache();
     
     // Worker methods
     void workerLoadFromDisk(std::shared_ptr<Task> task);
@@ -130,4 +134,8 @@ private:
 
     std::vector<std::future<void>> m_backgroundWorkers;
     mutable std::mutex m_workerMutex;
+
+    // quota de cache de disco (thumbnails png/gif)
+    static constexpr size_t MAX_DISK_CACHE_BYTES = 512ull * 1024ull * 1024ull;
+    static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
 };

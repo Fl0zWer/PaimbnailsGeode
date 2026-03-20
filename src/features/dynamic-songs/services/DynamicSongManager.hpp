@@ -96,6 +96,7 @@ private:
 
     // ─── Rotacion de canciones por nivel ──────────────────────────
     std::unordered_map<int, std::vector<std::string>> m_songRotationCache;
+    static constexpr size_t MAX_ROTATION_CACHE_LEVELS = 256;
     std::vector<std::string> getAllSongPaths(GJGameLevel* level);
     std::string getNextRotationSong(GJGameLevel* level);
 };

@@ -6,6 +6,7 @@
 #include <fstream>
 #include <filesystem>
 #include <Geode/utils/string.hpp>
+#include <algorithm>
 
 using namespace geode::prelude;
 
@@ -375,7 +376,7 @@ bool AnimatedGIFSprite::processNextPendingFrame() {
 }
 
 std::string AnimatedGIFSprite::getCachePath(std::string const& path) {
-    auto cacheDir = Mod::get()->getSaveDir() / "gif_cache";
+    auto cacheDir = getDiskCacheDir();
     std::error_code ec;
     if (!std::filesystem::exists(cacheDir, ec)) {
         std::filesystem::create_directories(cacheDir, ec);
@@ -384,6 +385,54 @@ std::string AnimatedGIFSprite::getCachePath(std::string const& path) {
     std::hash<std::string> hasher;
     auto hash = hasher(path);
     return geode::utils::string::pathToString(cacheDir / (std::to_string(hash) + ".bin"));
+}
+
+std::filesystem::path AnimatedGIFSprite::getDiskCacheDir() {
+    return Mod::get()->getSaveDir() / "gif_cache";
+}
+
+void AnimatedGIFSprite::pruneDiskCache() {
+    auto cacheDir = getDiskCacheDir();
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec)) return;
+
+    struct CacheEntry {
+        std::filesystem::path path;
+        std::filesystem::file_time_type mtime;
+        size_t bytes;
+    };
+    std::vector<CacheEntry> entries;
+    size_t totalBytes = 0;
+
+    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
+        if (ec || !entry.is_regular_file()) continue;
+        if (geode::utils::string::toLower(geode::utils::string::pathToString(entry.path().extension())) != ".bin") continue;
+        size_t bytes = static_cast<size_t>(entry.file_size(ec));
+        if (ec) continue;
+        auto mtime = std::filesystem::last_write_time(entry.path(), ec);
+        if (ec) continue;
+        entries.push_back({entry.path(), mtime, bytes});
+        totalBytes += bytes;
+    }
+
+    auto now = std::filesystem::file_time_type::clock::now();
+    for (auto const& e : entries) {
+        auto age = std::chrono::duration_cast<std::chrono::hours>(now - e.mtime);
+        if (age > MAX_DISK_CACHE_AGE) {
+            std::filesystem::remove(e.path, ec);
+            if (!ec) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+        }
+    }
+
+    if (totalBytes <= MAX_DISK_CACHE_BYTES) return;
+    std::sort(entries.begin(), entries.end(), [](CacheEntry const& a, CacheEntry const& b) {
+        return a.mtime < b.mtime;
+    });
+    for (auto const& e : entries) {
+        if (totalBytes <= MAX_DISK_CACHE_BYTES) break;
+        std::filesystem::remove(e.path, ec);
+        if (!ec) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+    }
 }
 
 bool AnimatedGIFSprite::loadFromDiskCache(std::string const& path, DiskCacheEntry& outEntry) {
@@ -454,6 +503,8 @@ void AnimatedGIFSprite::saveToDiskCache(std::string const& path, DiskCacheEntry 
         file.write(reinterpret_cast<char const*>(&dataSize), sizeof(dataSize));
         file.write(reinterpret_cast<char const*>(frame.pixels.data()), dataSize);
     }
+    file.flush();
+    pruneDiskCache();
 }
 
 void AnimatedGIFSprite::workerLoop() {

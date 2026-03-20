@@ -124,6 +124,7 @@ private:
     std::unordered_map<int, std::string> m_usernameMap; // accountID -> username para descargas pendientes
     static constexpr auto CACHE_DURATION = std::chrono::hours(24 * 14); // 14 dias
     static constexpr size_t MAX_PROFILE_CACHE_SIZE = 100; // limite de entradas en cache
+    static constexpr size_t MAX_NO_PROFILE_CACHE_SIZE = 1024;
     int m_insertsSinceCleanup = 0;
     static constexpr int CLEANUP_INTERVAL = 20; // cada N inserciones revisar expiradas
 

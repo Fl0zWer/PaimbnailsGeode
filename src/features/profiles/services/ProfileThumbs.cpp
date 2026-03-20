@@ -405,6 +405,9 @@ void ProfileThumbs::clearAllCache() {
 }
 
 void ProfileThumbs::markNoProfile(int accountID) {
+    if (m_noProfileCache.size() >= MAX_NO_PROFILE_CACHE_SIZE) {
+        m_noProfileCache.clear();
+    }
     m_noProfileCache.insert(accountID);
 }
 

@@ -116,6 +116,9 @@ void ProfileMusicManager::getProfileMusicConfig(int accountID, ConfigCallback ca
             log::info("[ProfileMusic] Config loaded for account {}: songID={}, enabled={}", accountID, config.songID, config.enabled);
 
             m_configCache[accountID] = config;
+            while (m_configCache.size() > MAX_CONFIG_CACHE_SIZE) {
+                m_configCache.erase(m_configCache.begin());
+            }
             callback(true, config);
         });
     });

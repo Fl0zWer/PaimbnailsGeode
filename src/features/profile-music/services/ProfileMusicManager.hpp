@@ -241,6 +241,7 @@ private:
 
     // Cache de configuraciones
     std::map<int, ProfileMusicConfig> m_configCache;
+    static constexpr size_t MAX_CONFIG_CACHE_SIZE = 256;
 
     // Path del directorio de cache
     std::filesystem::path getCacheDir();

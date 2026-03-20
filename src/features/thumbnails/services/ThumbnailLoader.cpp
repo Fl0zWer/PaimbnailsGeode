@@ -20,6 +20,7 @@
 #include <future>
 #include <cmath>
 #include <algorithm>
+#include <tuple>
 
 using namespace geode::prelude;
 
@@ -36,7 +37,12 @@ ThumbnailLoader& ThumbnailLoader::get() {
 }
 
 ThumbnailLoader::ThumbnailLoader() {
-    m_maxConcurrentTasks = 20; // aumentado para descargas mas rapidas
+    // limite por plataforma para balancear throughput y uso de memoria
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    m_maxConcurrentTasks = 8;
+#else
+    m_maxConcurrentTasks = 20;
+#endif
     initDiskCache();
 }
 
@@ -131,9 +137,107 @@ void ThumbnailLoader::initDiskCache() {
     });
 }
 
+void ThumbnailLoader::pruneFailedCacheLocked(std::chrono::steady_clock::time_point now) {
+    if (m_lastFailedCachePrune != std::chrono::steady_clock::time_point::min() &&
+        now - m_lastFailedCachePrune < FAILED_CACHE_PRUNE_INTERVAL) {
+        return;
+    }
+    m_lastFailedCachePrune = now;
+    for (auto it = m_failedCache.begin(); it != m_failedCache.end();) {
+        if (now - it->second >= FAILED_CACHE_TTL) {
+            it = m_failedCache.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void ThumbnailLoader::pruneDiskCache() {
+    auto cacheDir = Mod::get()->getSaveDir() / "cache";
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec)) {
+        return;
+    }
+
+    struct DiskEntry {
+        std::filesystem::path path;
+        std::filesystem::file_time_type mtime;
+        size_t bytes;
+        int key;
+    };
+
+    auto now = std::filesystem::file_time_type::clock::now();
+    std::vector<DiskEntry> entries;
+    size_t totalBytes = 0;
+
+    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
+        if (ec || !entry.is_regular_file()) continue;
+
+        auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(entry.path().extension()));
+        if (ext != ".png" && ext != ".gif") continue;
+
+        auto stem = geode::utils::string::pathToString(entry.path().stem());
+        int id = geode::utils::numFromString<int>(stem).unwrapOr(0);
+        if (id <= 0) continue;
+
+        size_t bytes = static_cast<size_t>(entry.file_size(ec));
+        if (ec) continue;
+        auto mtime = std::filesystem::last_write_time(entry.path(), ec);
+        if (ec) continue;
+
+        int key = (ext == ".gif") ? -id : id;
+        entries.push_back({entry.path(), mtime, bytes, key});
+        totalBytes += bytes;
+    }
+
+    // borrar viejos primero
+    bool removed = false;
+    for (auto const& e : entries) {
+        auto age = std::chrono::duration_cast<std::chrono::hours>(now - e.mtime);
+        if (age > MAX_DISK_CACHE_AGE) {
+            std::filesystem::remove(e.path, ec);
+            if (!ec) {
+                totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+                std::lock_guard<std::mutex> lock(m_diskMutex);
+                m_diskCache.erase(e.key);
+                removed = true;
+            }
+        }
+    }
+
+    if (totalBytes <= MAX_DISK_CACHE_BYTES) {
+        if (removed) {
+            PaimonDebug::log("[ThumbnailLoader] poda cache disco por antiguedad aplicada");
+        }
+        return;
+    }
+
+    std::sort(entries.begin(), entries.end(), [](DiskEntry const& a, DiskEntry const& b) {
+        return a.mtime < b.mtime;
+    });
+
+    for (auto const& e : entries) {
+        if (totalBytes <= MAX_DISK_CACHE_BYTES) break;
+        std::filesystem::remove(e.path, ec);
+        if (ec) continue;
+        totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+        std::lock_guard<std::mutex> lock(m_diskMutex);
+        m_diskCache.erase(e.key);
+        removed = true;
+    }
+
+    if (removed) {
+        PaimonDebug::log("[ThumbnailLoader] poda cache disco completada. bytes finales: {}", totalBytes);
+    }
+}
+
 void ThumbnailLoader::setMaxConcurrentTasks(int max) {
-    // dejo hasta 100 descargas simultaneas por si te quieres pasar
-    m_maxConcurrentTasks = std::max(1, std::min(100, max));
+    // evitar sobrecargar memoria/CPU en movil
+#if defined(GEODE_IS_ANDROID) || defined(GEODE_IS_IOS)
+    m_maxConcurrentTasks = std::max(1, std::min(24, max));
+#else
+    m_maxConcurrentTasks = std::max(1, std::min(64, max));
+#endif
 }
 
 bool ThumbnailLoader::isLoaded(int levelID, bool isGif) const {
@@ -174,6 +278,8 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     
     // lock protege m_textureCache, m_failedCache y m_tasks de carreras con finishTask
     std::lock_guard<std::mutex> lock(m_queueMutex);
+    auto now = std::chrono::steady_clock::now();
+    pruneFailedCacheLocked(now);
 
     // 1. reviso cache en RAM
     auto it = m_textureCache.find(key);
@@ -197,7 +303,6 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     // 2. miro el cache de fallos (con TTL)
     auto failIt = m_failedCache.find(key);
     if (failIt != m_failedCache.end()) {
-        auto now = std::chrono::steady_clock::now();
         if (now - failIt->second < FAILED_CACHE_TTL) {
             Loader::get()->queueInMainThread([callback]() {
                 if (callback) callback(nullptr, false);
@@ -554,6 +659,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                                 log::error("[ThumbnailLoader] no se pudo abrir archivo para guardar en disco");
                             }
                         }
+                        pruneDiskCache();
                         
                         // 2. decodifico y extraco colores en background
                         if (GIFDecoder::isGIF(data.data(), data.size())) {

@@ -15,6 +15,8 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <atomic>
+#include <filesystem>
+#include <chrono>
 
 // Animated sprite that plays GIF frames with caching and incremental loading.
 class AnimatedGIFSprite : public cocos2d::CCSprite {
@@ -56,6 +58,8 @@ protected:
     
     static size_t s_currentCacheSize; // Bytes
     static size_t getMaxCacheMem();
+    static void pruneDiskCache();
+    static std::filesystem::path getDiskCacheDir();
     
     // eviccion centralizada: quita entradas LRU hasta que el cache esta por debajo del limite
     static void evictIfNeeded();
@@ -114,6 +118,9 @@ public:
     static std::string getCachePath(std::string const& path);
 
 private:
+    static constexpr size_t MAX_DISK_CACHE_BYTES = 512ull * 1024ull * 1024ull;
+    static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
+
     // Worker queue
     struct GIFTask {
         std::string path;
