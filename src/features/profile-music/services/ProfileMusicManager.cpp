@@ -1097,7 +1097,9 @@ bool ProfileMusicManager::isCacheValid(int accountID, ProfileMusicConfig const& 
 }
 
 void ProfileMusicManager::applyCaveEffect() {
-    if (m_caveEffectActive && !m_caveTransitioning) return;
+    // Evitar reentrada: agregar/remover el mismo DSP durante transiciones
+    // puede desestabilizar FMOD en cambios rapidos de layer.
+    if (m_caveEffectActive || m_caveTransitioning) return;
     if (!m_isPlaying) return;
 
     auto engine = FMODAudioEngine::sharedEngine();

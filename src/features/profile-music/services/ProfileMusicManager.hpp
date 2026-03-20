@@ -100,6 +100,11 @@ public:
     bool isFadingOut() const { return m_isFadingOut; }
 
     /**
+     * Verifica si el efecto cueva esta activo o en transicion.
+     */
+    bool hasCaveEffect() const { return m_caveEffectActive || m_caveTransitioning; }
+
+    /**
      * Obtiene el accountID del perfil que esta sonando
      */
     int getCurrentPlayingProfile() const { return m_currentProfileID; }

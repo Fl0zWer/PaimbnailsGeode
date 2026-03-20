@@ -46,7 +46,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                 if (success && texture) {
                     Loader::get()->queueInMainThread([safeRef, texture]() {
                         auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
-                        if (self->getParent()) {
+                        if (self && self->getParent()) {
                             self->applyBlurredBackground(texture);
                         }
                     });
@@ -58,10 +58,11 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         applyBlurredBackground(tex);
 
         // Aplicar efecto cueva si hay musica de perfil sonando
-        if (ProfileMusicManager::get().isPlaying()) {
-            ProfileMusicManager::get().applyCaveEffect();
-            m_fields->m_hasCaveEffect = true;
+        auto& musicMgr = ProfileMusicManager::get();
+        if (musicMgr.isPlaying() && !musicMgr.isFadingOut() && !musicMgr.hasCaveEffect()) {
+            musicMgr.applyCaveEffect();
         }
+        m_fields->m_hasCaveEffect = musicMgr.hasCaveEffect();
 
         return true;
     }
