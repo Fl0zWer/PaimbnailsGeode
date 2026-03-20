@@ -1653,31 +1653,47 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             WeakRef<PaimonLevelCell> safeRef = this;
 
-            // 1. Request Static Thumbnail
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool success) {
+            // 1) intentar GIF primero para evitar quedar pegado a cache viejo PNG/WEBP
+            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, fileName](CCTexture2D* gifTex, bool gifSuccess) {
                 auto cellRef = safeRef.lock();
                 auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
                 if (!cell || !cell->shouldHandleThumbnailCallback(levelID, currentRequestId)) {
                     return;
                 }
 
-                if (!success || !tex) {
-                    cell->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
+                if (gifSuccess && gifTex) {
+                    auto fields = cell->m_fields.self();
+                    if (fields) fields->m_hasGif = true;
+                    cell->applyStaticThumbnailTexture(levelID, currentRequestId, gifTex, enableSpinners);
                     return;
                 }
 
-                auto fields = cell->m_fields.self();
-                if (fields) {
-                    fields->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
-                }
+                // 2) fallback a estatico si no hay GIF remoto/local
+                ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool success) {
+                    auto cellRef2 = safeRef.lock();
+                    auto* cell2 = static_cast<PaimonLevelCell*>(cellRef2.data());
+                    if (!cell2 || !cell2->shouldHandleThumbnailCallback(levelID, currentRequestId)) {
+                        return;
+                    }
 
-                if (ThumbnailLoader::get().hasGIFData(levelID)) {
-                    cell->applyStaticThumbnailTexture(levelID, currentRequestId, tex, enableSpinners);
-                    return;
-                }
+                    if (!success || !tex) {
+                        cell2->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
+                        return;
+                    }
 
-                cell->startLazyStaticThumbnailLoad(levelID, currentRequestId, enableSpinners, tex);
-            });
+                    auto fields2 = cell2->m_fields.self();
+                    if (fields2) {
+                        fields2->m_hasGif = ThumbnailLoader::get().hasGIFData(levelID);
+                    }
+
+                    if (ThumbnailLoader::get().hasGIFData(levelID)) {
+                        cell2->applyStaticThumbnailTexture(levelID, currentRequestId, tex, enableSpinners);
+                        return;
+                    }
+
+                    cell2->startLazyStaticThumbnailLoad(levelID, currentRequestId, enableSpinners, tex);
+                });
+            }, 0, true);
     }
 
     $override void update(float dt) {
