@@ -292,6 +292,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
                 // GJCommentListLayer: transparentar y quitar bordes
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
+                    commentList->setOpacity(0);
                     auto* listChildren = commentList->getChildren();
                     if (listChildren) {
                         for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
@@ -299,16 +300,9 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                             auto id = lc->getID();
                             if (id == "left-border" || id == "right-border" ||
                                 id == "top-border" || id == "bottom-border") {
-                                lc->setVisible(true);
-                                if (auto* spr = typeinfo_cast<CCSprite*>(lc)) {
-                                    spr->setOpacity(190);
-                                } else if (auto* s9 = typeinfo_cast<CCScale9Sprite*>(lc)) {
-                                    s9->setOpacity(190);
-                                } else if (auto* col = typeinfo_cast<CCLayerColor*>(lc)) {
-                                    col->setOpacity(190);
-                                }
+                                lc->setVisible(false);
                             }
-                            if (id.empty() && typeinfo_cast<CCLayerColor*>(lc)) {
+                            if (id.empty()) {
                                 lc->setVisible(false);
                             }
                         }
@@ -392,10 +386,11 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     }
 
     void restoreMusicEffect() {
-        if (m_fields->m_hasCaveEffect) {
-            // Forzar eliminacion inmediata para que el efecto no quede colgado al salir
-            ProfileMusicManager::get().forceRemoveCaveEffect();
-            m_fields->m_hasCaveEffect = false;
+        // quitar siempre si sigue activo, por si el flag local se desincronizo
+        auto& mgr = ProfileMusicManager::get();
+        if (m_fields->m_hasCaveEffect || mgr.hasCaveEffect()) {
+            mgr.forceRemoveCaveEffect();
         }
+        m_fields->m_hasCaveEffect = false;
     }
 };

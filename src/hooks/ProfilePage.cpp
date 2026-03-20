@@ -559,10 +559,30 @@ class $modify(PaimonProfilePage, ProfilePage) {
         float padding = 3.f;
         CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
 
+        float clipW = imgArea.width;
+        float clipH = imgArea.height;
+        float r = 6.f;
+        int segs = 8;
         auto stencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(imgArea.width,0), ccp(imgArea.width,imgArea.height), ccp(0,imgArea.height) };
+        std::vector<CCPoint> verts;
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>(M_PI + (M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(r + r * cosf(a), r + r * sinf(a)));
+        }
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>(3.0 * M_PI / 2.0 + (M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(clipW - r + r * cosf(a), r + r * sinf(a)));
+        }
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>((M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(clipW - r + r * cosf(a), clipH - r + r * sinf(a)));
+        }
+        for (int i = 0; i <= segs; i++) {
+            float a = static_cast<float>(M_PI / 2.0 + (M_PI / 2.0) * i / segs);
+            verts.push_back(ccp(r + r * cosf(a), clipH - r + r * sinf(a)));
+        }
         ccColor4F white = {1,1,1,1};
-        stencil->drawPolygon(rect, 4, white, 0, white);
+        stencil->drawPolygon(verts.data(), static_cast<int>(verts.size()), white, 0, white);
 
         auto clip = CCClippingNode::create();
         clip->setStencil(stencil);
@@ -647,6 +667,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
                 // GJCommentListLayer: opacidad 0 + ocultar bordes y fondos
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
+                    commentList->setOpacity(0);
                     auto* listChildren = commentList->getChildren();
                     if (listChildren) {
                         for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
@@ -655,17 +676,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
                             // Bordes con node ID conocido
                             if (id == "left-border" || id == "right-border" ||
                                 id == "top-border" || id == "bottom-border") {
-                                lc->setVisible(true);
-                                if (auto* spr = typeinfo_cast<CCSprite*>(lc)) {
-                                    spr->setOpacity(190);
-                                } else if (auto* s9 = typeinfo_cast<CCScale9Sprite*>(lc)) {
-                                    s9->setOpacity(190);
-                                } else if (auto* col = typeinfo_cast<CCLayerColor*>(lc)) {
-                                    col->setOpacity(190);
-                                }
+                                lc->setVisible(false);
                             }
                             // Nodos sin ID: fondos/separadores decorativos
-                            if (id.empty() && typeinfo_cast<CCLayerColor*>(lc)) {
+                            if (id.empty()) {
                                 lc->setVisible(false);
                             }
                         }
@@ -1493,6 +1507,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     void keyBackClicked() {
         ProfileMusicManager::get().stopProfileMusic();
+        ProfileMusicManager::get().forceRemoveCaveEffect();
         resumeMenuMusicIfNeeded();
         ProfilePage::keyBackClicked();
     }
@@ -1502,6 +1517,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
         ProfileMusicManager::get().stopProfileMusic();
+        ProfileMusicManager::get().forceRemoveCaveEffect();
         resumeMenuMusicIfNeeded();
         ProfilePage::onClose(sender);
     }
@@ -1513,6 +1529,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (!ProfileMusicManager::get().isFadingOut()) {
             ProfileMusicManager::get().stopProfileMusic();
         }
+        ProfileMusicManager::get().forceRemoveCaveEffect();
         resumeMenuMusicIfNeeded();
         ProfilePage::onExit();
     }

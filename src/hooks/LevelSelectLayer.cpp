@@ -11,7 +11,6 @@
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../utils/Shaders.hpp"
-#include <array>
 
 using namespace geode::prelude;
 using namespace Shaders;
@@ -76,12 +75,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     struct Fields {
         Ref<CCSprite> m_bgSprite = nullptr;
         Ref<CCSprite> m_sharpBgSprite = nullptr;
-        Ref<CCNode> m_accentRoot = nullptr;
-        Ref<CCLayerColor> m_accentGlow = nullptr;
-        Ref<CCDrawNode> m_accentBorder = nullptr;
         int m_currentLevelID = 0;
-        int m_accentLevelID = -9999;
-        bool m_accentHasTexture = false;
         float m_pageCheckTimer = 0.f;
         float m_smoothedPeak = 0.f;
         int m_verifyFrameCounter = 0;  // verificar musica cada ~1s
@@ -108,7 +102,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         
         // bg del nivel
         this->updateThumbnailBackground(levelID);
-        this->updateAccentOverlay(levelID, false);
         
         // quitar el fondo que GD pone
         CCArray* children = this->getChildren();
@@ -152,7 +145,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     void onExit() {
         this->unschedule(schedule_selector(PaimonLevelSelectLayer::checkPageLoop));
-        this->removeAccentOverlay();
         // parar musica y desregistrar
         DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
         DynamicSongManager::get()->stopSong();
@@ -212,7 +204,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         // cambio de pagina: actualizar cancion y fondo
         if (m_fields->m_currentLevelID != levelID) {
             m_fields->m_currentLevelID = levelID;
-            this->updateAccentOverlay(levelID, false);
 
             // nueva cancion pa el nivel
             if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
@@ -380,110 +371,12 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         
         m_fields->m_bgSprite = finalSprite;
         m_fields->m_sharpBgSprite = sharpSprite;
-        this->updateAccentOverlay(levelID, tex != nullptr);
     }
     
 
     void cleanupDynamicSong() {
         DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
         DynamicSongManager::get()->stopSong();
-    }
-
-    ccColor4B getAccentColor(int levelID) {
-        static std::array<ccColor4B, 6> const palette = {
-            ccColor4B{120, 210, 255, 255},
-            ccColor4B{142, 255, 185, 255},
-            ccColor4B{255, 210, 120, 255},
-            ccColor4B{255, 150, 185, 255},
-            ccColor4B{190, 165, 255, 255},
-            ccColor4B{255, 240, 155, 255},
-        };
-        if (levelID <= 0) return {180, 180, 180, 255};
-        return palette[static_cast<size_t>((levelID - 1) % static_cast<int>(palette.size()))];
-    }
-
-    void removeAccentOverlay() {
-        if (m_fields->m_accentRoot) {
-            m_fields->m_accentRoot->stopAllActions();
-            m_fields->m_accentRoot->removeFromParent();
-            m_fields->m_accentRoot = nullptr;
-            m_fields->m_accentGlow = nullptr;
-            m_fields->m_accentBorder = nullptr;
-        }
-        m_fields->m_accentLevelID = -9999;
-        m_fields->m_accentHasTexture = false;
-    }
-
-    void updateAccentOverlay(int levelID, bool hasTexture) {
-        if (m_fields->m_accentRoot &&
-            m_fields->m_accentLevelID == levelID &&
-            m_fields->m_accentHasTexture == hasTexture) {
-            return;
-        }
-
-        this->removeAccentOverlay();
-
-        auto win = CCDirector::sharedDirector()->getWinSize();
-        float marginX = 20.f;
-        float marginY = 16.f;
-        float width = std::max(1.f, win.width - marginX * 2.f);
-        float height = std::max(1.f, win.height - marginY * 2.f);
-        CCPoint origin = ccp(marginX, marginY);
-
-        auto accentRoot = CCNode::create();
-        accentRoot->setID("paimon-levelselect-accent-root"_spr);
-        accentRoot->setAnchorPoint(ccp(0.5f, 0.5f));
-        accentRoot->setPosition(ccp(win.width * 0.5f, win.height * 0.5f));
-        this->addChild(accentRoot, 2);
-
-        ccColor4B color = getAccentColor(levelID);
-        GLubyte glowAlpha = hasTexture ? 28 : 14;
-        auto glow = CCLayerColor::create(ccc4(color.r, color.g, color.b, glowAlpha));
-        glow->setContentSize(CCSize(width - 10.f, height - 10.f));
-        glow->setAnchorPoint(ccp(0.f, 0.f));
-        glow->setPosition(ccp(origin.x + 5.f, origin.y + 5.f));
-        glow->setID("paimon-levelselect-accent-glow"_spr);
-        accentRoot->addChild(glow, 0);
-
-        auto border = CCDrawNode::create();
-        border->setID("paimon-levelselect-accent-border"_spr);
-        constexpr float chamfer = 9.f;
-        CCPoint pts[8] = {
-            ccp(origin.x + chamfer, origin.y),
-            ccp(origin.x + width - chamfer, origin.y),
-            ccp(origin.x + width, origin.y + chamfer),
-            ccp(origin.x + width, origin.y + height - chamfer),
-            ccp(origin.x + width - chamfer, origin.y + height),
-            ccp(origin.x + chamfer, origin.y + height),
-            ccp(origin.x, origin.y + height - chamfer),
-            ccp(origin.x, origin.y + chamfer),
-        };
-        ccColor4F fill = {0.f, 0.f, 0.f, 0.f};
-        ccColor4F line = {
-            static_cast<float>(color.r) / 255.f,
-            static_cast<float>(color.g) / 255.f,
-            static_cast<float>(color.b) / 255.f,
-            hasTexture ? 0.85f : 0.55f
-        };
-        border->drawPolygon(pts, 8, fill, 2.1f, line);
-        accentRoot->addChild(border, 1);
-
-        accentRoot->runAction(CCRepeatForever::create(CCSequence::create(
-            CCScaleTo::create(1.2f, 1.006f),
-            CCScaleTo::create(1.2f, 1.0f),
-            nullptr
-        )));
-        glow->runAction(CCRepeatForever::create(CCSequence::create(
-            CCFadeTo::create(1.1f, static_cast<GLubyte>(glowAlpha + 12)),
-            CCFadeTo::create(1.1f, glowAlpha),
-            nullptr
-        )));
-
-        m_fields->m_accentRoot = accentRoot;
-        m_fields->m_accentGlow = glow;
-        m_fields->m_accentBorder = border;
-        m_fields->m_accentLevelID = levelID;
-        m_fields->m_accentHasTexture = hasTexture;
     }
 
     $override
