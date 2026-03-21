@@ -351,41 +351,50 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
              AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [self, applyEffects](AnimatedGIFSprite* anim) {
                  auto* layer = static_cast<PaimonLevelInfoLayer*>(self.data());
                  if (anim) {
-                     // quitar fondo estatico
-                     if (layer->m_fields->m_pixelBg) {
-                         layer->m_fields->m_pixelBg->removeFromParent();
-                     } else if (auto old = layer->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
-                         old->removeFromParent();
-                     }
-                     
                      // efectos al gif
-                     CCSprite* spritePtr = anim; // el helper espera CCSprite*&
+                     CCSprite* spritePtr = anim;
                      applyEffects(spritePtr, true);
                      
                      anim->setZOrder(-1);
                      anim->setID("paimon-levelinfo-pixel-bg"_spr);
-                     
+                     anim->setOpacity(0);
                      layer->addChild(anim);
+                     anim->runAction(CCFadeTo::create(0.5f, 255));
+
+                     // quitar fondo estatico despues de la transicion
+                     auto oldBg = layer->m_fields->m_pixelBg;
+                     if (oldBg && oldBg->getParent()) {
+                         auto* oldPtr = oldBg.data();
+                         oldPtr->runAction(CCSequence::create(
+                             CCDelayTime::create(0.55f),
+                             CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                             nullptr
+                         ));
+                     } else if (auto old = layer->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
+                         if (old != anim) old->removeFromParent();
+                     }
                      layer->m_fields->m_pixelBg = anim;
                  }
              });
         }
 
-        // limpiar overlay anterior para evitar acumulacion de capas
-        if (auto oldOverlay = this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
-            oldOverlay->removeFromParent();
-        }
-        // overlay — oscuridad configurable
+        // overlay — reusar si ya existe con la misma opacidad, sino crear
         int darknessVal = static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("levelinfo-bg-darkness"));
         darknessVal = std::max(0, std::min(50, darknessVal));
         GLubyte overlayAlpha = static_cast<GLubyte>((darknessVal / 50.0f) * 255.0f);
-        auto overlay = CCLayerColor::create({0,0,0,overlayAlpha});
-        overlay->setContentSize(win);
-        overlay->setAnchorPoint({0,0});
-        overlay->setPosition({0,0});
-        overlay->setZOrder(-1);
-        overlay->setID("paimon-levelinfo-pixel-overlay"_spr);
-        this->addChild(overlay);
+        
+        auto existingOverlay = typeinfo_cast<CCLayerColor*>(
+            static_cast<CCNode*>(this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)));
+        if (!existingOverlay || existingOverlay->getOpacity() != overlayAlpha) {
+            if (existingOverlay) existingOverlay->removeFromParent();
+            auto overlay = CCLayerColor::create({0,0,0,overlayAlpha});
+            overlay->setContentSize(win);
+            overlay->setAnchorPoint({0,0});
+            overlay->setPosition({0,0});
+            overlay->setZOrder(-1);
+            overlay->setID("paimon-levelinfo-pixel-overlay"_spr);
+            this->addChild(overlay);
+        }
         
         log::info("[LevelInfoLayer] Fondo aplicado exitosamente (estilo: {}, intensidad: {})", bgStyle, intensity);
     }

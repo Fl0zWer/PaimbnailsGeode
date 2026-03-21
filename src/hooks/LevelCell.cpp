@@ -1026,29 +1026,19 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        // GJListLayer-style slide transition: old slides left, new slides in from right
-        float clipW = fields->m_clippingNode->getContentSize().width;
-        float slideOffset = clipW * 0.6f;
+        // crossfade suave: nuevo aparece encima del viejo sin slide brusco
         CCPoint targetPos = newSprite->getPosition();
-
-        // new sprite starts off-screen right and slides in
-        newSprite->setPosition({targetPos.x + slideOffset, targetPos.y});
         newSprite->setOpacity(0);
         fields->m_clippingNode->addChild(newSprite);
         newSprite->runAction(CCSpawn::create(
-            CCEaseOut::create(CCMoveTo::create(0.45f, targetPos), 2.5f),
-            CCFadeTo::create(0.3f, 255),
+            CCEaseOut::create(CCScaleTo::create(0.6f, newSprite->getScaleX(), newSprite->getScaleY()), 2.0f),
+            CCFadeTo::create(0.6f, 255),
             nullptr
         ));
 
-        // old sprite slides out to the left and fades
-        CCPoint oldTarget = ccp(oldSprite->getPositionX() - slideOffset, oldSprite->getPositionY());
+        // viejo se queda a opacidad completa debajo; se elimina al terminar
         oldSprite->runAction(CCSequence::create(
-            CCSpawn::create(
-                CCEaseIn::create(CCMoveTo::create(0.4f, oldTarget), 2.0f),
-                CCFadeTo::create(0.35f, 0),
-                nullptr
-            ),
+            CCDelayTime::create(0.65f),
             CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)),
             nullptr
         ));
@@ -1077,11 +1067,12 @@ class $modify(PaimonLevelCell, LevelCell) {
                     newBgSprite->setPosition(bg->getContentSize() / 2);
                     newBgSprite->setOpacity(0);
                     clipper->addChild(newBgSprite);
-                    newBgSprite->runAction(CCFadeTo::create(0.5f, 255));
+                    newBgSprite->runAction(CCFadeTo::create(0.6f, 255));
 
+                    // viejo se queda a opacidad completa debajo; se elimina al terminar
                     auto oldGrad = fields->m_gradientLayer;
                     oldGrad->runAction(CCSequence::create(
-                        CCFadeTo::create(0.45f, 0),
+                        CCDelayTime::create(0.65f),
                         CCCallFunc::create(oldGrad, callfunc_selector(CCNode::removeFromParent)),
                         nullptr
                     ));
