@@ -1026,14 +1026,27 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        // add new sprite with opacity 0, fade in
+        // dynamic entrance: new sprite zooms in from 1.08x with fade + easing
+        float targetScaleX = newSprite->getScaleX();
+        float targetScaleY = newSprite->getScaleY();
         newSprite->setOpacity(0);
+        newSprite->setScaleX(targetScaleX * 1.08f);
+        newSprite->setScaleY(targetScaleY * 1.08f);
         fields->m_clippingNode->addChild(newSprite);
-        newSprite->runAction(CCFadeTo::create(0.5f, 255));
 
-        // fade out old sprite and remove
+        auto fadeIn = CCFadeTo::create(0.6f, 255);
+        auto zoomIn = CCEaseOut::create(
+            CCScaleTo::create(0.6f, targetScaleX, targetScaleY), 2.0f
+        );
+        newSprite->runAction(CCSpawn::create(fadeIn, zoomIn, nullptr));
+
+        // old sprite zooms out slightly and fades
+        auto fadeOut = CCFadeTo::create(0.5f, 0);
+        auto zoomOut = CCEaseIn::create(
+            CCScaleTo::create(0.5f, oldSprite->getScaleX() * 0.94f, oldSprite->getScaleY() * 0.94f), 2.0f
+        );
         oldSprite->runAction(CCSequence::create(
-            CCFadeTo::create(0.5f, 0),
+            CCSpawn::create(fadeOut, zoomOut, nullptr),
             CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)),
             nullptr
         ));
@@ -1060,13 +1073,23 @@ class $modify(PaimonLevelCell, LevelCell) {
                     );
                     newBgSprite->setScale(scale);
                     newBgSprite->setPosition(bg->getContentSize() / 2);
+                    float bgTargetScale = newBgSprite->getScale();
                     newBgSprite->setOpacity(0);
+                    newBgSprite->setScale(bgTargetScale * 1.06f);
                     clipper->addChild(newBgSprite);
-                    newBgSprite->runAction(CCFadeTo::create(0.5f, 255));
+                    newBgSprite->runAction(CCSpawn::create(
+                        CCFadeTo::create(0.7f, 255),
+                        CCEaseOut::create(CCScaleTo::create(0.7f, bgTargetScale), 2.0f),
+                        nullptr
+                    ));
 
                     auto oldGrad = fields->m_gradientLayer;
                     oldGrad->runAction(CCSequence::create(
-                        CCFadeTo::create(0.5f, 0),
+                        CCSpawn::create(
+                            CCFadeTo::create(0.5f, 0),
+                            CCEaseIn::create(CCScaleTo::create(0.5f, oldGrad->getScale() * 0.95f), 2.0f),
+                            nullptr
+                        ),
                         CCCallFunc::create(oldGrad, callfunc_selector(CCNode::removeFromParent)),
                         nullptr
                     ));
