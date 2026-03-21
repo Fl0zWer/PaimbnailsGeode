@@ -577,7 +577,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 clip->setID("paimon-levelinfo-thumb-clip"_spr);
                 this->addChild(clip);
                 m_fields->m_thumbClip = clip;
-                m_fields->m_thumbFrameSize = {frameW, frameH};
+                m_fields->m_thumbFrameSize = CCSize(frameW, frameH);
 
                 auto border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("GJ_square07.png");
                 if (border) {
