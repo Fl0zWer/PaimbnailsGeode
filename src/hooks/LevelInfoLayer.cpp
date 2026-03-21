@@ -926,14 +926,48 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (auto old = this->getChildByID("gallery-menu"_spr)) {
             old->removeFromParent();
         }
-        // flechas
+        m_fields->m_prevBtn = nullptr;
+        m_fields->m_nextBtn = nullptr;
+
         auto menu = CCMenu::create();
         menu->setID("gallery-menu"_spr);
+        menu->setPosition({0, 0});
 
-        if (m_fields->m_thumbnailButton) {
-            menu->setPosition(m_fields->m_thumbnailButton->getPosition());
-            this->addChild(menu, 100);
+        auto win = CCDirector::sharedDirector()->getWinSize();
+        float arrowY = 30.f;
+
+        // flecha izquierda (prev)
+        auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+        if (prevSpr) {
+            prevSpr->setScale(0.65f);
+            auto prevBtn = CCMenuItemSpriteExtra::create(
+                prevSpr, this, menu_selector(PaimonLevelInfoLayer::onPrevBtn)
+            );
+            prevBtn->setPosition({win.width / 2.f - 55.f, arrowY});
+            prevBtn->setOpacity(180);
+            menu->addChild(prevBtn);
+            m_fields->m_prevBtn = prevBtn;
         }
+
+        // flecha derecha (next)
+        auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+        if (nextSpr) {
+            nextSpr->setFlipX(true);
+            nextSpr->setScale(0.65f);
+            auto nextBtn = CCMenuItemSpriteExtra::create(
+                nextSpr, this, menu_selector(PaimonLevelInfoLayer::onNextBtn)
+            );
+            nextBtn->setPosition({win.width / 2.f + 55.f, arrowY});
+            nextBtn->setOpacity(180);
+            menu->addChild(nextBtn);
+            m_fields->m_nextBtn = nextBtn;
+        }
+
+        this->addChild(menu, 100);
+
+        bool showNav = m_fields->m_thumbnails.size() > 1;
+        if (m_fields->m_prevBtn) m_fields->m_prevBtn->setVisible(showNav);
+        if (m_fields->m_nextBtn) m_fields->m_nextBtn->setVisible(showNav);
     }
 
     void refreshGalleryData(int32_t levelID, bool refreshBackground) {
@@ -962,8 +996,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
             } else {
                 self->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
-                if (self->m_fields->m_prevBtn) self->m_fields->m_prevBtn->setVisible(false);
-                if (self->m_fields->m_nextBtn) self->m_fields->m_nextBtn->setVisible(false);
             }
 
             if (refreshBackground) {
