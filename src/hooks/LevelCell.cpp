@@ -11,6 +11,7 @@
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../managers/ThumbnailAPI.hpp"
 #include "../utils/Constants.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/Shaders.hpp"
@@ -144,6 +145,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         int m_cellLevelID = 0;
         bool m_isDailyCell = false;
         bool m_isDailyCellCached = false;
+        std::vector<ThumbnailAPI::ThumbnailInfo> m_galleryThumbnails;
+        int m_galleryIndex = 0;
+        float m_galleryTimer = 0.f;
+        bool m_galleryRequested = false;
+        int m_galleryToken = 0;
     };
     
     // destructor pa marcar celda como destruyendose
@@ -1092,6 +1098,9 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_requestId++;
             fields->m_thumbnailRequested = false;
             fields->m_staticThumbLoad.reset();
+            fields->m_galleryThumbnails.clear();
+            fields->m_galleryRequested = false;
+            fields->m_galleryToken++;
         }
 
         if (m_level) {
@@ -1626,6 +1635,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_staticThumbLoad.reset();
                 fields->m_loadedInvalidationVersion = 0;
                 fields->m_isDailyCellCached = false;
+                fields->m_galleryThumbnails.clear();
+                fields->m_galleryIndex = 0;
+                fields->m_galleryTimer = 0.f;
+                fields->m_galleryRequested = false;
+                fields->m_galleryToken++;
             }
 
             // comprobar si la miniatura fue invalidada (usuario subiÃƒÂ³ una nueva)
@@ -1639,6 +1653,26 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_staticThumbLoad.reset();
             }
             fields->m_loadedInvalidationVersion = currentVersion;
+
+            if (!fields->m_galleryRequested) {
+                fields->m_galleryRequested = true;
+                int galleryToken = ++fields->m_galleryToken;
+                WeakRef<PaimonLevelCell> safeGalleryRef = this;
+                ThumbnailAPI::get().getThumbnails(levelID, [safeGalleryRef, levelID, galleryToken](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
+                    auto cellRef = safeGalleryRef.lock();
+                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+                    if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
+                    auto fields = cell->m_fields.self();
+                    if (!fields || fields->m_galleryToken != galleryToken) return;
+                    if (!success || thumbs.size() < 2) {
+                        fields->m_galleryThumbnails.clear();
+                        return;
+                    }
+                    fields->m_galleryThumbnails = thumbs;
+                    fields->m_galleryIndex = 0;
+                    fields->m_galleryTimer = 0.f;
+                });
+            }
 
             if (fields->m_thumbnailRequested) return;
             
@@ -1729,6 +1763,28 @@ class $modify(PaimonLevelCell, LevelCell) {
                     // miniatura actualizada, recargar
                     tryLoadThumbnail();
                 }
+            }
+        }
+
+        const bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
+        if (autoCycleEnabled && m_level && fields->m_galleryThumbnails.size() >= 2) {
+            fields->m_galleryTimer += dt;
+            if (fields->m_galleryTimer >= 3.0f) {
+                fields->m_galleryTimer = 0.f;
+                fields->m_galleryIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
+                auto next = fields->m_galleryThumbnails[fields->m_galleryIndex];
+                const int levelID = m_level->m_levelID.value();
+                const int token = ++fields->m_galleryToken;
+                WeakRef<PaimonLevelCell> safeRef = this;
+                ThumbnailAPI::get().downloadFromUrl(next.url, [safeRef, levelID, token](bool success, CCTexture2D* tex) {
+                    auto cellRef = safeRef.lock();
+                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+                    if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
+                    auto fields = cell->m_fields.self();
+                    if (!fields || fields->m_galleryToken != token) return;
+                    if (!success || !tex) return;
+                    cell->addOrUpdateThumb(tex);
+                });
             }
         }
 

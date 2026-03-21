@@ -619,9 +619,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                      self->m_fields->m_thumbnails.push_back(mainThumb);
                 }
 
+                bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
                 if (self->m_fields->m_thumbnails.size() > 1) {
                     self->setupGallery();
-                    self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
+                    if (autoCycleEnabled) {
+                        self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
+                    } else {
+                        self->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
+                    }
                 } else {
                     self->setupGallery();
                     if (self->m_fields->m_prevBtn) self->m_fields->m_prevBtn->setVisible(false);

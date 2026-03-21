@@ -89,9 +89,13 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
             for (auto const& item : arrRes.unwrap()) {
                 ThumbnailInfo info;
                 info.id     = item["id"].asString().unwrapOr("");
+                if (item.contains("thumbnailId") && info.id.empty()) {
+                    info.id = item["thumbnailId"].asString().unwrapOr("");
+                }
                 info.url    = item["url"].asString().unwrapOr("");
                 info.type   = item["type"].asString().unwrapOr("");
                 info.format = item["format"].asString().unwrapOr("");
+                info.position = item["position"].asInt().unwrapOr(1);
 
                 // autor — multiples campos posibles
                 for (auto const& key : {"author","username","uploader","uploaded_by","submitted_by","user","owner"}) {
@@ -206,7 +210,7 @@ void ThumbnailTransportClient::checkExists(int levelId, ExistsCallback callback)
     HttpClient::get().checkThumbnailExists(levelId, callback);
 }
 
-void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& username,
+void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username,
                                                int accountID, ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
 
@@ -215,6 +219,7 @@ void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& u
     matjson::Value json = matjson::makeObject({
         {"username", username},
         {"levelId", levelId},
+        {"thumbnailId", thumbnailId},
         {"accountID", accountID}
     });
     std::string postData = json.dump();

@@ -1,4 +1,4 @@
-﻿#include "ThumbnailAPI.hpp"
+#include "ThumbnailAPI.hpp"
 #include <Geode/loader/Log.hpp>
 
 using namespace geode::prelude;
@@ -53,8 +53,8 @@ void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback) {
 void ThumbnailAPI::checkExists(int levelId, ExistsCallback callback) {
     ThumbnailTransportClient::get().checkExists(levelId, std::move(callback));
 }
-void ThumbnailAPI::deleteThumbnail(int levelId, std::string const& username, int accountID, ActionCallback callback) {
-    ThumbnailTransportClient::get().deleteThumbnail(levelId, username, accountID, std::move(callback));
+void ThumbnailAPI::deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback) {
+    ThumbnailTransportClient::get().deleteThumbnail(levelId, thumbnailId, username, accountID, std::move(callback));
 }
 void ThumbnailAPI::getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback) {
     ThumbnailTransportClient::get().getRating(levelId, username, thumbnailId, std::move(callback));

@@ -7,6 +7,35 @@ import { memCache } from './cache.js';
 
 const VERSIONS_TTL = 300_000; // 5 min in-memory
 const MEM_KEY = 'versions.json';
+export const MAX_THUMBNAILS_PER_LEVEL = 10;
+
+function normalizeVersionEntry(entry, index = 0) {
+  if (!entry) return null;
+  if (typeof entry === 'string') {
+    return {
+      id: 'legacy',
+      position: 1,
+      version: entry,
+      format: 'webp',
+      path: 'thumbnails',
+      type: 'static'
+    };
+  }
+  return {
+    id: entry.id || `${index + 1}`,
+    position: typeof entry.position === 'number' ? entry.position : (index + 1),
+    version: entry.version,
+    format: entry.format || 'webp',
+    path: (entry.path || 'thumbnails').replace(/^\//, ''),
+    type: entry.type || (entry.format === 'gif' ? 'gif' : 'static'),
+    uploadedBy: entry.uploadedBy,
+    uploadedAt: entry.uploadedAt
+  };
+}
+
+function sortByPositionAsc(a, b) {
+  return (a.position || 0) - (b.position || 0);
+}
 
 export class VersionManager {
   constructor(bucket) {
@@ -25,13 +54,10 @@ export class VersionManager {
   }
 
   async getVersion(id) {
-    const map = await this.getMap();
-    const entry = map[id];
-    if (!entry) return undefined;
-
-    if (Array.isArray(entry)) return entry[0];
-    if (typeof entry === 'string') return { version: entry, format: 'webp' };
-    return entry;
+    const versions = await this.getAllVersions(id);
+    if (versions.length === 0) return undefined;
+    // "Current" thumbnail is the latest (last by position)
+    return versions[versions.length - 1];
   }
 
   async getAllVersions(id) {
@@ -39,7 +65,12 @@ export class VersionManager {
     const entry = map[id];
     if (!entry) return [];
 
-    if (Array.isArray(entry)) return entry;
+    if (Array.isArray(entry)) {
+      return entry
+        .map((v, i) => normalizeVersionEntry(v, i))
+        .filter(Boolean)
+        .sort(sortByPositionAsc);
+    }
 
     if (typeof entry === 'string') {
       return [{
@@ -50,12 +81,7 @@ export class VersionManager {
         type: 'static'
       }];
     }
-    return [{
-      ...entry,
-      id: entry.id || 'legacy',
-      path: entry.path || 'thumbnails',
-      type: entry.type || (entry.format === 'gif' ? 'gif' : 'static')
-    }];
+    return [normalizeVersionEntry(entry, 0)].filter(Boolean);
   }
 
   async update(id, version, format = 'webp', path = 'thumbnails', type = 'static', metadata = {}) {
@@ -84,9 +110,72 @@ export class VersionManager {
 
   async set(id, versions) {
     let map = await this.getMap();
-    map[id] = versions;
+    map[id] = versions
+      .map((v, i) => normalizeVersionEntry(v, i))
+      .filter(Boolean)
+      .sort(sortByPositionAsc)
+      .map((v, i) => ({ ...v, position: i + 1 }));
     await putR2Json(this.bucket, this.cacheKey, map);
     memCache.invalidate(MEM_KEY);
+  }
+
+  async appendVersion(id, version, format = 'webp', path = 'thumbnails', type = 'static', metadata = {}, maxPerLevel = MAX_THUMBNAILS_PER_LEVEL) {
+    const current = await this.getAllVersions(id);
+    const cleanMeta = {};
+    if (metadata.uploadedBy) cleanMeta.uploadedBy = metadata.uploadedBy;
+    if (metadata.uploadedAt) cleanMeta.uploadedAt = metadata.uploadedAt;
+
+    const nextPosition = current.length + 1;
+    const appended = {
+      id: String(Date.now()),
+      position: nextPosition,
+      version,
+      format,
+      path: path.replace(/^\//, ''),
+      type,
+      ...cleanMeta
+    };
+
+    let next = [...current, appended];
+    const removed = [];
+
+    if (next.length > maxPerLevel) {
+      const toRemove = next.length - maxPerLevel;
+      removed.push(...next.slice(0, toRemove));
+      next = next.slice(toRemove);
+    }
+
+    next = next
+      .sort(sortByPositionAsc)
+      .map((v, i) => ({ ...v, position: i + 1 }));
+
+    await this.set(id, next);
+    return { appended: next[next.length - 1], removed, versions: next };
+  }
+
+  async deleteVersion(id, thumbnailId) {
+    const current = await this.getAllVersions(id);
+    if (current.length === 0) {
+      return { removed: null, versions: [] };
+    }
+
+    const idx = current.findIndex(v => String(v.id) === String(thumbnailId));
+    if (idx < 0) {
+      return { removed: null, versions: current };
+    }
+
+    const removed = current[idx];
+    const next = current
+      .filter((_, i) => i !== idx)
+      .map((v, i) => ({ ...v, position: i + 1 }));
+
+    if (next.length === 0) {
+      await this.delete(id);
+      return { removed, versions: [] };
+    }
+
+    await this.set(id, next);
+    return { removed, versions: next };
   }
 
   async delete(id) {

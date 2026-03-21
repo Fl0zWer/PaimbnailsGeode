@@ -2,11 +2,12 @@
  * Queue controllers — get/accept/claim/reject verification queue
  */
 import { corsHeaders, NO_STORE_CACHE_CONTROL } from '../middleware/cors.js';
-import { verifyApiKey, verifyModAuth, verifyModAuthFromBody, modAuthForbiddenResponse } from '../middleware/auth.js';
+import { verifyApiKey, verifyModAuth, verifyModAuthFromBody, modAuthForbiddenResponse, isModeratorOrAdmin } from '../middleware/auth.js';
 import { rejectIfMalicious } from '../middleware/security.js';
 import { detectMimeType } from '../image-security.js';
 import { getR2Json, putR2Json, listR2Keys } from '../services/storage.js';
 import { VersionManager } from '../services/versions.js';
+import { MAX_THUMBNAILS_PER_LEVEL } from '../services/versions.js';
 import { dispatchWebhook } from '../services/webhook.js';
 import { logAudit } from '../services/moderation.js';
 import { cfCacheDelete, memCache } from '../services/cache.js';
@@ -26,6 +27,11 @@ export async function handleGetQueue(request, env) {
   if (!auth.authorized) {
     console.log(`[Security] Get queue blocked: ${queueUsername || '(no username)'}`);
     return modAuthForbiddenResponse(auth);
+  }
+  if (!(await isModeratorOrAdmin(env, queueUsername))) {
+    return new Response(JSON.stringify({ error: 'Moderator/Admin privileges required' }), {
+      status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+    });
   }
 
   const category = url.pathname.split('/').pop();
@@ -91,6 +97,11 @@ export async function handleAcceptQueue(request, env, ctx) {
     if (!auth.authorized) {
       console.log(`[Security] Accept queue blocked: ${username}`);
       return modAuthForbiddenResponse(auth);
+    }
+    if (!(await isModeratorOrAdmin(env, username))) {
+      return new Response(JSON.stringify({ error: 'Moderator/Admin privileges required' }), {
+        status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
     }
 
     if (!levelId || !category) {
@@ -303,7 +314,6 @@ export async function handleAcceptQueue(request, env, ctx) {
       if (approveSecReject) return approveSecReject;
 
       const versionManager = new VersionManager(env.SYSTEM_BUCKET);
-      const oldVersionData = await versionManager.getVersion(levelId);
       const version = Date.now().toString();
       const destKey = `thumbnails/${levelId}_${version}.webp`;
 
@@ -316,39 +326,19 @@ export async function handleAcceptQueue(request, env, ctx) {
         }
       });
 
-      await versionManager.update(levelId, version, 'webp', 'thumbnails', 'static', {
+      const appendRes = await versionManager.appendVersion(levelId, version, 'webp', 'thumbnails', 'static', {
         uploadedBy: queueSubmitter, uploadedAt: new Date().toISOString()
-      });
+      }, MAX_THUMBNAILS_PER_LEVEL);
 
       if (ctx) ctx.waitUntil(env.SYSTEM_BUCKET.delete(`ratings/${levelId}.json`));
       else await env.SYSTEM_BUCKET.delete(`ratings/${levelId}.json`);
 
-      if (oldVersionData && oldVersionData.version !== 'legacy') {
-        const oldKey = `thumbnails/${levelId}_${oldVersionData.version}.${oldVersionData.format}`;
-        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(oldKey));
-        else await env.THUMBNAILS_BUCKET.delete(oldKey);
-      }
-
-      // Force cleanup of all other versions
-      const prefixes = [`thumbnails/${levelId}`, `thumbnails/gif/${levelId}`];
-      const cleanupKeys = [];
-      for (const prefix of prefixes) {
-        const list = await env.THUMBNAILS_BUCKET.list({ prefix });
-        for (const obj of list.objects) {
-          const k = obj.key;
-          if (k === destKey) continue;
-          const cleanKey = k.replace(/^\//, '');
-          if (cleanKey.match(new RegExp(`^thumbnails/${levelId}(\\.|_)`)) ||
-            cleanKey.match(new RegExp(`^thumbnails/gif/${levelId}\\.`))) {
-            cleanupKeys.push(k);
-          }
-        }
-      }
-      const uniqueCleanup = [...new Set(cleanupKeys)];
-      console.log(`[Accept] Cleaning up ${uniqueCleanup.length} old versions for ${levelId}`);
-      for (const k of uniqueCleanup) {
-        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(k));
-        else await env.THUMBNAILS_BUCKET.delete(k);
+      // Enforce max 10 by deleting only the trimmed oldest physical files.
+      for (const removed of appendRes.removed) {
+        const removedPath = (removed.path || 'thumbnails').replace(/^\//, '');
+        const removedKey = `${removedPath}/${levelId}_${removed.version}.${removed.format || 'webp'}`;
+        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(removedKey));
+        else await env.THUMBNAILS_BUCKET.delete(removedKey);
       }
 
       if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(sourceKey));
@@ -430,6 +420,11 @@ export async function handleClaimQueue(request, env) {
       console.log(`[Security] Claim queue blocked: ${username}`);
       return modAuthForbiddenResponse(auth);
     }
+    if (!(await isModeratorOrAdmin(env, username))) {
+      return new Response(JSON.stringify({ error: 'Moderator/Admin privileges required' }), {
+        status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
+    }
 
     if (!levelId || !category || !username) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
@@ -495,6 +490,11 @@ export async function handleRejectQueue(request, env) {
     if (!auth.authorized) {
       console.log(`[Security] Reject queue blocked: ${username}`);
       return modAuthForbiddenResponse(auth);
+    }
+    if (!(await isModeratorOrAdmin(env, username))) {
+      return new Response(JSON.stringify({ error: 'Moderator/Admin privileges required' }), {
+        status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
     }
 
     if (!levelId || !category) {

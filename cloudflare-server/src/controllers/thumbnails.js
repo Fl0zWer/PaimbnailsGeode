@@ -2,10 +2,11 @@
  * Thumbnail controllers — upload, upload-gif, download, direct, delete, exists, list, info
  */
 import { corsHeaders, redirectNoStore, NO_STORE_CACHE_CONTROL, noStoreHeaders } from '../middleware/cors.js';
-import { verifyApiKey, verifyModAuth, ADMIN_USERS } from '../middleware/auth.js';
+import { verifyApiKey, verifyModAuth, ADMIN_USERS, isModeratorOrAdmin } from '../middleware/auth.js';
 import { rejectIfMalicious } from '../middleware/security.js';
 import { getR2Json, putR2Json, expandCandidates, expandKeyVariants, listR2Keys } from '../services/storage.js';
 import { VersionManager } from '../services/versions.js';
+import { MAX_THUMBNAILS_PER_LEVEL } from '../services/versions.js';
 import { updateCreatorLeaderboardCache } from '../services/leaderboard.js';
 import { dispatchWebhook } from '../services/webhook.js';
 import { getImageDimensions } from '../image-utils.js';
@@ -38,15 +39,23 @@ async function getLegacyVersions(env, levelId) {
 
       return {
         id: version === 'legacy' ? 'legacy_file' : version,
+        position: 1,
         version: version === 'legacy' ? Date.now().toString() : version,
         format: ext,
         path: 'thumbnails',
         type: ext === 'gif' ? 'gif' : 'static',
-        isLegacy: true
+        isLegacy: true,
+        uploadedBy: 'Unknown'
       };
     });
   }
   return [];
+}
+
+function buildThumbnailKey(levelId, versionEntry) {
+  const path = (versionEntry.path || 'thumbnails').replace(/^\//, '');
+  const format = versionEntry.format || 'webp';
+  return `${path}/${levelId}_${versionEntry.version}.${format}`;
 }
 
 // ===== Upload thumbnail (PNG/WebP) =====
@@ -79,6 +88,7 @@ export async function handleUpload(request, env, ctx) {
     let isModerator = authResult.authorized;
     let newModCode = authResult.newCode;
     const isAdmin = authResult.authorized && ADMIN_USERS.includes(usernameLower);
+    const canManageThumbnails = isModerator && await isModeratorOrAdmin(env, usernameLower);
 
     const banData = await getR2Json(env.SYSTEM_BUCKET, 'data/banlist.json');
     const banned = Array.isArray(banData?.banned) ? banData.banned : [];
@@ -173,45 +183,12 @@ export async function handleUpload(request, env, ctx) {
         else await env.SYSTEM_BUCKET.delete(`data/queue/profileimgs/${levelId}.json`);
       }
 
-    } else if (isModerator) {
+    } else if (isModerator && canManageThumbnails) {
       const type = extension === 'gif' ? 'gif' : 'static';
-      const thisId = version;
-      uploadKey = `${path}/${levelId}_${thisId}.${extension}`;
+      uploadKey = `${path}/${levelId}_${version}.${extension}`;
       uploadCategory = 'live';
-
-      const prefixes = [`${path}/${levelId}`, `${path}/gif/${levelId}`];
-      const cleanupKeys = [];
-      for (const prefix of prefixes) {
-        const list = await env.THUMBNAILS_BUCKET.list({ prefix: prefix });
-        for (const obj of list.objects) {
-          const k = obj.key;
-          const cleanKey = k.replace(/^\//, '');
-          if (cleanKey.match(new RegExp(`^${path}/${levelId}(\\.|_)`)) ||
-            cleanKey.match(new RegExp(`^${path}/gif/${levelId}\\.`))) {
-            cleanupKeys.push(k);
-          }
-        }
-      }
-      const uniqueCleanup = [...new Set(cleanupKeys)];
-      console.log(`[Upload] Cleaning up ${uniqueCleanup.length} old versions for ${levelId}`);
-      for (const k of uniqueCleanup) {
-        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(k));
-        else await env.THUMBNAILS_BUCKET.delete(k);
-      }
-      const legacyPaths = [`${path}/${levelId}.webp`, `${path}/${levelId}.png`];
-      for (const lp of legacyPaths) {
-        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(lp));
-        else await env.THUMBNAILS_BUCKET.delete(lp);
-      }
-
-      await versionManager.update(levelId, version, extension, path, type, {
-        uploadedBy: username, uploadedAt: new Date().toISOString()
-      });
-
-      if (ctx) ctx.waitUntil(env.SYSTEM_BUCKET.delete(`ratings/${levelId}.json`));
-      else await env.SYSTEM_BUCKET.delete(`ratings/${levelId}.json`);
     } else {
-      return new Response(JSON.stringify({ error: 'Moderator auth required' }), {
+      return new Response(JSON.stringify({ error: 'Moderator/Admin privileges required' }), {
         status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
       });
     }
@@ -226,6 +203,26 @@ export async function handleUpload(request, env, ctx) {
         category: uploadCategory
       }
     });
+
+    let appendedVersion = null;
+    if (uploadCategory === 'live') {
+      const type = extension === 'gif' ? 'gif' : 'static';
+      const appendRes = await versionManager.appendVersion(levelId, version, extension, path, type, {
+        uploadedBy: username,
+        uploadedAt: new Date().toISOString()
+      }, MAX_THUMBNAILS_PER_LEVEL);
+      appendedVersion = appendRes.appended;
+
+      // Keep append-only semantics but enforce max 10 by trimming oldest physical files.
+      for (const removed of appendRes.removed) {
+        const removedKey = buildThumbnailKey(levelId, removed);
+        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(removedKey));
+        else await env.THUMBNAILS_BUCKET.delete(removedKey);
+      }
+
+      if (ctx) ctx.waitUntil(env.SYSTEM_BUCKET.delete(`ratings/${levelId}.json`));
+      else await env.SYSTEM_BUCKET.delete(`ratings/${levelId}.json`);
+    }
 
     if (username && username !== 'Unknown' && path !== 'profileimgs') {
       const updateCreatorCache = () => updateCreatorLeaderboardCache(env, username, {
@@ -274,6 +271,10 @@ export async function handleUpload(request, env, ctx) {
       message: isPendingProfileImg ? 'Profile image submitted for verification' : 'Moderator upload: Thumbnail published directly to global',
       key: uploadKey, isUpdate: isUpdate, moderatorUpload: true, inQueue: false, pendingVerification: isPendingProfileImg
     };
+    if (appendedVersion) {
+      responseData.thumbnailId = appendedVersion.id;
+      responseData.position = appendedVersion.position;
+    }
     if (newModCode) responseData.newModCode = newModCode;
 
     return new Response(JSON.stringify(responseData), {
@@ -323,14 +324,15 @@ export async function handleUploadGIF(request, env, ctx) {
     const authResult = await verifyModAuth(request, env, usernameLower, accountID);
     const isModerator = authResult.authorized;
     const newModCode = authResult.newCode;
+    const canManageThumbnails = isModerator && await isModeratorOrAdmin(env, usernameLower);
 
-    if (!isModerator) {
+    if (!isModerator || !canManageThumbnails) {
       if (authResult.needsModCode) {
         return new Response(JSON.stringify({ error: 'Mod code required', needsModCode: true, message: 'Generate a mod code in Paimbnails settings first' }), {
           status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
         });
       }
-      return new Response(JSON.stringify({ error: 'Invalid or expired mod code', invalidCode: true, message: 'Your mod code is invalid. Refresh it in Paimbnails settings.' }), {
+      return new Response(JSON.stringify({ error: 'Moderator/Admin privileges required', invalidCode: true, message: 'Only moderators and administrators can manage level thumbnails.' }), {
         status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
       });
     }
@@ -362,21 +364,6 @@ export async function handleUploadGIF(request, env, ctx) {
       }
     } else {
       key = `${path}/${levelId}_${thisId}.gif`;
-      const prefixes = [`${path}/${levelId}`, `${path}/gif/${levelId}`];
-      const cleanupKeys = [];
-      for (const prefix of prefixes) {
-        const list = await env.THUMBNAILS_BUCKET.list({ prefix: prefix });
-        for (const obj of list.objects) {
-          if (obj.key !== key) cleanupKeys.push(obj.key);
-        }
-      }
-      cleanupKeys.push(`${path}/${levelId}.webp`, `${path}/${levelId}.png`, `${path}/${levelId}.gif`);
-      const uniqueCleanup = [...new Set(cleanupKeys)];
-      if (uniqueCleanup.length > 0) {
-        const deletePromises = uniqueCleanup.map(k => env.THUMBNAILS_BUCKET.delete(k));
-        if (ctx) ctx.waitUntil(Promise.all(deletePromises));
-        else await Promise.all(deletePromises);
-      }
     }
 
     const existingVersion = await versionManager.getVersion(levelId);
@@ -392,14 +379,18 @@ export async function handleUploadGIF(request, env, ctx) {
       }
     });
 
+    let appendedVersion = null;
     if (!isProfile) {
-      const updateVersion = async () => {
-        await versionManager.update(levelId, thisId, 'gif', path, 'gif', {
-          uploadedBy: username || 'unknown', uploadedAt: new Date().toISOString()
-        });
-      };
-      if (ctx) ctx.waitUntil(updateVersion());
-      else await updateVersion();
+      const appendRes = await versionManager.appendVersion(levelId, thisId, 'gif', path, 'gif', {
+        uploadedBy: username || 'unknown',
+        uploadedAt: new Date().toISOString()
+      }, MAX_THUMBNAILS_PER_LEVEL);
+      appendedVersion = appendRes.appended;
+      for (const removed of appendRes.removed) {
+        const removedKey = buildThumbnailKey(levelId, removed);
+        if (ctx) ctx.waitUntil(env.THUMBNAILS_BUCKET.delete(removedKey));
+        else await env.THUMBNAILS_BUCKET.delete(removedKey);
+      }
 
       const updateLatest = async () => {
         const latestKey = 'data/system/latest_uploads.json';
@@ -415,6 +406,10 @@ export async function handleUploadGIF(request, env, ctx) {
     }
 
     const responseData = { success: true, message: 'GIF uploaded successfully (Moderator)', key, isUpdate };
+    if (appendedVersion) {
+      responseData.thumbnailId = appendedVersion.id;
+      responseData.position = appendedVersion.position;
+    }
     if (newModCode) responseData.newModCode = newModCode;
 
     // Invalidate CF Cache for /t/{levelId}
@@ -454,7 +449,8 @@ export async function handleDownload(request, env, ctx) {
 
   try {
     const vm = new VersionManager(env.SYSTEM_BUCKET);
-    const versionData = await vm.getVersion(levelId);
+    const versions = await vm.getAllVersions(levelId);
+    const versionData = versions.length > 0 ? versions[versions.length - 1] : null;
     if (versionData) {
       const storedFormat = versionData.format || 'webp';
       const storedPath = versionData.path || 'thumbnails';
@@ -637,8 +633,8 @@ export async function handleExists(request, env, ctx) {
   }
 
   const versionManager = new VersionManager(env.SYSTEM_BUCKET);
-  const versionData = await versionManager.getVersion(levelId);
-  if (versionData) {
+  const versionData = await versionManager.getAllVersions(levelId);
+  if (versionData.length > 0) {
     return new Response(JSON.stringify({ exists: true }), {
       status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
     });
@@ -668,44 +664,50 @@ export async function handleDeleteThumbnail(request, env, ctx) {
 
   try {
     const body = await request.json();
-    const { levelId, username } = body;
+    const { levelId, username, thumbnailId } = body;
     const accountID = parseInt(body.accountID || '0');
 
-    if (!levelId || !username) {
+    if (!levelId || !username || !thumbnailId) {
       return new Response(JSON.stringify({ error: 'Missing required fields' }), {
         status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
       });
     }
 
-    const authResult = await verifyModAuth(request, env, username, accountID);
+    const usernameLower = username.toLowerCase();
+    const authResult = await verifyModAuth(request, env, usernameLower, accountID);
     if (!authResult.authorized) {
       return new Response(JSON.stringify({ error: 'Not authorized - moderator only' }), {
         status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
       });
     }
+    const canManageThumbnails = await isModeratorOrAdmin(env, usernameLower);
+    if (!canManageThumbnails) {
+      return new Response(JSON.stringify({ error: 'Only moderators/admin can delete thumbnails' }), {
+        status: 403, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
+    }
 
     const versionManager = new VersionManager(env.SYSTEM_BUCKET);
-    const prefixes = [`thumbnails/${levelId}`, `thumbnails/gif/${levelId}`];
-    let keysToDelete = [];
-
-    for (const prefix of prefixes) {
-      const list = await env.THUMBNAILS_BUCKET.list({ prefix: prefix });
-      for (const obj of list.objects) {
-        const key = obj.key;
-        const cleanKey = key.replace(/^\//, '');
-        if (cleanKey.match(new RegExp(`^thumbnails/${levelId}(\\.|_)`)) ||
-          cleanKey.match(new RegExp(`^thumbnails/gif/${levelId}\\.`))) {
-          keysToDelete.push(key);
-        }
-      }
+    const currentVersions = await versionManager.getAllVersions(levelId);
+    const removedIndex = currentVersions.findIndex(v => String(v.id) === String(thumbnailId));
+    if (removedIndex < 0) {
+      return new Response(JSON.stringify({ error: 'Thumbnail ID not found for this level' }), {
+        status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
     }
-    keysToDelete.push(`thumbnails/${levelId}.webp`, `thumbnails/${levelId}.png`, `thumbnails/gif/${levelId}.gif`);
-    keysToDelete = [...new Set(keysToDelete)];
 
-    console.log(`[Delete] Deleting ${keysToDelete.length} files for level ${levelId}:`, keysToDelete);
-    for (const key of keysToDelete) await env.THUMBNAILS_BUCKET.delete(key);
+    const deleteResult = await versionManager.deleteVersion(levelId, thumbnailId);
+    if (!deleteResult.removed) {
+      return new Response(JSON.stringify({ error: 'Thumbnail ID not found for this level' }), {
+        status: 404, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
+    }
 
-    await versionManager.delete(levelId);
+    const removedKey = buildThumbnailKey(levelId, deleteResult.removed);
+    await env.THUMBNAILS_BUCKET.delete(removedKey);
+
+    const nextIndex = Math.max(0, Math.min(removedIndex, deleteResult.versions.length - 1));
+    const suggestedNext = deleteResult.versions[nextIndex] || null;
 
     // Invalidate CF Cache for /t/{levelId}
     const origin = new URL(request.url).origin;
@@ -716,10 +718,21 @@ export async function handleDeleteThumbnail(request, env, ctx) {
 
     const logKey = `data/logs/deleted/${levelId}-${Date.now()}.json`;
     await putR2Json(env.SYSTEM_BUCKET, logKey, {
-      levelId: parseInt(levelId), deletedBy: username, deletedAt: new Date().toISOString(), timestamp: Date.now()
+      levelId: parseInt(levelId),
+      deletedBy: username,
+      deletedThumbnailId: String(thumbnailId),
+      deletedAt: new Date().toISOString(),
+      timestamp: Date.now()
     });
 
-    return new Response(JSON.stringify({ success: true, message: 'Thumbnail deleted successfully' }), {
+    return new Response(JSON.stringify({
+      success: true,
+      message: 'Thumbnail deleted successfully',
+      deletedThumbnailId: String(thumbnailId),
+      remaining: deleteResult.versions.length,
+      suggestedNextThumbnailId: suggestedNext ? suggestedNext.id : null,
+      suggestedNextPosition: suggestedNext ? suggestedNext.position : null
+    }), {
       status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
     });
   } catch (error) {
@@ -752,18 +765,35 @@ export async function handleListThumbnails(request, env) {
     const path = v.path || 'thumbnails';
     const format = v.format || 'webp';
     const version = v.version;
+    const position = v.position || 1;
+    const id = v.id || version;
+    const uploadedBy = v.uploadedBy || 'Unknown';
+    const uploadedAt = v.uploadedAt || '';
 
     if (v.isLegacy) {
       let filename = `${levelId}.${format}`;
       if (v.id !== 'legacy_file') filename = `${levelId}_${v.id}.${format}`;
-      return { id: v.id, url: `${env.R2_PUBLIC_URL}/${path}/${filename}`, type: v.type, format };
+      return {
+        id,
+        thumbnailId: id,
+        position,
+        url: `${env.R2_PUBLIC_URL}/${path}/${filename}`,
+        type: v.type,
+        format,
+        creator: uploadedBy,
+        date: uploadedAt
+      };
     }
 
     return {
-      id: v.id,
+      id,
+      thumbnailId: id,
+      position,
       url: `${env.R2_PUBLIC_URL}/${path}/${levelId}_${version}.${format}`,
       type: v.type || (format === 'gif' ? 'gif' : 'static'),
-      format
+      format,
+      creator: uploadedBy,
+      date: uploadedAt
     };
   });
 
@@ -843,6 +873,16 @@ export async function handleGetThumbnailInfo(request, env) {
       success: true, levelId,
       url: `${env.R2_PUBLIC_URL}/${key}`,
       version: versionData, metadata,
+      thumbnails: versions.map(v => ({
+        id: v.id,
+        thumbnailId: v.id,
+        position: v.position,
+        format: v.format,
+        type: v.type || (v.format === 'gif' ? 'gif' : 'static'),
+        url: `${env.R2_PUBLIC_URL}/${(v.path || 'thumbnails').replace(/^\//, '')}/${levelId}_${v.version}.${v.format}`,
+        creator: v.uploadedBy || 'Unknown',
+        date: v.uploadedAt || ''
+      })),
       fileInfo: { size: head.size, uploadedAt: head.uploaded, contentType: head.httpMetadata?.contentType }
     }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } });
   } catch (error) {

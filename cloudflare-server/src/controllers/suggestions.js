@@ -160,7 +160,26 @@ export async function handleUploadUpdate(request, env) {
     const securityReject = rejectIfMalicious(buffer, mime, file.name || `update_${levelId}.${ext}`);
     if (securityReject) return securityReject;
 
-    const key = `updates/${levelId}.${ext}`;
+    const queueKey = `data/queue/updates/${levelId}.json`;
+    let queueData = await getR2Json(env.SYSTEM_BUCKET, queueKey);
+    let updates = [];
+    if (queueData) {
+      if (Array.isArray(queueData)) {
+        updates = queueData;
+      } else {
+        updates = [queueData];
+      }
+    }
+
+    if (updates.length >= 10) {
+      return new Response(JSON.stringify({ error: 'Update limit reached for this level (max 10)' }), {
+        status: 400, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
+    }
+
+    const uniqueId = Math.random().toString(36).substring(7);
+    const timestamp = Date.now();
+    const key = `updates/${levelId}_${timestamp}_${uniqueId}.${ext}`;
     await env.THUMBNAILS_BUCKET.put(key, buffer, {
       httpMetadata: { contentType: mime, cacheControl: NO_STORE_CACHE_CONTROL },
       customMetadata: {
@@ -170,12 +189,16 @@ export async function handleUploadUpdate(request, env) {
       }
     });
 
-    const queueKey = `data/queue/updates/${levelId}.json`;
-    await putR2Json(env.SYSTEM_BUCKET, queueKey, {
+    updates.push({
       levelId: parseInt(levelId), category: 'update', submittedBy: username,
-      timestamp: Date.now(), status: 'pending', note: 'Update proposal',
-      accountID, unauthenticated: accountID === 0
+      timestamp,
+      status: 'pending',
+      note: 'Update proposal',
+      accountID,
+      unauthenticated: accountID === 0,
+      filename: key
     });
+    await putR2Json(env.SYSTEM_BUCKET, queueKey, updates);
 
     return new Response(JSON.stringify({ success: true, message: 'Update uploaded successfully' }), {
       status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }

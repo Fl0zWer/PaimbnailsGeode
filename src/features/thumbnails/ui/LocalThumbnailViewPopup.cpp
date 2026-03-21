@@ -131,6 +131,12 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
 
     auto& thumb = m_thumbnails[index];
     std::string url = thumb.url;
+    if (m_leftArrow) m_leftArrow->setVisible(m_thumbnails.size() > 1);
+    if (m_rightArrow) m_rightArrow->setVisible(m_thumbnails.size() > 1);
+    if (m_counterLabel) {
+        m_counterLabel->setVisible(m_thumbnails.size() > 1);
+        m_counterLabel->setString(fmt::format("{}/{}", index + 1, m_thumbnails.size()).c_str());
+    }
 
     std::string username = "Unknown";
     if (auto gm = GameManager::get()) username = gm->m_playerName;
@@ -445,6 +451,12 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     m_rightArrow->setVisible(false);
     menu->addChild(m_rightArrow);
 
+    m_counterLabel = CCLabelBMFont::create("1/1", "bigFont.fnt");
+    m_counterLabel->setScale(0.4f);
+    m_counterLabel->setPosition({content.width / 2.f, 23.f});
+    m_counterLabel->setVisible(false);
+    this->m_mainLayer->addChild(m_counterLabel, 11);
+
     this->setTouchEnabled(true);
 
 #if defined(GEODE_IS_WINDOWS)
@@ -463,64 +475,22 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
         this->tryLoadFromMultipleSources(maxWidth, maxHeight, content, openedFromReport);
 
         WeakRef<LocalThumbnailViewPopup> self = this;
-        ThumbnailAPI::get().getThumbnailInfo(m_levelID, [self](bool success, std::string const& response) {
+        ThumbnailAPI::get().getThumbnails(m_levelID, [self](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
             auto popup = self.lock();
             if (!popup || !popup->isUiAlive()) return;
 
-            if (success) {
-                std::vector<ThumbnailAPI::ThumbnailInfo> thumbs;
-                auto res = matjson::parse(response);
-                if (res.isOk()) {
-                        auto json = res.unwrap();
-                        ThumbnailAPI::ThumbnailInfo info;
-                        bool found = false;
+            if (!success || thumbs.empty()) return;
 
-                        if (json.contains("url")) {
-                            info.url = json["url"].asString().unwrapOr("");
-                            found = true;
-                        } else {
-                            info.url = ThumbnailAPI::get().getThumbnailURL(popup->m_levelID);
-                        }
-
-                        if (json.contains("version") && json["version"].isObject()) {
-                            auto verObj = json["version"];
-                            if (verObj.contains("version")) info.id = verObj["version"].asString().unwrapOr("");
-                            if (verObj.contains("format")) info.format = verObj["format"].asString().unwrapOr("png");
-                        }
-
-                        if (json.contains("metadata") && json["metadata"].isObject()) {
-                            auto metaObj = json["metadata"];
-                            if (metaObj.contains("uploadedBy")) info.creator = metaObj["uploadedBy"].asString().unwrapOr("Unknown");
-                            if (metaObj.contains("uploadedAt")) info.date = metaObj["uploadedAt"].asString().unwrapOr("Unknown");
-                        }
-
-                        if (json.contains("fileInfo") && json["fileInfo"].isObject()) {
-                            auto fileObj = json["fileInfo"];
-                            if (fileObj.contains("contentType")) {
-                                std::string ct = fileObj["contentType"].asString().unwrapOr("");
-                                if (ct.find("gif") != std::string::npos) info.type = "gif";
-                                else info.type = "static";
-                            } else {
-                                info.type = "static";
-                            }
-                        } else {
-                            info.type = "static";
-                        }
-
-                        if (found || !info.id.empty()) {
-                            thumbs.push_back(info);
-                        }
-                    }
-
-                if (!thumbs.empty()) {
-                    popup->m_thumbnails = thumbs;
-                    if (popup->m_thumbnails.size() > 1) {
-                        if (popup->m_leftArrow) popup->m_leftArrow->setVisible(true);
-                        if (popup->m_rightArrow) popup->m_rightArrow->setVisible(true);
-                    }
-                    popup->setupRating();
-                }
+            popup->m_thumbnails = thumbs;
+            popup->m_currentIndex = 0;
+            if (popup->m_leftArrow) popup->m_leftArrow->setVisible(popup->m_thumbnails.size() > 1);
+            if (popup->m_rightArrow) popup->m_rightArrow->setVisible(popup->m_thumbnails.size() > 1);
+            if (popup->m_counterLabel) {
+                popup->m_counterLabel->setVisible(popup->m_thumbnails.size() > 1);
+                popup->m_counterLabel->setString(fmt::format("{}/{}", popup->m_currentIndex + 1, popup->m_thumbnails.size()).c_str());
             }
+            popup->loadThumbnailAt(popup->m_currentIndex);
+            popup->setupRating();
         });
     }
 
@@ -725,17 +695,19 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         m_settingsMenu->removeFromParent();
         m_settingsMenu = nullptr;
     }
-    if (m_leftArrow) {
-        m_leftArrow->removeFromParent();
-        m_leftArrow = nullptr;
-    }
-    if (m_rightArrow) {
-        m_rightArrow->removeFromParent();
-        m_rightArrow = nullptr;
-    }
-    if (m_counterLabel) {
-        m_counterLabel->removeFromParent();
-        m_counterLabel = nullptr;
+    if (!m_suggestions.empty()) {
+        if (m_leftArrow) {
+            m_leftArrow->removeFromParent();
+            m_leftArrow = nullptr;
+        }
+        if (m_rightArrow) {
+            m_rightArrow->removeFromParent();
+            m_rightArrow = nullptr;
+        }
+        if (m_counterLabel) {
+            m_counterLabel->removeFromParent();
+            m_counterLabel = nullptr;
+        }
     }
 
     m_thumbnailTexture = tex;
@@ -1156,14 +1128,21 @@ void LocalThumbnailViewPopup::onDeleteReportedThumb(CCObject*) {
         return;
     }
 
-    ThumbnailAPI::get().checkModeratorAccount(username, accountID, [levelID, username, accountID, loading](bool isMod, bool isAdmin) {
+    WeakRef<LocalThumbnailViewPopup> self = this;
+    ThumbnailAPI::get().checkModeratorAccount(username, accountID, [self, levelID, username, accountID, loading](bool isMod, bool isAdmin) {
+        auto popup = self.lock();
+        if (!popup) return;
         if (!isMod && !isAdmin) {
             if (loading) loading->removeFromParent();
             PaimonNotify::create(Localization::get().getString("level.delete_moderator_only").c_str(), NotificationIcon::Error)->show();
             return;
         }
 
-        ThumbnailAPI::get().deleteThumbnail(levelID, username, accountID, [levelID, loading](bool success, std::string const& msg) {
+        std::string thumbnailId = "";
+        if (popup->m_currentIndex >= 0 && popup->m_currentIndex < static_cast<int>(popup->m_thumbnails.size())) {
+            thumbnailId = popup->m_thumbnails[popup->m_currentIndex].id;
+        }
+        ThumbnailAPI::get().deleteThumbnail(levelID, thumbnailId, username, accountID, [levelID, loading](bool success, std::string const& msg) {
             if (loading) loading->removeFromParent();
 
             if (success) {
@@ -1313,7 +1292,11 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                         popup->m_mainLayer->addChild(spinner2, 100);
                         Ref<geode::LoadingSpinner> loading = spinner2;
 
-                        ThumbnailAPI::get().deleteThumbnail(levelID, username, accountID, [self, loading](bool success, std::string msg) {
+                        std::string thumbnailId = "";
+                        if (popup->m_currentIndex >= 0 && popup->m_currentIndex < static_cast<int>(popup->m_thumbnails.size())) {
+                            thumbnailId = popup->m_thumbnails[popup->m_currentIndex].id;
+                        }
+                        ThumbnailAPI::get().deleteThumbnail(levelID, thumbnailId, username, accountID, [self, loading](bool success, std::string msg) {
                             if (loading) loading->removeFromParent();
 
                             auto popup = self.lock();
@@ -1321,7 +1304,20 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
 
                             if (success) {
                                 PaimonNotify::create(Localization::get().getString("level.thumbnail_deleted"), NotificationIcon::Success)->show();
-                                popup->onClose(nullptr);
+                                ThumbnailAPI::get().getThumbnails(levelID, [self](bool ok, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
+                                    auto popup = self.lock();
+                                    if (!popup || !popup->isUiAlive()) return;
+                                    if (!ok || thumbs.empty()) {
+                                        popup->onClose(nullptr);
+                                        return;
+                                    }
+                                    popup->m_thumbnails = thumbs;
+                                    if (popup->m_currentIndex >= static_cast<int>(popup->m_thumbnails.size())) {
+                                        popup->m_currentIndex = static_cast<int>(popup->m_thumbnails.size()) - 1;
+                                    }
+                                    if (popup->m_currentIndex < 0) popup->m_currentIndex = 0;
+                                    popup->loadThumbnailAt(popup->m_currentIndex);
+                                });
                             } else {
                                 PaimonNotify::create(msg.c_str(), NotificationIcon::Error)->show();
                             }

@@ -241,7 +241,7 @@ public:
      * @param username Moderator username
      * @param callback Callback with success status
      */
-    void deleteThumbnail(int levelId, std::string const& username, int accountID, ActionCallback callback);
+    void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback);
     
     // configuracion
     void setServerEnabled(bool enabled);

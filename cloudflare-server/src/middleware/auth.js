@@ -3,6 +3,7 @@
  */
 import { corsHeaders } from './cors.js';
 import { getR2Json, putR2Json } from '../services/storage.js';
+import { getModerators } from '../services/moderation.js';
 
 export const ADMIN_USERS = ['flozwer', 'gabriv4', 'alvaroeter'];
 
@@ -43,6 +44,14 @@ export async function verifyModAuth(request, env, username, accountID) {
 
   console.log(`[Auth] Authorized ${username} with mod-code ${modCode.substring(0, 8)}...`);
   return { authorized: true };
+}
+
+export async function isModeratorOrAdmin(env, username) {
+  const user = (username || '').toLowerCase().trim();
+  if (!user) return false;
+  if (ADMIN_USERS.includes(user)) return true;
+  const moderators = await getModerators(env.SYSTEM_BUCKET);
+  return moderators.includes(user);
 }
 
 export async function verifyModAuthFromBody(request, env, body) {

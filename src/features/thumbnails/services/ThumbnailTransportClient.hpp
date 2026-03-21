@@ -46,7 +46,7 @@ public:
     // verificar existencia
     void checkExists(int levelId, ExistsCallback callback);
     // borrar miniatura (mod)
-    void deleteThumbnail(int levelId, std::string const& username, int accountID,
+    void deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID,
                          ActionCallback callback);
     // votos
     void getRating(int levelId, std::string const& username,

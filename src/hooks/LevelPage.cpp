@@ -58,6 +58,10 @@ class $modify(PaimonLevelPage, LevelPage) {
         Ref<CCNode> m_thumbClipper = nullptr;
         Ref<CCSprite> m_thumbSprite = nullptr;
         int m_levelID = 0;
+        std::vector<ThumbnailAPI::ThumbnailInfo> m_thumbnails;
+        int m_currentThumbnailIndex = 0;
+        float m_cycleTimer = 0.f;
+        int m_cycleToken = 0;
     };
 
     $override
@@ -67,22 +71,68 @@ class $modify(PaimonLevelPage, LevelPage) {
         if (!level) return;
         
         m_fields->m_levelID = level->m_levelID;
+        m_fields->m_cycleTimer = 0.f;
+        m_fields->m_currentThumbnailIndex = 0;
+        this->unschedule(schedule_selector(PaimonLevelPage::updateGalleryCycle));
         
         // solo id > 0
         if (level->m_levelID <= 0) return;
         
         if (this->m_levelDisplay) {
-            std::string fileName = fmt::format("{}.png", level->m_levelID);
-            Ref<LevelPage> safeRef = this;
             int capturedLevelID = level->m_levelID;
-            ThumbnailLoader::get().requestLoad(level->m_levelID, fileName, [safeRef, capturedLevelID](CCTexture2D* tex, bool success) {
+            int token = ++m_fields->m_cycleToken;
+            Ref<LevelPage> safeRef = this;
+            ThumbnailAPI::get().getThumbnails(capturedLevelID, [safeRef, capturedLevelID, token](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
                 auto* self = static_cast<PaimonLevelPage*>(safeRef.data());
-                if (!self->getParent()) return;
-                if (success && tex && self->m_fields->m_levelID == capturedLevelID) {
-                    self->applyThumbnail(tex);
+                if (!self->getParent() || self->m_fields->m_cycleToken != token || self->m_fields->m_levelID != capturedLevelID) return;
+
+                if (success && !thumbs.empty()) {
+                    self->m_fields->m_thumbnails = thumbs;
+                    self->loadThumbnailAt(0);
+                    if (thumbs.size() >= 2 && Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle")) {
+                        self->schedule(schedule_selector(PaimonLevelPage::updateGalleryCycle), 0.f);
+                    }
+                    return;
                 }
-            }, 5);
+
+                std::string fileName = fmt::format("{}.png", capturedLevelID);
+                ThumbnailLoader::get().requestLoad(capturedLevelID, fileName, [safeRef, capturedLevelID](CCTexture2D* tex, bool loadSuccess) {
+                    auto* self = static_cast<PaimonLevelPage*>(safeRef.data());
+                    if (!self->getParent() || self->m_fields->m_levelID != capturedLevelID) return;
+                    if (loadSuccess && tex) self->applyThumbnail(tex);
+                }, 5);
+            });
         }
+    }
+
+    $override
+    void onExit() {
+        this->unschedule(schedule_selector(PaimonLevelPage::updateGalleryCycle));
+        m_fields->m_cycleToken++;
+        LevelPage::onExit();
+    }
+
+    void updateGalleryCycle(float dt) {
+        if (m_fields->m_thumbnails.size() < 2) return;
+        m_fields->m_cycleTimer += dt;
+        if (m_fields->m_cycleTimer < 3.0f) return;
+        m_fields->m_cycleTimer = 0.f;
+        int next = (m_fields->m_currentThumbnailIndex + 1) % static_cast<int>(m_fields->m_thumbnails.size());
+        loadThumbnailAt(next);
+    }
+
+    void loadThumbnailAt(int index) {
+        if (index < 0 || index >= static_cast<int>(m_fields->m_thumbnails.size())) return;
+        m_fields->m_currentThumbnailIndex = index;
+        int capturedLevelID = m_fields->m_levelID;
+        int token = m_fields->m_cycleToken;
+        std::string url = m_fields->m_thumbnails[index].url;
+        Ref<LevelPage> safeRef = this;
+        ThumbnailAPI::get().downloadFromUrl(url, [safeRef, capturedLevelID, token](bool success, CCTexture2D* tex) {
+            auto* self = static_cast<PaimonLevelPage*>(safeRef.data());
+            if (!self->getParent() || self->m_fields->m_cycleToken != token || self->m_fields->m_levelID != capturedLevelID) return;
+            if (success && tex) self->applyThumbnail(tex);
+        });
     }
     
     void applyThumbnail(CCTexture2D* tex) {

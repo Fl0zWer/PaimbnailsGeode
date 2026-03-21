@@ -8,4 +8,5 @@ struct ThumbnailInfo {
     std::string format;
     std::string creator;
     std::string date;
+    int position = 1;
 };
