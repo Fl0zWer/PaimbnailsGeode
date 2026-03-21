@@ -1296,7 +1296,7 @@ void LocalThumbnailViewPopup::onDeleteThumbnail(CCObject*) {
                         if (popup->m_currentIndex >= 0 && popup->m_currentIndex < static_cast<int>(popup->m_thumbnails.size())) {
                             thumbnailId = popup->m_thumbnails[popup->m_currentIndex].id;
                         }
-                        ThumbnailAPI::get().deleteThumbnail(levelID, thumbnailId, username, accountID, [self, loading](bool success, std::string msg) {
+                        ThumbnailAPI::get().deleteThumbnail(levelID, thumbnailId, username, accountID, [self, loading, levelID](bool success, std::string msg) {
                             if (loading) loading->removeFromParent();
 
                             auto popup = self.lock();
