@@ -1,0 +1,40 @@
+{
+  "name": "paimon-thumbnails-server",
+  "main": "src/index.js",
+  "compatibility_date": "2024-11-13",
+
+  // Environment variables
+  "vars": {
+    "API_KEY": "074b91c9-6631-4670-a6f08a2ce970-0183-471b",
+    "MAX_UPLOAD_SIZE": "52428800",
+    "ALLOWED_ORIGINS": "*",
+    "BUNNY_ENDPOINT": "https://storage.bunnycdn.com",
+    "BUNNY_ZONE_NAME": "paimbnails",
+    "BUNNY_ACCESS_KEY": "paimbnails",
+    "BUNNY_SECRET_KEY": "074b91c9-6631-4670-a6f08a2ce970-0183-471b",
+    "R2_PUBLIC_URL": "https://paimbnails.b-cdn.net",
+    "DISCORD_BOT_WEBHOOK_URL": "https://paimbnails-server.onrender.com/webhook/event"
+  },
+
+  // Environment overrides
+  "env": {
+    "dev": {
+      "name": "paimon-thumbnails-server-dev"
+    },
+    "production": {
+      "name": "paimon-thumbnails-server",
+      "vars": {
+        "API_KEY": "074b91c9-6631-4670-a6f08a2ce970-0183-471b",
+        "MAX_UPLOAD_SIZE": "52428800",
+        "ALLOWED_ORIGINS": "*",
+        "BUNNY_ENDPOINT": "https://storage.bunnycdn.com",
+        "BUNNY_ZONE_NAME": "paimbnails",
+        "BUNNY_ACCESS_KEY": "paimbnails",
+        "BUNNY_SECRET_KEY": "074b91c9-6631-4670-a6f08a2ce970-0183-471b",
+        "R2_PUBLIC_URL": "https://paimbnails.b-cdn.net",
+        "DISCORD_BOT_WEBHOOK_URL": "https://paimbnails-server.onrender.com/webhook/event"
+      }
+    }
+  }
+}
+

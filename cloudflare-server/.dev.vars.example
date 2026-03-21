@@ -1,0 +1,15 @@
+# Variables de entorno para desarrollo local
+# Este archivo NO debe commitearse a git
+
+# API Key para autenticación (debe coincidir con wrangler.jsonc)
+API_KEY=074b91c9-6631-4670-a6f08a2ce970-0183-471b
+
+# Tamaño máximo de upload (en bytes)
+MAX_UPLOAD_SIZE=10485760
+
+# Orígenes permitidos para CORS
+ALLOWED_ORIGINS=*
+
+# R2 Configuration
+R2_ENDPOINT=https://0ae6862409679847f3a0d2d4171928c6.r2.cloudflarestorage.com
+R2_BUCKET=image-converter

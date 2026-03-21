@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paimon Thumbnails - Gallery</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+
+        h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            padding: 15px 30px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .search-bar {
+            background: white;
+            padding: 15px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .search-bar input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.3s;
+        }
+
+        .search-bar input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+        }
+
+        .filter-btn:hover {
+            border-color: #667eea;
+            background: #f5f7ff;
+        }
+
+        .filter-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+
+        .thumbnail-card {
+            background: white;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: transform 0.3s, box-shadow 0.3s;
+            cursor: pointer;
+        }
+
+        .thumbnail-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 12px rgba(0,0,0,0.2);
+        }
+
+        .thumbnail-image {
+            width: 100%;
+            aspect-ratio: 16/9;
+            object-fit: cover;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .thumbnail-info {
+            padding: 15px;
+        }
+
+        .level-id {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+
+        .uploader-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .uploader-icon {
+            width: 20px;
+            height: 20px;
+            background: #667eea;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .timestamp {
+            font-size: 0.8rem;
+            color: #999;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .badge-gif {
+            background: #ffd700;
+            color: #333;
+        }
+
+        .badge-webp {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .badge-moderator {
+            background: #e91e63;
+            color: white;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 60px 20px;
+            color: white;
+            font-size: 1.2rem;
+        }
+
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top-color: white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: rgba(244, 67, 54, 0.9);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 40px;
+            flex-wrap: wrap;
+        }
+
+        .pagination button {
+            padding: 10px 20px;
+            border: none;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+
+        .pagination button:hover:not(:disabled) {
+            background: #667eea;
+            color: white;
+        }
+
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .pagination button.active {
+            background: #667eea;
+            color: white;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+
+            .gallery {
+                grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+                gap: 15px;
+            }
+
+            .stats {
+                gap: 15px;
+            }
+
+            .stat-card {
+                padding: 10px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 Paimon Thumbnails</h1>
+            <p class="subtitle">Community-created level thumbnails for Geometry Dash</p>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-number" id="total-count">-</span>
+                    <span class="stat-label">Total Thumbnails</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="gif-count">-</span>
+                    <span class="stat-label">Animated GIFs</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-number" id="contributor-count">-</span>
+                    <span class="stat-label">Contributors</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="search-bar">
+            <input type="text" id="search-input" placeholder="Search by level ID or uploader name...">
+            <div class="filters">
+                <button class="filter-btn active" data-filter="all">All</button>
+                <button class="filter-btn" data-filter="gif">GIFs Only</button>
+                <button class="filter-btn" data-filter="webp">WebP Only</button>
+                <button class="filter-btn" data-filter="moderator">Moderator Uploads</button>
+            </div>
+        </div>
+
+        <div id="gallery-container">
+            <div class="loading">
+                <div class="loading-spinner"></div>
+                <p>Loading thumbnails...</p>
+            </div>
+        </div>
+
+        <div class="pagination" id="pagination"></div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let allThumbnails = [];
+        let filteredThumbnails = [];
+        let currentFilter = 'all';
+        let currentPage = 1;
+        const itemsPerPage = 24;
+
+        async function loadThumbnails() {
+            try {
+                const response = await fetch(`${API_BASE}/api/gallery/list`);
+                if (!response.ok) throw new Error('Failed to fetch thumbnails');
+                
+                const data = await response.json();
+                allThumbnails = data.thumbnails || [];
+                
+                updateStats();
+                applyFilter();
+            } catch (error) {
+                console.error('Error loading thumbnails:', error);
+                document.getElementById('gallery-container').innerHTML = `
+                    <div class="error">
+                        <h3>Failed to load thumbnails</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function updateStats() {
+            const gifCount = allThumbnails.filter(t => t.format === 'gif').length;
+            const contributors = new Set(allThumbnails.map(t => t.uploadedBy)).size;
+
+            document.getElementById('total-count').textContent = allThumbnails.length;
+            document.getElementById('gif-count').textContent = gifCount;
+            document.getElementById('contributor-count').textContent = contributors;
+        }
+
+        function applyFilter() {
+            const searchTerm = document.getElementById('search-input').value.toLowerCase();
+            
+            filteredThumbnails = allThumbnails.filter(thumb => {
+                const matchesSearch = 
+                    thumb.levelId.toString().includes(searchTerm) ||
+                    (thumb.uploadedBy || '').toLowerCase().includes(searchTerm);
+
+                const matchesFilter = 
+                    currentFilter === 'all' ||
+                    (currentFilter === 'gif' && thumb.format === 'gif') ||
+                    (currentFilter === 'webp' && thumb.format === 'webp') ||
+                    (currentFilter === 'moderator' && thumb.isModerator);
+
+                return matchesSearch && matchesFilter;
+            });
+
+            currentPage = 1;
+            renderGallery();
+            renderPagination();
+        }
+
+        function renderGallery() {
+            const container = document.getElementById('gallery-container');
+            const start = (currentPage - 1) * itemsPerPage;
+            const end = start + itemsPerPage;
+            const pageItems = filteredThumbnails.slice(start, end);
+
+            if (pageItems.length === 0) {
+                container.innerHTML = `
+                    <div class="loading">
+                        <p>No thumbnails found</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="gallery">
+                    ${pageItems.map(thumb => createThumbnailCard(thumb)).join('')}
+                </div>
+            `;
+        }
+
+        function createThumbnailCard(thumb) {
+            const ext = thumb.format === 'gif' ? 'gif' : 'webp';
+            const imageUrl = `${API_BASE}/t/${thumb.levelId}.${ext}`;
+            const uploadDate = new Date(thumb.uploadedAt || Date.now()).toLocaleDateString();
+            const uploaderInitial = (thumb.uploadedBy || 'U')[0].toUpperCase();
+
+            return `
+                <div class="thumbnail-card" onclick="window.open('https://gdbrowser.com/${thumb.levelId}', '_blank')">
+                    <img class="thumbnail-image" 
+                         src="${imageUrl}" 
+                         alt="Level ${thumb.levelId}"
+                         loading="lazy"
+                         onerror="this.style.background='linear-gradient(135deg, #667eea 0%, #764ba2 100%)'; this.alt='Failed to load'">
+                    <div class="thumbnail-info">
+                        <div class="level-id">Level ${thumb.levelId}</div>
+                        <div class="uploader-info">
+                            <div class="uploader-icon">${uploaderInitial}</div>
+                            <span>${thumb.uploadedBy || 'Unknown'}</span>
+                        </div>
+                        <div class="timestamp">${uploadDate}</div>
+                        <div>
+                            ${thumb.format === 'gif' ? '<span class="badge badge-gif">GIF</span>' : '<span class="badge badge-webp">WebP</span>'}
+                            ${thumb.isModerator ? '<span class="badge badge-moderator">Moderator</span>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderPagination() {
+            const totalPages = Math.ceil(filteredThumbnails.length / itemsPerPage);
+            const pagination = document.getElementById('pagination');
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let buttons = [];
+            
+            buttons.push(`<button ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})">Previous</button>`);
+            
+            for (let i = 1; i <= Math.min(totalPages, 5); i++) {
+                buttons.push(`<button class="${currentPage === i ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`);
+            }
+            
+            if (totalPages > 5) {
+                buttons.push(`<button disabled>...</button>`);
+                buttons.push(`<button class="${currentPage === totalPages ? 'active' : ''}" onclick="changePage(${totalPages})">${totalPages}</button>`);
+            }
+            
+            buttons.push(`<button ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})">Next</button>`);
+
+            pagination.innerHTML = buttons.join('');
+        }
+
+        function changePage(page) {
+            currentPage = page;
+            renderGallery();
+            renderPagination();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Event Listeners
+        document.getElementById('search-input').addEventListener('input', applyFilter);
+
+        document.querySelectorAll('.filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentFilter = btn.dataset.filter;
+                applyFilter();
+            });
+        });
+
+        // Initialize
+        loadThumbnails();
+    </script>
+</body>
+</html>

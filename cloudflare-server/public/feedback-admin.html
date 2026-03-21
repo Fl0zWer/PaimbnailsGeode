@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Paimon Feedback Admin</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #020203;
+            --card-bg: #18181b;
+            --card-border: #27272a;
+            --primary: #8b5cf6;
+            --text-main: #ffffff;
+            --text-muted: #a1a1aa;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding: 40px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 { margin-bottom: 24px; }
+
+        .auth-box {
+            margin-bottom: 32px;
+            display: flex;
+            gap: 12px;
+        }
+
+        input {
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--card-border);
+            background: var(--card-bg);
+            color: white;
+            width: 300px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+
+        .feedback-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .badge.suggestion { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+        .badge.bug { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+
+        .timestamp {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        h3 { margin-bottom: 8px; font-size: 1.1rem; }
+        
+        .username {
+            font-size: 0.85rem;
+            color: var(--primary);
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        p {
+            color: #d4d4d8;
+            font-size: 0.95rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>Feedback Admin</h1>
+    
+    <div class="auth-box">
+        <input type="password" id="apiKey" placeholder="Enter API Key">
+        <button onclick="loadFeedback()">Load Feedback</button>
+    </div>
+
+    <div id="feedbackList" class="feedback-grid"></div>
+
+    <script>
+        async function loadFeedback() {
+            const apiKey = document.getElementById('apiKey').value;
+            const container = document.getElementById('feedbackList');
+            
+            if (!apiKey) {
+                alert('Please enter API Key');
+                return;
+            }
+
+            container.innerHTML = '<p>Loading...</p>';
+
+            try {
+                const response = await fetch('/api/feedback/list', {
+                    headers: { 'X-API-Key': apiKey }
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) throw new Error(data.error || 'Failed to load');
+
+                container.innerHTML = '';
+                
+                if (data.items.length === 0) {
+                    container.innerHTML = '<p>No feedback found.</p>';
+                    return;
+                }
+
+                data.items.forEach(item => {
+                    const date = new Date(item.timestamp).toLocaleString();
+                    const card = document.createElement('div');
+                    card.className = 'card';
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <span class="badge ${item.type}">${item.type}</span>
+                            <span class="timestamp">${date}</span>
+                        </div>
+                        <h3>${escapeHtml(item.title)}</h3>
+                        <span class="username">By: ${escapeHtml(item.username)}</span>
+                        <p>${escapeHtml(item.description)}</p>
+                    `;
+                    container.appendChild(card);
+                });
+
+            } catch (error) {
+                container.innerHTML = `<p style="color: #ef4444">Error: ${error.message}</p>`;
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

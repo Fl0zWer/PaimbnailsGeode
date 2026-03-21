@@ -1,0 +1,64 @@
+name = "paimon-thumbnails-server"
+main = "src/index.js"
+compatibility_date = "2024-11-13"
+
+# R2 bucket binding - REMOVED
+# [[r2_buckets]]
+# binding = "THUMBNAILS_BUCKET"
+# bucket_name = "image-converter"
+
+# [[r2_buckets]]
+# binding = "SYSTEM_BUCKET"
+# bucket_name = "sistemthumbnails"
+
+# Environment variables
+[vars]
+API_KEY = "074b91c9-6631-4670-a6f08a2ce970-0183-471b"
+MAX_UPLOAD_SIZE = "52428800"  # 50MB in bytes
+ALLOWED_ORIGINS = "*"
+# R2_ENDPOINT = "https://0ae6862409679847f3a0d2d4171928c6.r2.cloudflarestorage.com"
+# R2_BUCKET = "image-converter"
+# Bunny.net Configuration
+BUNNY_ENDPOINT = "https://storage.bunnycdn.com"
+BUNNY_ZONE_NAME = "paimbnails"
+BUNNY_ACCESS_KEY = "paimbnails"
+BUNNY_SECRET_KEY = "074b91c9-6631-4670-a6f08a2ce970-0183-471b"
+R2_PUBLIC_URL = "https://paimbnails.b-cdn.net"
+
+# Development environment
+[env.dev]
+name = "paimon-thumbnails-server-dev"
+
+# [[env.dev.r2_buckets]]
+# binding = "THUMBNAILS_BUCKET"
+# bucket_name = "image-converter"
+
+# [[env.dev.r2_buckets]]
+# binding = "SYSTEM_BUCKET"
+# bucket_name = "sistemthumbnails"
+
+# Production environment
+[env.production]
+name = "paimon-thumbnails-server"
+# Use workers.dev (no routes)
+
+[env.production.vars]
+API_KEY = "074b91c9-6631-4670-a6f08a2ce970-0183-471b"
+MAX_UPLOAD_SIZE = "52428800"
+ALLOWED_ORIGINS = "*"
+# R2_ENDPOINT = "https://0ae6862409679847f3a0d2d4171928c6.r2.cloudflarestorage.com"
+# R2_BUCKET = "image-converter"
+# Bunny.net Configuration
+BUNNY_ENDPOINT = "https://storage.bunnycdn.com"
+BUNNY_ZONE_NAME = "paimbnails"
+BUNNY_ACCESS_KEY = "paimbnails"
+BUNNY_SECRET_KEY = "074b91c9-6631-4670-a6f08a2ce970-0183-471b"
+R2_PUBLIC_URL = "https://paimbnails.b-cdn.net"
+
+# [[env.production.r2_buckets]]
+# binding = "THUMBNAILS_BUCKET"
+# bucket_name = "image-converter"
+
+# [[env.production.r2_buckets]]
+# binding = "SYSTEM_BUCKET"
+# bucket_name = "sistemthumbnails"
