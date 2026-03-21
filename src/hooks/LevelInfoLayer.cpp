@@ -93,6 +93,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         int m_galleryToken = 0;
         int m_bgRequestToken = 0;
         int m_invalidationListenerId = 0;
+        Ref<CCClippingNode> m_thumbClip = nullptr;
+        CCSize m_thumbFrameSize = {0, 0};
     };
     
     void applyThumbnailBackground(CCTexture2D* tex, int32_t levelID) {
@@ -114,6 +116,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         auto bgStyle = geode::Mod::get()->getSettingValue<std::string>("levelinfo-background-style");
         int intensity = std::clamp(static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("levelinfo-effect-intensity")), 1, 10);
         auto win = CCDirector::sharedDirector()->getWinSize();
+        CCSize frameSize = m_fields->m_thumbClip ? m_fields->m_thumbFrameSize : win;
+        CCNode* thumbParent = m_fields->m_thumbClip ? static_cast<CCNode*>(m_fields->m_thumbClip.data()) : static_cast<CCNode*>(this);
 
         // tabla de mapeo estilo -> shader/flags (scope de funcion, accesible por applyEffects Y extra-styles)
         struct ShaderEntry {
@@ -149,15 +153,15 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         };
 
         // lambda efectos
-        auto applyEffects = [this, &bgStyle, &intensity, &win, &tex, &lookupShader](CCSprite*& sprite, bool isGIF) {
+        auto applyEffects = [this, &bgStyle, &intensity, frameSize, &tex, &lookupShader](CCSprite*& sprite, bool isGIF) {
             if (!sprite) return;
 
             // scale + pos inicial
-            float scaleX = win.width / sprite->getContentSize().width;
-            float scaleY = win.height / sprite->getContentSize().height;
+            float scaleX = frameSize.width / sprite->getContentSize().width;
+            float scaleY = frameSize.height / sprite->getContentSize().height;
             float scale = std::max(scaleX, scaleY);
             sprite->setScale(scale);
-            sprite->setPosition({win.width / 2.0f, win.height / 2.0f});
+            sprite->setPosition({frameSize.width / 2.0f, frameSize.height / 2.0f});
             sprite->setAnchorPoint({0.5f, 0.5f});
 
             if (bgStyle == "normal") {
@@ -174,13 +178,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                          float intensityVal = (intensity - 1) / 9.0f;
                          if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) ags->m_intensity = intensityVal;
                          else shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), intensityVal);
-                         shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                         shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), frameSize.width, frameSize.height);
                      }
                 } else {
                     float t = (intensity - 1) / 9.0f;
                     float pixelFactor = 0.5f - (t * 0.47f);
-                    int renderWidth = std::max(32, static_cast<int>(win.width * pixelFactor));
-                    int renderHeight = std::max(32, static_cast<int>(win.height * pixelFactor));
+                    int renderWidth = std::max(32, static_cast<int>(frameSize.width * pixelFactor));
+                    int renderHeight = std::max(32, static_cast<int>(frameSize.height * pixelFactor));
                     auto renderTex = CCRenderTexture::create(renderWidth, renderHeight);
                     if (renderTex) {
                         float renderScale = std::min(
@@ -196,11 +200,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         auto pixelTexture = renderTex->getSprite()->getTexture();
                         sprite = CCSprite::createWithTexture(pixelTexture);
                         if (sprite) {
-                            float finalScale = std::max(win.width / renderWidth, win.height / renderHeight);
+                            float finalScale = std::max(frameSize.width / renderWidth, frameSize.height / renderHeight);
                             sprite->setScale(finalScale);
                             sprite->setFlipY(true);
                             sprite->setAnchorPoint({0.5f, 0.5f});
-                            sprite->setPosition({win.width / 2.0f, win.height / 2.0f});
+                            sprite->setPosition({frameSize.width / 2.0f, frameSize.height / 2.0f});
                             ccTexParams params{GL_NEAREST, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
                             pixelTexture->setTexParameters(&params);
                         }
@@ -217,11 +221,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                          float intensityVal = (intensity - 1) / 9.0f;
                          if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) ags->m_intensity = intensityVal;
                          else shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), intensityVal);
-                         shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                         shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), frameSize.width, frameSize.height);
                      }
                 } else {
-                    sprite = Shaders::createBlurredSprite(tex, win, static_cast<float>(intensity));
-                    if (sprite) sprite->setPosition({win.width / 2.0f, win.height / 2.0f});
+                    sprite = Shaders::createBlurredSprite(tex, frameSize, static_cast<float>(intensity));
+                    if (sprite) sprite->setPosition({frameSize.width / 2.0f, frameSize.height / 2.0f});
                 }
             }
             else {
@@ -237,7 +241,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                         shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), val);
                     }
                     if (useScreenSize) {
-                        shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                        shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), frameSize.width, frameSize.height);
                     }
                     if (needsTime) {
                         shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_time"), 0.0f);
@@ -255,12 +259,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             
             Ref<CCNode> oldBg = m_fields->m_pixelBg;
             if (!oldBg) {
-                oldBg = this->getChildByID("paimon-levelinfo-pixel-bg"_spr);
+                oldBg = thumbParent->getChildByID("paimon-levelinfo-pixel-bg"_spr);
             }
             
             finalSprite->setZOrder(-1);
             finalSprite->setID("paimon-levelinfo-pixel-bg"_spr);
-            this->addChild(finalSprite);
+            thumbParent->addChild(finalSprite);
             m_fields->m_pixelBg = finalSprite;
 
             // crossfade: nuevo fondo entra con fade-in, viejo sale con fade-out
@@ -306,10 +310,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 auto extraSpr = CCSprite::createWithTexture(tex);
                 if (!extraSpr) continue;
 
-                float sx = win.width / extraSpr->getContentSize().width;
-                float sy = win.height / extraSpr->getContentSize().height;
+                float sx = frameSize.width / extraSpr->getContentSize().width;
+                float sy = frameSize.height / extraSpr->getContentSize().height;
                 extraSpr->setScale(std::max(sx, sy));
-                extraSpr->setPosition({win.width / 2.0f, win.height / 2.0f});
+                extraSpr->setPosition({frameSize.width / 2.0f, frameSize.height / 2.0f});
                 extraSpr->setAnchorPoint({0.5f, 0.5f});
                 extraSpr->setOpacity(180); // semi-transparent overlay blend
 
@@ -318,7 +322,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 eshader->setUniformsForBuiltins();
                 eshader->setUniformLocationWith1f(eshader->getUniformLocationForName("u_intensity"), eval);
                 if (eScreenSize) {
-                    eshader->setUniformLocationWith2f(eshader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                    eshader->setUniformLocationWith2f(eshader->getUniformLocationForName("u_screenSize"), frameSize.width, frameSize.height);
                 }
                 if (eNeedsTime) {
                     eshader->setUniformLocationWith1f(eshader->getUniformLocationForName("u_time"), 0.0f);
@@ -326,7 +330,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 }
 
                 extraSpr->setZOrder(-1);
-                this->addChild(extraSpr);
+                thumbParent->addChild(extraSpr);
                 m_fields->m_extraBgSprites.push_back(extraSpr);
             }
         }
@@ -347,8 +351,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                      // quitar fondo estatico
                      if (layer->m_fields->m_pixelBg) {
                          layer->m_fields->m_pixelBg->removeFromParent();
-                     } else if (auto old = layer->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
-                         old->removeFromParent();
+                     } else {
+                         CCNode* gifParent = layer->m_fields->m_thumbClip ? static_cast<CCNode*>(layer->m_fields->m_thumbClip.data()) : static_cast<CCNode*>(layer);
+                         if (auto old = gifParent->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
+                             old->removeFromParent();
+                         }
                      }
                      
                      // efectos al gif
@@ -358,14 +365,18 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                      anim->setZOrder(-1);
                      anim->setID("paimon-levelinfo-pixel-bg"_spr);
                      
-                     layer->addChild(anim);
+                     if (layer->m_fields->m_thumbClip) {
+                         layer->m_fields->m_thumbClip->addChild(anim);
+                     } else {
+                         layer->addChild(anim);
+                     }
                      layer->m_fields->m_pixelBg = anim;
                  }
              });
         }
 
         // limpiar overlay anterior para evitar acumulacion de capas
-        if (auto oldOverlay = this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
+        if (auto oldOverlay = thumbParent->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
             oldOverlay->removeFromParent();
         }
         // overlay — oscuridad configurable
@@ -373,12 +384,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         darknessVal = std::max(0, std::min(50, darknessVal));
         GLubyte overlayAlpha = static_cast<GLubyte>((darknessVal / 50.0f) * 255.0f);
         auto overlay = CCLayerColor::create({0,0,0,overlayAlpha});
-        overlay->setContentSize(win);
+        overlay->setContentSize(frameSize);
         overlay->setAnchorPoint({0,0});
         overlay->setPosition({0,0});
         overlay->setZOrder(-1);
         overlay->setID("paimon-levelinfo-pixel-overlay"_spr);
-        this->addChild(overlay);
+        thumbParent->addChild(overlay);
         
         log::info("[LevelInfoLayer] Fondo aplicado exitosamente (estilo: {}, intensidad: {})", bgStyle, intensity);
     }
@@ -545,6 +556,37 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 m_fields->m_fromVerificationQueue = true;
 
                 // no limpiar, persistir en playlayer
+            }
+
+            // crear frame contenedor para thumbnail (como Vista Previa)
+            {
+                auto winInit = CCDirector::sharedDirector()->getWinSize();
+                float frameW = winInit.width * 0.82f;
+                float frameH = winInit.height * 0.65f;
+
+                auto stencil = CCDrawNode::create();
+                CCPoint rect[4] = { ccp(0,0), ccp(frameW,0), ccp(frameW,frameH), ccp(0,frameH) };
+                ccColor4F white = {1,1,1,1};
+                stencil->drawPolygon(rect, 4, white, 0, white);
+
+                auto clip = CCClippingNode::create(stencil);
+                clip->setContentSize({frameW, frameH});
+                clip->setAnchorPoint({0.5f, 0.5f});
+                clip->setPosition({winInit.width / 2.f, winInit.height * 0.52f});
+                clip->setZOrder(-2);
+                clip->setID("paimon-levelinfo-thumb-clip"_spr);
+                this->addChild(clip);
+                m_fields->m_thumbClip = clip;
+                m_fields->m_thumbFrameSize = {frameW, frameH};
+
+                auto border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("GJ_square07.png");
+                if (border) {
+                    border->setContentSize({frameW + 4.f, frameH + 4.f});
+                    border->setPosition({winInit.width / 2.f, winInit.height * 0.52f});
+                    border->setZOrder(-1);
+                    border->setID("paimon-levelinfo-thumb-border"_spr);
+                    this->addChild(border);
+                }
             }
 
             // fondo pixel thumb
@@ -1037,15 +1079,16 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
         if (!layer) return;
 
         // quitar fondos viejos por node ID (seguro)
-        if (auto old = layer->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
+        auto paimon = static_cast<PaimonLevelInfoLayer*>(layer);
+        CCNode* settingsParent = paimon->m_fields->m_thumbClip ? static_cast<CCNode*>(paimon->m_fields->m_thumbClip.data()) : static_cast<CCNode*>(layer);
+        if (auto old = settingsParent->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
             old->removeFromParent();
         }
-        if (auto oldOverlay = layer->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
+        if (auto oldOverlay = settingsParent->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
             oldOverlay->removeFromParent();
         }
 
         // resetear la ref interna para evitar double-remove dentro de applyThumbnailBackground
-        auto paimon = static_cast<PaimonLevelInfoLayer*>(layer);
         paimon->m_fields->m_pixelBg = nullptr;
 
         // re-aplicar con las nuevas settings

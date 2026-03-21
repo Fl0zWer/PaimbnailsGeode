@@ -1076,6 +1076,29 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
+    void updateGalleryCycle(float dt) {
+        auto fields = m_fields.self();
+        if (!fields || fields->m_isBeingDestroyed || !m_level) return;
+        if (fields->m_galleryThumbnails.size() < 2) {
+            this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+            return;
+        }
+        fields->m_galleryIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
+        auto next = fields->m_galleryThumbnails[fields->m_galleryIndex];
+        const int levelID = m_level->m_levelID.value();
+        const int token = ++fields->m_galleryToken;
+        WeakRef<PaimonLevelCell> safeRef = this;
+        ThumbnailAPI::get().downloadFromUrl(next.url, [safeRef, levelID, token](bool success, CCTexture2D* tex) {
+            auto cellRef = safeRef.lock();
+            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+            if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
+            auto fields = cell->m_fields.self();
+            if (!fields || fields->m_galleryToken != token) return;
+            if (!success || !tex) return;
+            cell->crossfadeToThumb(tex);
+        });
+    }
+
     void addOrUpdateThumb(CCTexture2D* texture) {
         if (!texture) {
             log::warn("[LevelCell] addOrUpdateThumb called with null texture");
@@ -1189,6 +1212,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         // parar animaciones (movido desde destructor â€” Geode desaconseja
         // logica pesada en destructores de $modify)
         this->unscheduleUpdate();
+        this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
         this->unschedule(schedule_selector(PaimonLevelCell::updateGradientAnim));
         this->unschedule(schedule_selector(PaimonLevelCell::checkCenterPosition));
         this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
@@ -1795,6 +1819,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                     fields->m_galleryThumbnails = thumbs;
                     fields->m_galleryIndex = 0;
                     fields->m_galleryTimer = 0.f;
+                    bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
+                    if (autoCycleEnabled) {
+                        cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 3.0f);
+                    }
                 });
             }
 
@@ -1890,27 +1918,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        const bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
-        if (autoCycleEnabled && m_level && fields->m_galleryThumbnails.size() >= 2) {
-            fields->m_galleryTimer += dt;
-            if (fields->m_galleryTimer >= 3.0f) {
-                fields->m_galleryTimer = 0.f;
-                fields->m_galleryIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
-                auto next = fields->m_galleryThumbnails[fields->m_galleryIndex];
-                const int levelID = m_level->m_levelID.value();
-                const int token = ++fields->m_galleryToken;
-                WeakRef<PaimonLevelCell> safeRef = this;
-                ThumbnailAPI::get().downloadFromUrl(next.url, [safeRef, levelID, token](bool success, CCTexture2D* tex) {
-                    auto cellRef = safeRef.lock();
-                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-                    if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
-                    auto fields = cell->m_fields.self();
-                    if (!fields || fields->m_galleryToken != token) return;
-                    if (!success || !tex) return;
-                    cell->crossfadeToThumb(tex);
-                });
-            }
-        }
+        // gallery cycling is handled by updateGalleryCycle scheduled method
 
         if (fields->m_hasGif && fields->m_thumbSprite) {
             auto* animatedThumb = typeinfo_cast<AnimatedGIFSprite*>(fields->m_thumbSprite.data());
