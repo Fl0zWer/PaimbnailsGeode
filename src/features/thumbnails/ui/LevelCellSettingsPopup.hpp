@@ -61,6 +61,8 @@ protected:
     // scroll
     geode::ScrollLayer* m_scrollLayer = nullptr;
     cocos2d::CCSprite* m_scrollArrow = nullptr;
+    cocos2d::CCPoint m_scrollArrowBasePos = {0.f, 0.f};
+    bool m_scrollArrowBouncing = false;
 
     geode::CopyableFunction<void()> m_onSettingsChanged;
 
