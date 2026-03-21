@@ -67,6 +67,7 @@ protected:
     // galeria
     std::vector<ThumbnailAPI::ThumbnailInfo> m_thumbnails;
     bool m_isDownloading = false;
+    int m_galleryRequestToken = 0;
 
     std::vector<Suggestion> m_suggestions;
     int m_currentIndex = 0;

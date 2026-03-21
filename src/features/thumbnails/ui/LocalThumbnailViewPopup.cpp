@@ -129,8 +129,12 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
 void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     if (index < 0 || index >= static_cast<int>(m_thumbnails.size())) return;
 
+    int requestToken = ++m_galleryRequestToken;
     auto& thumb = m_thumbnails[index];
     std::string url = thumb.url;
+    // Avoid stale CDN/client cache and keep per-index loads deterministic.
+    auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
+    url += fmt::format("{}_pv={}{}", sep, thumb.id, requestToken);
     if (m_leftArrow) m_leftArrow->setVisible(m_thumbnails.size() > 1);
     if (m_rightArrow) m_rightArrow->setVisible(m_thumbnails.size() > 1);
     if (m_counterLabel) {
@@ -158,8 +162,9 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     });
 
     // download y mostrar
-    ThumbnailAPI::get().downloadFromUrl(url, [self](bool success, CCTexture2D* tex) {
+    ThumbnailAPI::get().downloadFromUrl(url, [self, requestToken](bool success, CCTexture2D* tex) {
         if (!self->isUiAlive()) return;
+        if (requestToken != self->m_galleryRequestToken) return;
         if (success && tex) {
             auto content = self->m_mainLayer->getContentSize();
             float maxWidth = content.width - 40.f;
@@ -244,6 +249,7 @@ void LocalThumbnailViewPopup::onExit() {
         return;
     }
     m_isExiting = true;
+    ++m_galleryRequestToken;
 
     if (m_mainLayer) {
         m_mainLayer->removeAllChildren();
