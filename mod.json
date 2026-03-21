@@ -112,6 +112,38 @@
       "description": "Automatically rotates level thumbnails in list cells when a level has 2 or more photos.",
       "default": true
     },
+    "levelcell-gallery-transition": {
+      "type": "string",
+      "name": "Gallery Transition",
+      "description": "Transition style when cycling between thumbnails.",
+      "default": "crossfade",
+      "one-of": [
+        "crossfade",
+        "slide-left",
+        "slide-right",
+        "slide-up",
+        "slide-down",
+        "zoom-in",
+        "zoom-out",
+        "flip-horizontal",
+        "flip-vertical",
+        "rotate-cw",
+        "rotate-ccw",
+        "cube",
+        "dissolve",
+        "swipe",
+        "bounce",
+        "random"
+      ]
+    },
+    "levelcell-gallery-transition-duration": {
+      "type": "float",
+      "name": "Transition Duration",
+      "description": "Duration of the gallery transition in seconds.",
+      "default": 0.6,
+      "min": 0.2,
+      "max": 2.0
+    },
     "level-effects-title": {
       "name": "Level Visual Effects",
       "description": "Animations and effects",

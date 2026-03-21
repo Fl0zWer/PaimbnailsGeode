@@ -7,6 +7,7 @@
 #include <cmath>
 #include <algorithm>
 #include <string_view>
+#include <random>
 #include <unordered_set>
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
@@ -35,6 +36,13 @@ enum class PaimonAnimEffect : uint8_t {
 };
 
 enum class PaimonBgType : uint8_t { Gradient, Thumbnail };
+
+enum class PaimonGalleryTransition : uint8_t {
+    Crossfade, SlideLeft, SlideRight, SlideUp, SlideDown,
+    ZoomIn, ZoomOut, FlipHorizontal, FlipVertical,
+    RotateCW, RotateCCW, Cube, Dissolve, Swipe, Bounce,
+    Random
+};
 
 static float safeCoverScale(float targetWidth, float targetHeight, float contentWidth, float contentHeight, float fallback = 1.0f) {
     if (targetWidth <= 0.0f || targetHeight <= 0.0f || contentWidth <= 0.0f || contentHeight <= 0.0f) {
@@ -86,6 +94,32 @@ static PaimonBgType parseBgType(std::string const& s) {
     return s == "thumbnail" ? PaimonBgType::Thumbnail : PaimonBgType::Gradient;
 }
 
+static PaimonGalleryTransition parseGalleryTransition(std::string const& s) {
+    if (s == "crossfade") return PaimonGalleryTransition::Crossfade;
+    if (s == "slide-left") return PaimonGalleryTransition::SlideLeft;
+    if (s == "slide-right") return PaimonGalleryTransition::SlideRight;
+    if (s == "slide-up") return PaimonGalleryTransition::SlideUp;
+    if (s == "slide-down") return PaimonGalleryTransition::SlideDown;
+    if (s == "zoom-in") return PaimonGalleryTransition::ZoomIn;
+    if (s == "zoom-out") return PaimonGalleryTransition::ZoomOut;
+    if (s == "flip-horizontal") return PaimonGalleryTransition::FlipHorizontal;
+    if (s == "flip-vertical") return PaimonGalleryTransition::FlipVertical;
+    if (s == "rotate-cw") return PaimonGalleryTransition::RotateCW;
+    if (s == "rotate-ccw") return PaimonGalleryTransition::RotateCCW;
+    if (s == "cube") return PaimonGalleryTransition::Cube;
+    if (s == "dissolve") return PaimonGalleryTransition::Dissolve;
+    if (s == "swipe") return PaimonGalleryTransition::Swipe;
+    if (s == "bounce") return PaimonGalleryTransition::Bounce;
+    if (s == "random") return PaimonGalleryTransition::Random;
+    return PaimonGalleryTransition::Crossfade;
+}
+
+static PaimonGalleryTransition resolveRandomTransition() {
+    static std::mt19937 rng(std::random_device{}());
+    std::uniform_int_distribution<int> dist(0, 14); // 0..14 = all types except Random
+    return static_cast<PaimonGalleryTransition>(dist(rng));
+}
+
 class $modify(PaimonLevelCell, LevelCell) {
     static void onModify(auto& self) {
         // Dependemos de los node IDs para localizar/reordenar partes de la celda.
@@ -135,6 +169,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool m_cachedCompactMode = false;
         bool m_cachedEffectOnGradient = false;
         PaimonBgType m_cachedBgType = PaimonBgType::Gradient;
+        PaimonGalleryTransition m_cachedGalleryTransition = PaimonGalleryTransition::Crossfade;
+        float m_cachedTransitionDuration = 0.6f;
 
         // version de invalidacion: si cambia, recargar miniatura
         int m_loadedInvalidationVersion = 0;
@@ -981,6 +1017,214 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
+    // Aplica la transicion configurada entre dos sprites dentro del clipping node.
+    // oldSprite puede ser nullptr para transiciones de entrada (primera aparicion).
+    void applyGalleryTransition(CCSprite* newSprite, CCNode* oldSprite,
+                                PaimonGalleryTransition type, float dur, CCSize clipSize) {
+        if (type == PaimonGalleryTransition::Random)
+            type = resolveRandomTransition();
+
+        CCPoint targetPos = newSprite->getPosition();
+        float sx = newSprite->getScaleX();
+        float sy = newSprite->getScaleY();
+        float halfDur = dur * 0.5f;
+        float removeDelay = dur + 0.05f;
+
+        switch (type) {
+
+        case PaimonGalleryTransition::Crossfade: {
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCFadeTo::create(dur, 255));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCDelayTime::create(removeDelay),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::SlideLeft: {
+            newSprite->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x - clipSize.width, targetPos.y}), 2.0f),
+                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::SlideRight: {
+            newSprite->setPosition({targetPos.x - clipSize.width, targetPos.y});
+            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x + clipSize.width, targetPos.y}), 2.0f),
+                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::SlideUp: {
+            newSprite->setPosition({targetPos.x, targetPos.y - clipSize.height});
+            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x, targetPos.y + clipSize.height}), 2.0f),
+                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::SlideDown: {
+            newSprite->setPosition({targetPos.x, targetPos.y + clipSize.height});
+            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x, targetPos.y - clipSize.height}), 2.0f),
+                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::ZoomIn: {
+            newSprite->setScaleX(sx * 0.3f);
+            newSprite->setScaleY(sy * 0.3f);
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCSpawn::create(
+                CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f),
+                CCFadeTo::create(dur * 0.7f, 255), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCDelayTime::create(removeDelay),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::ZoomOut: {
+            newSprite->setScaleX(sx * 1.6f);
+            newSprite->setScaleY(sy * 1.6f);
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCSpawn::create(
+                CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f),
+                CCFadeTo::create(dur * 0.7f, 255), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCDelayTime::create(removeDelay),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::FlipHorizontal: {
+            newSprite->setScaleX(0.01f);
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCSequence::create(
+                CCDelayTime::create(halfDur),
+                CCSpawn::create(
+                    CCEaseOut::create(CCScaleTo::create(halfDur, sx, sy), 2.0f),
+                    CCFadeTo::create(halfDur * 0.5f, 255), nullptr), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCScaleTo::create(halfDur, 0.01f, sy), 2.0f),
+                    CCFadeTo::create(halfDur, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::FlipVertical: {
+            newSprite->setScaleY(0.01f);
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCSequence::create(
+                CCDelayTime::create(halfDur),
+                CCSpawn::create(
+                    CCEaseOut::create(CCScaleTo::create(halfDur, sx, sy), 2.0f),
+                    CCFadeTo::create(halfDur * 0.5f, 255), nullptr), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCScaleTo::create(halfDur, sx, 0.01f), 2.0f),
+                    CCFadeTo::create(halfDur, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::RotateCW: {
+            newSprite->setRotation(90.0f);
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCSpawn::create(
+                CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f),
+                CCFadeTo::create(dur * 0.6f, 255), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCRotateTo::create(dur, -90.0f), 2.0f),
+                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::RotateCCW: {
+            newSprite->setRotation(-90.0f);
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCSpawn::create(
+                CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f),
+                CCFadeTo::create(dur * 0.6f, 255), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCRotateTo::create(dur, 90.0f), 2.0f),
+                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::Cube: {
+            // 3D cube illusion: slide + scaleX perspective
+            float offset = clipSize.width * 0.5f;
+            newSprite->setPosition({targetPos.x + offset, targetPos.y});
+            newSprite->setScaleX(0.01f);
+            newSprite->runAction(CCSpawn::create(
+                CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.0f),
+                CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.0f), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x - offset, targetPos.y}), 2.0f),
+                    CCEaseIn::create(CCScaleTo::create(dur, 0.01f, sy), 2.0f), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::Dissolve: {
+            // stepped fade: opacity ramps in discrete steps for a dissolve look
+            newSprite->setOpacity(0);
+            float step = dur / 5.0f;
+            newSprite->runAction(CCSequence::create(
+                CCFadeTo::create(step, 50),
+                CCFadeTo::create(step, 120),
+                CCFadeTo::create(step, 180),
+                CCFadeTo::create(step, 220),
+                CCFadeTo::create(step, 255), nullptr));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCDelayTime::create(removeDelay),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::Swipe: {
+            // new covers old from right — old stays still
+            newSprite->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 3.0f));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCDelayTime::create(removeDelay),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::Bounce: {
+            newSprite->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newSprite->runAction(CCEaseBounceOut::create(CCMoveTo::create(dur, targetPos)));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCMoveTo::create(dur * 0.5f, {targetPos.x - clipSize.width * 0.3f, targetPos.y}), 2.0f),
+                    CCFadeTo::create(dur * 0.5f, 0), nullptr),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        default: { // fallback = crossfade
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCFadeTo::create(dur, 255));
+            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCDelayTime::create(removeDelay),
+                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+        }
+    }
+
+    // Aplica transicion de entrada (primera aparicion del thumbnail)
+    void applyEntryTransition(CCSprite* sprite, PaimonGalleryTransition type,
+                              float dur, CCSize clipSize) {
+        applyGalleryTransition(sprite, nullptr, type, dur, clipSize);
+    }
+
     void crossfadeToThumb(CCTexture2D* texture) {
         if (!texture) return;
         auto fields = m_fields.self();
@@ -1026,22 +1270,14 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        // crossfade suave: nuevo aparece encima del viejo sin slide brusco
-        CCPoint targetPos = newSprite->getPosition();
-        newSprite->setOpacity(0);
-        fields->m_clippingNode->addChild(newSprite);
-        newSprite->runAction(CCSpawn::create(
-            CCEaseOut::create(CCScaleTo::create(0.6f, newSprite->getScaleX(), newSprite->getScaleY()), 2.0f),
-            CCFadeTo::create(0.6f, 255),
-            nullptr
-        ));
+        // read cached transition settings
+        cacheSettings();
+        auto transType = fields->m_cachedGalleryTransition;
+        float dur = fields->m_cachedTransitionDuration;
+        CCSize clipSize = fields->m_clippingNode->getContentSize();
 
-        // viejo se queda a opacidad completa debajo; se elimina al terminar
-        oldSprite->runAction(CCSequence::create(
-            CCDelayTime::create(0.65f),
-            CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)),
-            nullptr
-        ));
+        fields->m_clippingNode->addChild(newSprite);
+        applyGalleryTransition(newSprite, oldSprite, transType, dur, clipSize);
 
         fields->m_thumbSprite = newSprite;
 
@@ -1067,12 +1303,12 @@ class $modify(PaimonLevelCell, LevelCell) {
                     newBgSprite->setPosition(bg->getContentSize() / 2);
                     newBgSprite->setOpacity(0);
                     clipper->addChild(newBgSprite);
-                    newBgSprite->runAction(CCFadeTo::create(0.6f, 255));
+                    newBgSprite->runAction(CCFadeTo::create(dur, 255));
 
                     // viejo se queda a opacidad completa debajo; se elimina al terminar
                     auto oldGrad = fields->m_gradientLayer;
                     oldGrad->runAction(CCSequence::create(
-                        CCDelayTime::create(0.65f),
+                        CCDelayTime::create(dur + 0.05f),
                         CCCallFunc::create(oldGrad, callfunc_selector(CCNode::removeFromParent)),
                         nullptr
                     ));
@@ -1138,6 +1374,15 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
 
             setupClippingAndSeparator(bg, sprite);
+
+            // Entry animation for first thumbnail appearance
+            if (fields->m_clippingNode && fields->m_thumbSprite) {
+                cacheSettings();
+                auto transType = fields->m_cachedGalleryTransition;
+                float dur = fields->m_cachedTransitionDuration;
+                CCSize clipSize = fields->m_clippingNode->getContentSize();
+                applyEntryTransition(fields->m_thumbSprite, transType, dur, clipSize);
+            }
 
             if (m_level) {
                 int32_t levelID = m_level->m_levelID.value();
@@ -1382,6 +1627,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_cachedCompactMode = Mod::get()->getSettingValue<bool>("compact-list-mode");
         fields->m_cachedEffectOnGradient = Mod::get()->getSettingValue<bool>("levelcell-effect-on-gradient");
         fields->m_cachedBgType = parseBgType(Mod::get()->getSettingValue<std::string>("levelcell-background-type"));
+        fields->m_cachedGalleryTransition = parseGalleryTransition(Mod::get()->getSettingValue<std::string>("levelcell-gallery-transition"));
+        fields->m_cachedTransitionDuration = std::clamp(static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-gallery-transition-duration")), 0.2f, 2.0f);
     }
 
     void checkCenterPosition(float dt) {
