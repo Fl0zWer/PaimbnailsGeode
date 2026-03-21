@@ -212,6 +212,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         float m_fadeFromVol = 0.0f;
         float m_fadeToVol = 0.0f;
         bool m_hasProfileBackdrop = false;
+        bool m_leaveForClose = false;
+        bool m_pausedForTemporaryExit = false;
     };
 
     bool canShowModerationControls() {
@@ -1535,28 +1537,51 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     $override
     void keyBackClicked() {
-        ProfileMusicManager::get().stopProfileMusic();
-        resumeMenuMusicIfNeeded();
+        m_fields->m_leaveForClose = true;
         ProfilePage::keyBackClicked();
     }
 
     $override
     void onClose(CCObject* sender) {
+        m_fields->m_leaveForClose = true;
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
-        ProfileMusicManager::get().stopProfileMusic();
-        resumeMenuMusicIfNeeded();
         ProfilePage::onClose(sender);
+    }
+
+    $override
+    void onEnterTransitionDidFinish() {
+        ProfilePage::onEnterTransitionDidFinish();
+        auto& musicMgr = ProfileMusicManager::get();
+        if (m_fields->m_pausedForTemporaryExit && m_fields->m_musicPlaying &&
+            musicMgr.isPlaying() && musicMgr.isPaused()) {
+            musicMgr.resumeProfileMusic();
+            updatePauseButtonSprite(true);
+        }
+        m_fields->m_pausedForTemporaryExit = false;
     }
 
     $override
     void onExit() {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
-        if (!ProfileMusicManager::get().isFadingOut()) {
-            ProfileMusicManager::get().stopProfileMusic();
+        auto& musicMgr = ProfileMusicManager::get();
+        if (m_fields->m_leaveForClose) {
+            if (!musicMgr.isFadingOut()) {
+                musicMgr.stopProfileMusic();
+            }
+            resumeMenuMusicIfNeeded();
+            m_fields->m_pausedForTemporaryExit = false;
+        } else {
+            // Salida temporal (push de otra pantalla): pausar en vez de cortar audio.
+            if (m_fields->m_musicPlaying && musicMgr.isPlaying() && !musicMgr.isPaused()) {
+                musicMgr.pauseProfileMusic();
+                m_fields->m_pausedForTemporaryExit = true;
+                updatePauseButtonSprite(false);
+            } else {
+                m_fields->m_pausedForTemporaryExit = false;
+            }
         }
-        resumeMenuMusicIfNeeded();
         ProfilePage::onExit();
     }
 
