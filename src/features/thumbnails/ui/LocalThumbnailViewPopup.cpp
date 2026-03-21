@@ -170,7 +170,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         if (success && tex) {
             auto content = self->m_mainLayer->getContentSize();
             float maxWidth = content.width - 40.f;
-            float maxHeight = content.height - 70.f;
+            float maxHeight = content.height - 80.f;
             self->displayThumbnail(tex, maxWidth, maxHeight, content, false);
         } else {
             auto content = self->m_mainLayer->getContentSize();
@@ -218,7 +218,7 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
          if (success && tex) {
              auto content = safeRef->m_mainLayer->getContentSize();
              float maxWidth = content.width - 40.f;
-             float maxHeight = content.height - 70.f;
+             float maxHeight = content.height - 80.f;
 
              safeRef->displayThumbnail(tex, maxWidth, maxHeight, content, false);
          }
@@ -977,9 +977,18 @@ void LocalThumbnailViewPopup::clearGalleryDisplay() {
     }
     m_thumbnailTexture = nullptr;
 
+    // keep m_clippingNode alive — only clear children (sprites) inside it
     if (m_clippingNode) {
-        m_clippingNode->removeFromParent();
-        m_clippingNode = nullptr;
+        m_clippingNode->removeAllChildren();
+        // re-add the semi-transparent background inside the clip
+        auto content = m_clippingNode->getContentSize();
+        auto clippingBg = CCLayerColor::create({0, 0, 0, 255});
+        clippingBg->setOpacity(25);
+        clippingBg->setContentSize(content);
+        clippingBg->ignoreAnchorPointForPosition(false);
+        clippingBg->setAnchorPoint({0.5f, 0.5f});
+        clippingBg->setPosition({content.width / 2, content.height / 2});
+        m_clippingNode->addChild(clippingBg, -1);
     }
 
     if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {

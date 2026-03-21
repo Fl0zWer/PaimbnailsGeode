@@ -48,8 +48,8 @@ ThumbnailLoader::~ThumbnailLoader() {
     // es indefinido: Cocos2d, el autorelease pool y otros singletons pueden ya estar muertos.
     // geode::Ref llama release() al destruirse. Usamos take() para sacar los punteros sin release().
     std::lock_guard<std::mutex> lock(m_queueMutex);
-    for (auto& [id, ref] : m_textureCache) {
-        (void)ref.take();
+    for (auto& [id, entry] : m_textureCache) {
+        (void)entry.texture.take();
     }
     m_textureCache.clear();
 }
@@ -277,20 +277,38 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     // 1. reviso cache en RAM
     auto it = m_textureCache.find(key);
     if (it != m_textureCache.end()) {
-        // actualizo la LRU en O(1)
-        auto lruIt = m_lruMap.find(key);
-        if (lruIt != m_lruMap.end()) {
-            m_lruOrder.erase(lruIt->second);
+        // valido version de invalidacion: si cambio, descarto la entrada vieja
+        int cachedVer = it->second.version;
+        int currentVer = getVersionForKeyLocked(key);
+        if (cachedVer != currentVer) {
+            // entrada stale: la version no coincide, evicto y sigo como cache miss
+            if (it->second.texture) {
+                size_t bytes = static_cast<size_t>(it->second.texture->getPixelsWide()) * static_cast<size_t>(it->second.texture->getPixelsHigh()) * 4;
+                if (m_textureCacheBytes >= bytes) m_textureCacheBytes -= bytes;
+                else m_textureCacheBytes = 0;
+            }
+            m_textureCache.erase(it);
+            auto lruIt = m_lruMap.find(key);
+            if (lruIt != m_lruMap.end()) {
+                m_lruOrder.erase(lruIt->second);
+                m_lruMap.erase(lruIt);
+            }
+        } else {
+            // actualizo la LRU en O(1)
+            auto lruIt = m_lruMap.find(key);
+            if (lruIt != m_lruMap.end()) {
+                m_lruOrder.erase(lruIt->second);
+            }
+            m_lruOrder.push_back(key);
+            m_lruMap[key] = std::prev(m_lruOrder.end());
+            
+            // fuerzo callback asincrono para no trabar la UI
+            auto tex = it->second.texture;
+            Loader::get()->queueInMainThread([callback, tex]() {
+                if (callback) callback(tex, true);
+            });
+            return;
         }
-        m_lruOrder.push_back(key);
-        m_lruMap[key] = std::prev(m_lruOrder.end());
-        
-        // fuerzo callback asincrono para no trabar la UI
-        auto tex = it->second;
-        Loader::get()->queueInMainThread([callback, tex]() {
-            if (callback) callback(tex, true);
-        });
-        return;
     }
 
     // 2. miro el cache de fallos (con TTL)
@@ -771,7 +789,13 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
     }
 }
 
-void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
+int ThumbnailLoader::getVersionForKeyLocked(int key) const {
+    int realID = (key < 0) ? -key : key;
+    auto vit = m_invalidationVersions.find(realID);
+    return vit != m_invalidationVersions.end() ? vit->second : 0;
+}
+
+void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture, int version) {
     if (!texture) return;
 
     auto estimateTextureBytes = [](CCTexture2D* tex) -> size_t {
@@ -779,13 +803,14 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
         return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
     };
     size_t incomingBytes = estimateTextureBytes(texture);
-    if (auto oldIt = m_textureCache.find(levelID); oldIt != m_textureCache.end() && oldIt->second) {
-        size_t oldBytes = estimateTextureBytes(oldIt->second);
+    if (auto oldIt = m_textureCache.find(levelID); oldIt != m_textureCache.end() && oldIt->second.texture) {
+        size_t oldBytes = estimateTextureBytes(oldIt->second.texture);
         if (m_textureCacheBytes >= oldBytes) m_textureCacheBytes -= oldBytes;
         else m_textureCacheBytes = 0;
     }
     
-    m_textureCache[levelID] = texture;
+    int ver = (version >= 0) ? version : getVersionForKeyLocked(levelID);
+    m_textureCache[levelID] = CacheEntry{texture, ver};
     m_textureCacheBytes += incomingBytes;
     
     // LRU O(1): quito el viejo iterador si existe, agrego al final
@@ -801,8 +826,8 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture) {
         int removeID = m_lruOrder.front();
         m_lruOrder.pop_front();
         m_lruMap.erase(removeID);
-        if (auto removeIt = m_textureCache.find(removeID); removeIt != m_textureCache.end() && removeIt->second) {
-            size_t removedBytes = estimateTextureBytes(removeIt->second);
+        if (auto removeIt = m_textureCache.find(removeID); removeIt != m_textureCache.end() && removeIt->second.texture) {
+            size_t removedBytes = estimateTextureBytes(removeIt->second.texture);
             if (m_textureCacheBytes >= removedBytes) m_textureCacheBytes -= removedBytes;
             else m_textureCacheBytes = 0;
         }
@@ -832,8 +857,8 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         // quito la entrada de la RAM
         auto it = m_textureCache.find(key);
         if (it != m_textureCache.end()) {
-            if (it->second) {
-                size_t bytes = static_cast<size_t>(it->second->getPixelsWide()) * static_cast<size_t>(it->second->getPixelsHigh()) * 4;
+            if (it->second.texture) {
+                size_t bytes = static_cast<size_t>(it->second.texture->getPixelsWide()) * static_cast<size_t>(it->second.texture->getPixelsHigh()) * 4;
                 if (m_textureCacheBytes >= bytes) m_textureCacheBytes -= bytes;
                 else m_textureCacheBytes = 0;
             }

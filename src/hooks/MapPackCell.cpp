@@ -13,7 +13,6 @@ class $modify(PaimonMapPackCell, MapPackCell) {
     struct Fields {
         Ref<ListThumbnailCarousel> m_carousel = nullptr;
         Ref<GJMapPack> m_pack = nullptr;
-        int m_requestToken = 0;
     };
 
     $override
@@ -23,7 +22,6 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         if (!pack) return;
         
         m_fields->m_pack = pack;
-        int token = ++m_fields->m_requestToken;
 
         // quitar carousel viejo si reusan la celda
         if (m_fields->m_carousel) {
@@ -32,14 +30,11 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         }
 
         // delay pa que el layout ya este armado
-        WeakRef<PaimonMapPackCell> self = this;
-        Loader::get()->queueInMainThread([self, token]() {
-            auto cell = self.lock();
-            if (!cell || !cell->getParent()) return;
-            auto* typed = static_cast<PaimonMapPackCell*>(cell.data());
-            auto fields = typed->m_fields.self();
-            if (!fields || fields->m_requestToken != token) return;
-            typed->createCarousel();
+        Ref<MapPackCell> self = this;
+        Loader::get()->queueInMainThread([self]() {
+            if (self->getParent()) {
+                static_cast<PaimonMapPackCell*>(self.data())->createCarousel();
+            }
         });
     }
 

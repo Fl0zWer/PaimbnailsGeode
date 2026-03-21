@@ -117,6 +117,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool m_thumbnailApplied = false; // pa no aplicar miniatura varias veces
         bool m_wasInCenter = false; // pa detectar cambios de estado
         float m_centerLerp = 0.0f; // interpolacion suave 0-1
+        float m_centerVelocity = 0.0f; // velocidad del spring-damper
+        float m_staggerDelay = 0.0f; // delay proporcional a distancia del centro
         Ref<CCMenuItemSpriteExtra> m_viewOverlay = nullptr; // overlay invisible pa el boton
         
         float m_animTime = 0.0f;
@@ -1026,27 +1028,29 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
         }
 
-        // dynamic entrance: new sprite zooms in from 1.08x with fade + easing
-        float targetScaleX = newSprite->getScaleX();
-        float targetScaleY = newSprite->getScaleY();
+        // GJListLayer-style slide transition: old slides left, new slides in from right
+        float clipW = fields->m_clippingNode->getContentSize().width;
+        float slideOffset = clipW * 0.6f;
+        CCPoint targetPos = newSprite->getPosition();
+
+        // new sprite starts off-screen right and slides in
+        newSprite->setPosition({targetPos.x + slideOffset, targetPos.y});
         newSprite->setOpacity(0);
-        newSprite->setScaleX(targetScaleX * 1.08f);
-        newSprite->setScaleY(targetScaleY * 1.08f);
         fields->m_clippingNode->addChild(newSprite);
+        newSprite->runAction(CCSpawn::create(
+            CCEaseOut::create(CCMoveTo::create(0.45f, targetPos), 2.5f),
+            CCFadeTo::create(0.3f, 255),
+            nullptr
+        ));
 
-        auto fadeIn = CCFadeTo::create(0.6f, 255);
-        auto zoomIn = CCEaseOut::create(
-            CCScaleTo::create(0.6f, targetScaleX, targetScaleY), 2.0f
-        );
-        newSprite->runAction(CCSpawn::create(fadeIn, zoomIn, nullptr));
-
-        // old sprite zooms out slightly and fades
-        auto fadeOut = CCFadeTo::create(0.5f, 0);
-        auto zoomOut = CCEaseIn::create(
-            CCScaleTo::create(0.5f, oldSprite->getScaleX() * 0.94f, oldSprite->getScaleY() * 0.94f), 2.0f
-        );
+        // old sprite slides out to the left and fades
+        CCPoint oldTarget = ccp(oldSprite->getPositionX() - slideOffset, oldSprite->getPositionY());
         oldSprite->runAction(CCSequence::create(
-            CCSpawn::create(fadeOut, zoomOut, nullptr),
+            CCSpawn::create(
+                CCEaseIn::create(CCMoveTo::create(0.4f, oldTarget), 2.0f),
+                CCFadeTo::create(0.35f, 0),
+                nullptr
+            ),
             CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)),
             nullptr
         ));
@@ -1073,23 +1077,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                     );
                     newBgSprite->setScale(scale);
                     newBgSprite->setPosition(bg->getContentSize() / 2);
-                    float bgTargetScale = newBgSprite->getScale();
                     newBgSprite->setOpacity(0);
-                    newBgSprite->setScale(bgTargetScale * 1.06f);
                     clipper->addChild(newBgSprite);
-                    newBgSprite->runAction(CCSpawn::create(
-                        CCFadeTo::create(0.7f, 255),
-                        CCEaseOut::create(CCScaleTo::create(0.7f, bgTargetScale), 2.0f),
-                        nullptr
-                    ));
+                    newBgSprite->runAction(CCFadeTo::create(0.5f, 255));
 
                     auto oldGrad = fields->m_gradientLayer;
                     oldGrad->runAction(CCSequence::create(
-                        CCSpawn::create(
-                            CCFadeTo::create(0.5f, 0),
-                            CCEaseIn::create(CCScaleTo::create(0.5f, oldGrad->getScale() * 0.95f), 2.0f),
-                            nullptr
-                        ),
+                        CCFadeTo::create(0.45f, 0),
                         CCCallFunc::create(oldGrad, callfunc_selector(CCNode::removeFromParent)),
                         nullptr
                     ));
@@ -1408,7 +1402,10 @@ class $modify(PaimonLevelCell, LevelCell) {
         cacheSettings();
 
         if (!fields->m_cachedHoverEnabled) {
-            if (fields->m_centerLerp > 0.0f) fields->m_centerLerp = 0.0f;
+            if (fields->m_centerLerp > 0.0f) {
+                fields->m_centerLerp = 0.0f;
+                fields->m_centerVelocity = 0.0f;
+            }
             return;
         }
 
@@ -1430,6 +1427,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
 
         fields->m_wasInCenter = distanceFromCenter < centerZone;
+
+        // stagger delay proporcional a la distancia del centro (0 en el centro, ~0.08s en los bordes)
+        float maxDelay = 0.08f;
+        float halfScreen = winSize.height * 0.5f;
+        fields->m_staggerDelay = (halfScreen > 0.f) ? (distanceFromCenter / halfScreen) * maxDelay : 0.f;
     }
 
 
@@ -1446,10 +1448,33 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         if (animType == PaimonAnimType::None) {
             fields->m_centerLerp = 0.0f;
+            fields->m_centerVelocity = 0.0f;
         } else {
             float target = fields->m_wasInCenter ? 1.0f : 0.0f;
-            float speed = 6.0f * speedMult;
-            fields->m_centerLerp += (target - fields->m_centerLerp) * std::min(1.0f, dt * speed);
+
+            // stagger: retrasa la subida proporcional a la distancia del centro
+            if (target > fields->m_centerLerp && fields->m_staggerDelay > 0.f) {
+                fields->m_staggerDelay -= dt;
+                if (fields->m_staggerDelay > 0.f) {
+                    target = fields->m_centerLerp; // mantener quieto durante el delay
+                }
+            }
+
+            // spring-damper: stiffness controla fuerza, damping controla amortiguacion
+            // da overshoot sutil (~5%) y settling natural en ~0.45s
+            float stiffness = 8.0f * speedMult;
+            float damping = 0.82f;
+            float force = (target - fields->m_centerLerp) * stiffness;
+            fields->m_centerVelocity += force * dt;
+            fields->m_centerVelocity *= std::pow(damping, dt * 60.0f); // normalizo el damping a 60fps
+            fields->m_centerLerp += fields->m_centerVelocity;
+
+            // clamp para evitar oscilaciones infinitas
+            if (std::abs(fields->m_centerLerp - target) < 0.001f && std::abs(fields->m_centerVelocity) < 0.001f) {
+                fields->m_centerLerp = target;
+                fields->m_centerVelocity = 0.0f;
+            }
+            fields->m_centerLerp = std::max(0.0f, std::min(1.0f, fields->m_centerLerp));
         }
 
         float lerp = fields->m_centerLerp;
@@ -1459,50 +1484,50 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         switch (animType) {
         case PaimonAnimType::ZoomSlide:
-            offsetX = -10.f * lerp;
-            zoomFactor = 1.0f + (0.12f * lerp);
+            offsetX = -6.f * lerp;
+            zoomFactor = 1.0f + (0.08f * lerp);
             break;
         case PaimonAnimType::Zoom:
-            zoomFactor = 1.0f + (0.15f * lerp);
+            zoomFactor = 1.0f + (0.10f * lerp);
             break;
         case PaimonAnimType::Slide:
-            zoomFactor = 1.0f + (0.1f * lerp);
-            spriteOffsetX = -15.f * lerp;
+            zoomFactor = 1.0f + (0.07f * lerp);
+            spriteOffsetX = -10.f * lerp;
             break;
         case PaimonAnimType::Bounce:
-            zoomFactor = 1.0f + (0.20f * lerp);
+            zoomFactor = 1.0f + (0.12f * lerp);
             break;
         case PaimonAnimType::Rotate:
-            zoomFactor = 1.0f + (0.05f * lerp);
-            rotation = sinf(animT * 3.0f) * 1.5f * lerp;
+            zoomFactor = 1.0f + (0.04f * lerp);
+            rotation = sinf(animT * 3.0f) * 1.0f * lerp;
             break;
         case PaimonAnimType::RotateContent:
-            zoomFactor = 1.0f + (0.15f * lerp);
-            spriteRotation = sinf(animT * 4.0f) * 3.0f * lerp;
+            zoomFactor = 1.0f + (0.10f * lerp);
+            spriteRotation = sinf(animT * 4.0f) * 2.0f * lerp;
             break;
         case PaimonAnimType::Shake:
-            zoomFactor = 1.0f + (0.05f * lerp);
-            offsetX = sinf(animT * 20.0f) * 3.0f * lerp;
+            zoomFactor = 1.0f + (0.04f * lerp);
+            offsetX = sinf(animT * 20.0f) * 2.0f * lerp;
             break;
         case PaimonAnimType::Pulse: {
             float pulse = (sinf(animT * 10.0f) + 1.0f) * 0.5f;
-            zoomFactor = 1.0f + (0.05f * lerp) + (pulse * 0.05f * lerp);
+            zoomFactor = 1.0f + (0.04f * lerp) + (pulse * 0.03f * lerp);
             break;
         }
         case PaimonAnimType::Swing:
-            zoomFactor = 1.0f + (0.05f * lerp);
-            rotation = sinf(animT * 4.0f) * 3.0f * lerp;
+            zoomFactor = 1.0f + (0.04f * lerp);
+            rotation = sinf(animT * 4.0f) * 2.0f * lerp;
             break;
         default: break;
         }
 
         // Compact mode reduction
         if (fields->m_cachedCompactMode) {
-            zoomFactor = 1.0f + ((zoomFactor - 1.0f) * 0.55f);
-            offsetX *= 0.55f;
-            spriteOffsetX *= 0.55f;
-            rotation *= 0.55f;
-            spriteRotation *= 0.55f;
+            zoomFactor = 1.0f + ((zoomFactor - 1.0f) * 0.70f);
+            offsetX *= 0.70f;
+            spriteOffsetX *= 0.70f;
+            rotation *= 0.70f;
+            spriteRotation *= 0.70f;
         }
 
         // Apply transforms to clipping node
@@ -1865,13 +1890,20 @@ class $modify(PaimonLevelCell, LevelCell) {
             if (enableSpinners) showLoadingSpinner();
             
             WeakRef<PaimonLevelCell> safeRef = this;
+            int capturedVersion = fields->m_loadedInvalidationVersion;
 
             // 1) intentar GIF primero para evitar quedar pegado a cache viejo PNG/WEBP
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, fileName](CCTexture2D* gifTex, bool gifSuccess) {
+            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, fileName, capturedVersion](CCTexture2D* gifTex, bool gifSuccess) {
                 auto cellRef = safeRef.lock();
                 auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
                 if (!cell || !cell->shouldHandleThumbnailCallback(levelID, currentRequestId)) {
                     return;
+                }
+
+                // version cambio mientras cargaba: abortar y dejar que el listener recargue
+                {
+                    auto f = cell->m_fields.self();
+                    if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
                 }
 
                 if (gifSuccess && gifTex) {
@@ -1882,11 +1914,17 @@ class $modify(PaimonLevelCell, LevelCell) {
                 }
 
                 // 2) fallback a estatico si no hay GIF remoto/local
-                ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId](CCTexture2D* tex, bool success) {
+                ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, capturedVersion](CCTexture2D* tex, bool success) {
                     auto cellRef2 = safeRef.lock();
                     auto* cell2 = static_cast<PaimonLevelCell*>(cellRef2.data());
                     if (!cell2 || !cell2->shouldHandleThumbnailCallback(levelID, currentRequestId)) {
                         return;
+                    }
+
+                    // version cambio mientras cargaba: abortar
+                    {
+                        auto f = cell2->m_fields.self();
+                        if (f && f->m_loadedInvalidationVersion != capturedVersion) return;
                     }
 
                     if (!success || !tex) {

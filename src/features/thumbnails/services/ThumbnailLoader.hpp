@@ -89,8 +89,14 @@ private:
     int m_maxConcurrentTasks = 20;
     mutable std::mutex m_queueMutex;
 
+    // entrada de cache con version de invalidacion
+    struct CacheEntry {
+        geode::Ref<cocos2d::CCTexture2D> texture;
+        int version = 0;
+    };
+
     // cache ram (sesion) — LRU O(1) con list + iterador en map
-    std::unordered_map<int, geode::Ref<cocos2d::CCTexture2D>> m_textureCache;
+    std::unordered_map<int, CacheEntry> m_textureCache;
     std::list<int> m_lruOrder;
     std::unordered_map<int, std::list<int>::iterator> m_lruMap; // key -> iterador en m_lruOrder
     size_t const MAX_CACHE_SIZE = 60;
@@ -125,7 +131,8 @@ private:
     void startTask(std::shared_ptr<Task> task);
     void finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success);
     
-    void addToCache(int levelID, cocos2d::CCTexture2D* texture);
+    void addToCache(int levelID, cocos2d::CCTexture2D* texture, int version = -1);
+    int getVersionForKeyLocked(int key) const;
     void initDiskCache();
     void pruneFailedCacheLocked(std::chrono::steady_clock::time_point now);
     void pruneDiskCache();

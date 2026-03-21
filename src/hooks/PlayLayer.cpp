@@ -647,7 +647,6 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
         }
 
         bool isMod = PaimonUtils::isUserModerator();
-        WeakRef<PaimonCapturePlayLayer> weakSelf = this;
 
         auto* popup = CapturePreviewPopup::create(
             tex, 
@@ -774,7 +773,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
                 }
                 // la flag ya se reseteo arriba
         },
-        [weakSelf](bool hideP1, bool hideP2, CapturePreviewPopup* popup) {
+        [this](bool hideP1, bool hideP2, CapturePreviewPopup* popup) {
             s_hideP1ForCapture = hideP1;
             s_hideP2ForCapture = hideP2;
             
@@ -782,10 +781,11 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
             if (popup) popup->setVisible(false);
 
             gCaptureInProgress.store(false);
-            Loader::get()->queueInMainThread([weakSelf, popup]() {
-                if (auto layer = weakSelf.lock()) {
-                    layer->captureScreenshot(popup);
-                }
+            WeakRef<PaimonCapturePlayLayer> self = this;
+            Loader::get()->queueInMainThread([self, popup]() {
+                auto layer = self.lock();
+                if (!layer) return;
+                layer->captureScreenshot(popup);
             });
         },
         s_hideP1ForCapture,

@@ -9,12 +9,7 @@
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Shaders.hpp"
 #include "../managers/ThumbnailAPI.hpp"
-#include "../features/thumbnails/services/ThumbnailLoader.hpp"
-#include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
-#include "../framework/compat/SceneLocators.hpp"
-#include <algorithm>
-#include <string>
 
 using namespace geode::prelude;
 
@@ -28,109 +23,14 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     struct Fields {
         Ref<CCClippingNode> m_bgClip = nullptr;
-        Ref<CCClippingNode> m_commentsBlurClip = nullptr;
-        Ref<CCSprite> m_commentsBlurSprite = nullptr;
-        Ref<CCLayerColor> m_commentsBlurDark = nullptr;
         bool m_hasCaveEffect = false;
     };
-
-    bool getCommentsPanelGeometry(CCPoint& outPos, CCSize& outSize, CCNode*& outCommentNode) {
-        auto layer = this->m_mainLayer;
-        if (!layer) return false;
-
-        CCNode* found = nullptr;
-        auto dfs = [&](auto const& self, CCNode* node) -> void {
-            if (!node || found) return;
-            if (typeinfo_cast<GJCommentListLayer*>(node)) {
-                found = node;
-                return;
-            }
-            auto children = node->getChildren();
-            if (!children) return;
-            for (auto* child : CCArrayExt<CCNode*>(children)) {
-                self(self, child);
-                if (found) return;
-            }
-        };
-        dfs(dfs, layer);
-
-        if (!found) return false;
-        outCommentNode = found;
-
-        // El blur de comentarios debe cubrir TODO el fondo del popup,
-        // no solo el bbox interno del GJCommentListLayer.
-        auto popupGeo = paimon::compat::InfoLayerLocator::findPopupGeometry(layer);
-        if (popupGeo.found) {
-            float padding = 3.f;
-            outSize = CCSize(
-                std::max(1.f, popupGeo.size.width - padding * 2.f),
-                std::max(1.f, popupGeo.size.height - padding * 2.f)
-            );
-            outPos = ccp(
-                popupGeo.center.x - outSize.width * 0.5f,
-                popupGeo.center.y - outSize.height * 0.5f
-            );
-            return true;
-        }
-
-        auto parent = found->getParent();
-        if (!parent) return false;
-
-        CCRect localRect = found->boundingBox();
-        CCPoint worldMin = parent->convertToWorldSpace(localRect.origin);
-        CCPoint worldMax = parent->convertToWorldSpace(ccp(
-            localRect.origin.x + localRect.size.width,
-            localRect.origin.y + localRect.size.height
-        ));
-
-        CCPoint layerMin = layer->convertToNodeSpace(worldMin);
-        CCPoint layerMax = layer->convertToNodeSpace(worldMax);
-
-        float width = std::max(1.0f, std::abs(layerMax.x - layerMin.x));
-        float height = std::max(1.0f, std::abs(layerMax.y - layerMin.y));
-        outSize = CCSize(width, height);
-        outPos = ccp(std::min(layerMin.x, layerMax.x), std::min(layerMin.y, layerMax.y));
-        return true;
-    }
 
     $override
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
         if (!InfoLayer::init(level, score, list)) return false;
 
-        // blur del panel de comentarios basado en miniatura del nivel (si existe)
-        if (level && level->m_levelID.value() > 0) {
-            int32_t levelID = level->m_levelID.value();
-            std::string fileName = fmt::format("{}.png", levelID);
-
-            // Si ya existe mini local, aplico al instante para evitar flicker.
-            if (auto* localTex = LocalThumbs::get().loadTexture(levelID)) {
-                applyCommentsBlurBackground(localTex);
-            }
-
-            Ref<InfoLayer> safeRef = this;
-            ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, fileName](CCTexture2D* texture, bool success) {
-                auto applyOnMain = [safeRef](CCTexture2D* tex) {
-                    Loader::get()->queueInMainThread([safeRef, tex]() {
-                        auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
-                        if (!self || !self->getParent()) return;
-                        self->applyCommentsBlurBackground(tex);
-                    });
-                };
-
-                if (success && texture) {
-                    applyOnMain(texture);
-                    return;
-                }
-
-                ThumbnailLoader::get().requestLoad(levelID, fileName, [applyOnMain](CCTexture2D* fallbackTex, bool fallbackSuccess) {
-                    if (fallbackSuccess && fallbackTex) {
-                        applyOnMain(fallbackTex);
-                    }
-                }, 5, false);
-            }, 6, true);
-        }
-
-        // solo aplicar fondo de perfil si es popup de usuario
+    // solo aplicar fondo si es un perfil de usuario
         if (!score) return true;
 
         int accountID = score->m_accountID;
@@ -145,7 +45,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                 if (success && texture) {
                     Loader::get()->queueInMainThread([safeRef, texture]() {
                         auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
-                        if (self && self->getParent()) {
+                        if (self->getParent()) {
                             self->applyBlurredBackground(texture);
                         }
                     });
@@ -157,90 +57,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         applyBlurredBackground(tex);
 
         // Aplicar efecto cueva si hay musica de perfil sonando
-        auto& musicMgr = ProfileMusicManager::get();
-        if (musicMgr.isPlaying() && !musicMgr.isFadingOut() && !musicMgr.hasCaveEffect()) {
-            musicMgr.applyCaveEffect();
+        if (ProfileMusicManager::get().isPlaying()) {
+            ProfileMusicManager::get().applyCaveEffect();
+            m_fields->m_hasCaveEffect = true;
         }
-        m_fields->m_hasCaveEffect = musicMgr.hasCaveEffect();
 
         return true;
-    }
-
-    void applyCommentsBlurBackground(CCTexture2D* tex) {
-        if (!tex) return;
-        auto layer = this->m_mainLayer;
-        if (!layer) return;
-
-        CCPoint panelPos;
-        CCSize panelSize;
-        CCNode* commentNode = nullptr;
-        if (!getCommentsPanelGeometry(panelPos, panelSize, commentNode)) return;
-
-        // guardar referencia al clip anterior para crossfade
-        Ref<CCClippingNode> oldClip = m_fields->m_commentsBlurClip;
-
-        auto blurred = Shaders::createBlurredSprite(tex, panelSize, 6.5f, true);
-        if (!blurred) return;
-        blurred->setPosition({panelSize.width * 0.5f, panelSize.height * 0.5f});
-        blurred->setID("paimon-infolayer-comments-blur-sprite"_spr);
-
-        auto stencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(panelSize.width,0), ccp(panelSize.width,panelSize.height), ccp(0,panelSize.height) };
-        ccColor4F white = {1,1,1,1};
-        stencil->drawPolygon(rect, 4, white, 0, white);
-
-        auto clip = CCClippingNode::create();
-        clip->setStencil(stencil);
-        clip->setContentSize(panelSize);
-        clip->setAnchorPoint({0.f, 0.f});
-        clip->setPosition(panelPos);
-        clip->setID("paimon-infolayer-comments-blur-clip"_spr);
-
-        clip->addChild(blurred);
-
-        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 95));
-        dark->setContentSize(panelSize);
-        dark->setAnchorPoint({0.f, 0.f});
-        dark->setPosition({0.f, 0.f});
-        dark->setID("paimon-infolayer-comments-blur-dark"_spr);
-        clip->addChild(dark);
-
-        int z = 0;
-        if (commentNode && commentNode->getParent() == layer) {
-            z = commentNode->getZOrder() - 1;
-        }
-        layer->addChild(clip, z);
-
-        // crossfade: nuevo clip aparece con fade-in, viejo con fade-out
-        if (oldClip && oldClip->getParent()) {
-            // nuevo entra con opacidad 0 y hace fade-in
-            blurred->setOpacity(0);
-            dark->setOpacity(0);
-            blurred->runAction(CCFadeTo::create(0.4f, 255));
-            dark->runAction(CCFadeTo::create(0.4f, 95));
-
-            // viejo hace fade-out y se auto-remueve
-            auto* oldClipPtr = oldClip.data();
-            if (auto* oldBlur = m_fields->m_commentsBlurSprite.data()) {
-                oldBlur->runAction(CCFadeTo::create(0.4f, 0));
-            }
-            if (auto* oldDark = m_fields->m_commentsBlurDark.data()) {
-                oldDark->runAction(CCFadeTo::create(0.4f, 0));
-            }
-            oldClipPtr->runAction(CCSequence::create(
-                CCDelayTime::create(0.4f),
-                CCCallFunc::create(oldClipPtr, callfunc_selector(CCNode::removeFromParent)),
-                nullptr
-            ));
-        }
-
-        m_fields->m_commentsBlurClip = clip;
-        m_fields->m_commentsBlurSprite = blurred;
-        m_fields->m_commentsBlurDark = dark;
-
-        styleInfoLayerBgs(layer);
-        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
     }
 
     void applyBlurredBackground(CCTexture2D* tex) {
@@ -275,13 +97,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         auto blurredSprite = Shaders::createBlurredSprite(tex, imgArea, 7.0f);
         if (!blurredSprite) return;
 
-        auto blurSize = blurredSprite->getContentSize();
-        if (blurSize.width > 0.f && blurSize.height > 0.f) {
-            float scale = std::max(imgArea.width / blurSize.width, imgArea.height / blurSize.height);
-            if (scale > 0.f) {
-                blurredSprite->setScale(std::clamp(scale, 0.01f, 64.0f));
-            }
-        }
         blurredSprite->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
 
         // stencil geometrico, no sprites (pa no chocar con HappyTextures)
@@ -315,8 +130,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         styleInfoLayerBgs(layer);
 
         // re-aplicar estilos periodicamente
-        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
     }
 
     void styleInfoLayerBgs(CCNode* root) {
@@ -328,10 +142,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             if (!children) return;
             for (auto* child : CCArrayExt<CCNode*>(children)) {
                 if (!child) continue;
-                auto childId = std::string(child->getID());
-                if (!childId.empty() && childId.rfind("paimon-infolayer-comments-blur", 0) == 0) {
-                    continue;
-                }
 
                 // GJCommentListLayer: transparentar y quitar bordes
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
@@ -420,12 +230,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     void onExit() {
         restoreMusicEffect();
         this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
-        if (m_fields->m_commentsBlurClip) {
-            m_fields->m_commentsBlurClip->removeFromParent();
-            m_fields->m_commentsBlurClip = nullptr;
-            m_fields->m_commentsBlurSprite = nullptr;
-            m_fields->m_commentsBlurDark = nullptr;
-        }
         InfoLayer::onExit();
     }
 

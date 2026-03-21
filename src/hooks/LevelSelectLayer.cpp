@@ -144,7 +144,6 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
 
     $override
     void onExit() {
-        this->unschedule(schedule_selector(PaimonLevelSelectLayer::checkPageLoop));
         // parar musica y desregistrar
         DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
         DynamicSongManager::get()->stopSong();
