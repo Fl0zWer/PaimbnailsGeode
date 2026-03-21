@@ -1009,13 +1009,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             if (!self->getParent()) return;
             if (self->m_fields->m_bgRequestToken != requestToken) return;
             if (success && tex) {
-                if (self->m_fields->m_thumbnailButton) {
-                    auto spr = (CCSprite*)self->m_fields->m_thumbnailButton->getNormalImage();
-                    if (spr) {
-                        spr->setTexture(tex);
-                        spr->setTextureRect({0, 0, tex->getContentSize().width, tex->getContentSize().height});
-                    }
-                }
                 int32_t levelID = (index == 0 && self->m_level) ? self->m_level->m_levelID.value() : 0;
                 self->applyThumbnailBackground(tex, levelID);
             } else if (self->m_fields->m_thumbnails.size() > 1) {

@@ -1118,6 +1118,9 @@ class $modify(PaimonLevelCell, LevelCell) {
 
             findAndSetupViewButton();
 
+            // schedule update() so gallery cycling, invalidation checks and GIF hover run
+            this->scheduleUpdate();
+
             // Update gradient colors
             if (m_level && fields && !fields->m_isBeingDestroyed && fields->m_gradientLayer) {
                 if (!fields->m_gradientLayer->getParent()) {
@@ -1185,6 +1188,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     $override void onExit() {
         // parar animaciones (movido desde destructor â€” Geode desaconseja
         // logica pesada en destructores de $modify)
+        this->unscheduleUpdate();
         this->unschedule(schedule_selector(PaimonLevelCell::updateGradientAnim));
         this->unschedule(schedule_selector(PaimonLevelCell::checkCenterPosition));
         this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
