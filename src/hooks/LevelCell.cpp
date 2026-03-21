@@ -981,6 +981,101 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
+    void crossfadeToThumb(CCTexture2D* texture) {
+        if (!texture) return;
+        auto fields = m_fields.self();
+        if (!fields || fields->m_isBeingDestroyed) return;
+
+        // fallback to full rebuild if clipping node or sprite missing
+        if (!fields->m_clippingNode || !fields->m_clippingNode->getParent() ||
+            !fields->m_thumbSprite || !fields->m_thumbSprite->getParent()) {
+            addOrUpdateThumb(texture);
+            return;
+        }
+
+        auto oldSprite = fields->m_thumbSprite;
+
+        // create new sprite with same texture
+        CCSprite* newSprite = PaimonShaderSprite::createWithTexture(texture);
+        if (!newSprite) {
+            addOrUpdateThumb(texture);
+            return;
+        }
+        newSprite->setID("paimon-thumbnail"_spr);
+
+        // copy visual properties from old sprite
+        newSprite->setScaleX(oldSprite->getScaleX());
+        newSprite->setScaleY(oldSprite->getScaleY());
+        newSprite->setPosition(oldSprite->getPosition());
+        newSprite->setAnchorPoint(oldSprite->getAnchorPoint());
+        newSprite->setSkewX(oldSprite->getSkewX());
+        newSprite->setSkewY(oldSprite->getSkewY());
+        newSprite->setZOrder(oldSprite->getZOrder());
+        newSprite->setColor(oldSprite->getColor());
+
+        // apply same shader if thumbnail bg type
+        std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
+        if (bgType == "thumbnail") {
+            if (auto pss = typeinfo_cast<PaimonShaderSprite*>(newSprite)) {
+                auto shader = getOrCreateShader("paimon_cell_saturation", vertexShaderCell, fragmentShaderSaturationCell);
+                if (shader) {
+                    newSprite->setShaderProgram(shader);
+                    pss->m_intensity = 2.5f;
+                    pss->m_brightness = 3.0f;
+                }
+            }
+        }
+
+        // add new sprite with opacity 0, fade in
+        newSprite->setOpacity(0);
+        fields->m_clippingNode->addChild(newSprite);
+        newSprite->runAction(CCFadeTo::create(0.5f, 255));
+
+        // fade out old sprite and remove
+        oldSprite->runAction(CCSequence::create(
+            CCFadeTo::create(0.5f, 0),
+            CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+
+        fields->m_thumbSprite = newSprite;
+
+        // crossfade gradient background if bgType is thumbnail
+        if (bgType == "thumbnail" && m_level && fields->m_gradientLayer &&
+            fields->m_gradientLayer->getParent()) {
+            auto bg = m_backgroundLayer;
+            if (bg) {
+                float blurIntensity = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-blur"));
+                CCSize targetSize = bg->getContentSize();
+                targetSize.width = std::max(targetSize.width, 512.f);
+                targetSize.height = std::max(targetSize.height, 256.f);
+
+                auto newBgSprite = Shaders::createBlurredSprite(texture, targetSize, blurIntensity);
+                if (newBgSprite) {
+                    auto clipper = fields->m_gradientLayer->getParent();
+                    float scale = safeCoverScale(
+                        bg->getContentWidth(), bg->getContentHeight(),
+                        newBgSprite->getContentSize().width, newBgSprite->getContentSize().height,
+                        1.0f
+                    );
+                    newBgSprite->setScale(scale);
+                    newBgSprite->setPosition(bg->getContentSize() / 2);
+                    newBgSprite->setOpacity(0);
+                    clipper->addChild(newBgSprite);
+                    newBgSprite->runAction(CCFadeTo::create(0.5f, 255));
+
+                    auto oldGrad = fields->m_gradientLayer;
+                    oldGrad->runAction(CCSequence::create(
+                        CCFadeTo::create(0.5f, 0),
+                        CCCallFunc::create(oldGrad, callfunc_selector(CCNode::removeFromParent)),
+                        nullptr
+                    ));
+                    fields->m_gradientLayer = newBgSprite;
+                }
+            }
+        }
+    }
+
     void addOrUpdateThumb(CCTexture2D* texture) {
         if (!texture) {
             log::warn("[LevelCell] addOrUpdateThumb called with null texture");
@@ -1808,7 +1903,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                     auto fields = cell->m_fields.self();
                     if (!fields || fields->m_galleryToken != token) return;
                     if (!success || !tex) return;
-                    cell->addOrUpdateThumb(tex);
+                    cell->crossfadeToThumb(tex);
                 });
             }
         }

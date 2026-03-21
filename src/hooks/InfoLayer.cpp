@@ -176,12 +176,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         CCNode* commentNode = nullptr;
         if (!getCommentsPanelGeometry(panelPos, panelSize, commentNode)) return;
 
-        if (m_fields->m_commentsBlurClip) {
-            m_fields->m_commentsBlurClip->removeFromParent();
-            m_fields->m_commentsBlurClip = nullptr;
-            m_fields->m_commentsBlurSprite = nullptr;
-            m_fields->m_commentsBlurDark = nullptr;
-        }
+        // guardar referencia al clip anterior para crossfade
+        Ref<CCClippingNode> oldClip = m_fields->m_commentsBlurClip;
 
         auto blurred = Shaders::createBlurredSprite(tex, panelSize, 6.5f, true);
         if (!blurred) return;
@@ -214,6 +210,29 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             z = commentNode->getZOrder() - 1;
         }
         layer->addChild(clip, z);
+
+        // crossfade: nuevo clip aparece con fade-in, viejo con fade-out
+        if (oldClip && oldClip->getParent()) {
+            // nuevo entra con opacidad 0 y hace fade-in
+            blurred->setOpacity(0);
+            dark->setOpacity(0);
+            blurred->runAction(CCFadeTo::create(0.4f, 255));
+            dark->runAction(CCFadeTo::create(0.4f, 95));
+
+            // viejo hace fade-out y se auto-remueve
+            auto* oldClipPtr = oldClip.data();
+            if (auto* oldBlur = m_fields->m_commentsBlurSprite.data()) {
+                oldBlur->runAction(CCFadeTo::create(0.4f, 0));
+            }
+            if (auto* oldDark = m_fields->m_commentsBlurDark.data()) {
+                oldDark->runAction(CCFadeTo::create(0.4f, 0));
+            }
+            oldClipPtr->runAction(CCSequence::create(
+                CCDelayTime::create(0.4f),
+                CCCallFunc::create(oldClipPtr, callfunc_selector(CCNode::removeFromParent)),
+                nullptr
+            ));
+        }
 
         m_fields->m_commentsBlurClip = clip;
         m_fields->m_commentsBlurSprite = blurred;

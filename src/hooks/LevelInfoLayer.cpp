@@ -253,16 +253,29 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (finalSprite) {
             applyEffects(finalSprite, false);
             
-            if (m_fields->m_pixelBg) {
-                m_fields->m_pixelBg->removeFromParent();
-            } else if (auto old = this->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
-                old->removeFromParent();
+            Ref<CCNode> oldBg = m_fields->m_pixelBg;
+            if (!oldBg) {
+                oldBg = this->getChildByID("paimon-levelinfo-pixel-bg"_spr);
             }
             
             finalSprite->setZOrder(-1);
             finalSprite->setID("paimon-levelinfo-pixel-bg"_spr);
             this->addChild(finalSprite);
             m_fields->m_pixelBg = finalSprite;
+
+            // crossfade: nuevo fondo entra con fade-in, viejo sale con fade-out
+            if (oldBg && oldBg->getParent()) {
+                finalSprite->setOpacity(0);
+                finalSprite->runAction(CCFadeTo::create(0.4f, 255));
+                auto* oldPtr = oldBg.data();
+                oldPtr->runAction(CCSequence::create(
+                    CCFadeTo::create(0.4f, 0),
+                    CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+                    nullptr
+                ));
+            } else if (oldBg) {
+                oldBg->removeFromParent();
+            }
         }
 
         // === MULTI-EFECTO: capas extra ===
@@ -351,7 +364,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
              });
         }
 
-        // overlay â€” oscuridad configurable
+        // limpiar overlay anterior para evitar acumulacion de capas
+        if (auto oldOverlay = this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)) {
+            oldOverlay->removeFromParent();
+        }
+        // overlay — oscuridad configurable
         int darknessVal = static_cast<int>(geode::Mod::get()->getSettingValue<int64_t>("levelinfo-bg-darkness"));
         darknessVal = std::max(0, std::min(50, darknessVal));
         GLubyte overlayAlpha = static_cast<GLubyte>((darknessVal / 50.0f) * 255.0f);
