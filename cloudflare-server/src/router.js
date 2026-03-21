@@ -17,7 +17,7 @@ import { handlePetShopList, handlePetShopDownload, handlePetShopUpload } from '.
 import { handleGDLevelProxy, handleGDProfileProxy } from './controllers/proxy.js';
 import { handleVersionCheck, handleModDownload } from './controllers/mod-system.js';
 import { handleGetBotConfig, handleSetBotConfig, handleGetLatestUploads, handleGalleryList } from './controllers/bot.js';
-import { handleBackfillContributors, handleMigrateLegacy } from './controllers/migration.js';
+import { handleBackfillContributors, handleMigrateLegacy, handleMigrateIds } from './controllers/migration.js';
 
 // ── Middleware / services ──
 import { corsHeaders } from './middleware/cors.js';
@@ -159,6 +159,7 @@ export async function routeRequest(request, env, ctx) {
   if (path === '/api/admin/moderators' && method === 'GET') return handleListModerators(request, env);
   if (path === '/api/admin/backfill-contributors' && method === 'POST') return handleBackfillContributors(request, env);
   if (path === '/api/admin/migrate-legacy' && method === 'POST') return handleMigrateLegacy(request, env);
+  if (path === '/api/admin/migrate-ids' && method === 'POST') return handleMigrateIds(request, env);
 
   // ── Public moderators list (inline, no named handler) ──
   if (path === '/api/moderators' && method === 'GET') {

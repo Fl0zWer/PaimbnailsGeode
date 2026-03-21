@@ -6,6 +6,7 @@ import { NO_STORE_CACHE_CONTROL } from '../middleware/cors.js';
 import { verifyApiKey, requireAdmin, forbiddenResponse } from '../middleware/auth.js';
 import { getR2Json, putR2Json, listR2Keys } from '../services/storage.js';
 import { VersionManager } from '../services/versions.js';
+import { memCache } from '../services/cache.js';
 
 export async function handleBackfillContributors(request, env) {
   if (!verifyApiKey(request, env)) {
@@ -190,6 +191,66 @@ export async function handleMigrateLegacy(request, env) {
     });
   } catch (error) {
     console.error('Migration error:', error);
+    return new Response(JSON.stringify({ error: 'Migration failed', details: error.message }), {
+      status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+    });
+  }
+}
+
+/**
+ * POST /api/admin/migrate-ids
+ * Replaces all id:"1" entries in versions.json with their version timestamp
+ * so every gallery entry has a unique, meaningful ID.
+ */
+export async function handleMigrateIds(request, env) {
+  if (!verifyApiKey(request, env)) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+    });
+  }
+
+  try {
+    const vm = new VersionManager(env.SYSTEM_BUCKET);
+    const map = await vm.getMap();
+    let levelsFixed = 0;
+    let entriesFixed = 0;
+
+    for (const [levelId, entry] of Object.entries(map)) {
+      if (!Array.isArray(entry)) continue;
+
+      let changed = false;
+      const fixed = entry.map((v, i) => {
+        if (!v || typeof v !== 'object') return v;
+        if (v.id === '1' || v.id === 1) {
+          changed = true;
+          entriesFixed++;
+          const newId = v.version && v.version !== 'legacy' ? v.version : String(Date.now() + i);
+          return { ...v, id: newId };
+        }
+        return v;
+      });
+
+      if (changed) {
+        map[levelId] = fixed;
+        levelsFixed++;
+      }
+    }
+
+    if (levelsFixed > 0) {
+      await putR2Json(env.SYSTEM_BUCKET, vm.cacheKey, map);
+      memCache.invalidate('versions.json');
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      levelsFixed,
+      entriesFixed,
+      message: `Migrated ${entriesFixed} entries across ${levelsFixed} levels from id:"1" to version-based IDs`
+    }), {
+      status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+    });
+  } catch (error) {
+    console.error('Migrate IDs error:', error);
     return new Response(JSON.stringify({ error: 'Migration failed', details: error.message }), {
       status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders() }
     });

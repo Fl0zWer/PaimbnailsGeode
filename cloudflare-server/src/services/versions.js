@@ -18,18 +18,21 @@ function normalizeVersionEntry(entry, index = 0) {
       version: entry,
       format: 'webp',
       path: 'thumbnails',
-      type: 'static'
+      type: 'static',
+      isLegacy: true
     };
   }
+  const ver = entry.version;
   return {
-    id: entry.id || `${index + 1}`,
+    id: entry.id || (ver === 'legacy' ? 'legacy' : `${index + 1}`),
     position: typeof entry.position === 'number' ? entry.position : (index + 1),
-    version: entry.version,
+    version: ver,
     format: entry.format || 'webp',
     path: (entry.path || 'thumbnails').replace(/^\//, ''),
     type: entry.type || (entry.format === 'gif' ? 'gif' : 'static'),
     uploadedBy: entry.uploadedBy,
-    uploadedAt: entry.uploadedAt
+    uploadedAt: entry.uploadedAt,
+    ...(ver === 'legacy' || entry.isLegacy ? { isLegacy: true } : {})
   };
 }
 
@@ -73,13 +76,7 @@ export class VersionManager {
     }
 
     if (typeof entry === 'string') {
-      return [{
-        version: entry,
-        format: 'webp',
-        id: 'legacy',
-        path: 'thumbnails',
-        type: 'static'
-      }];
+      return [normalizeVersionEntry(entry, 0)].filter(Boolean);
     }
     return [normalizeVersionEntry(entry, 0)].filter(Boolean);
   }
@@ -91,7 +88,7 @@ export class VersionManager {
     if (metadata.uploadedBy) cleanMeta.uploadedBy = metadata.uploadedBy;
     if (metadata.uploadedAt) cleanMeta.uploadedAt = metadata.uploadedAt;
 
-    const finalId = "1";
+    const finalId = String(Date.now());
 
     const newVersion = {
       id: finalId,

@@ -162,7 +162,6 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         }
     });
 
-    // download y mostrar
     ThumbnailAPI::get().downloadFromUrl(url, [self, requestToken](bool success, CCTexture2D* tex) {
         if (!self->isUiAlive()) return;
         if (requestToken != self->m_galleryRequestToken) return;
@@ -171,6 +170,9 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             float maxWidth = content.width - 40.f;
             float maxHeight = content.height - 70.f;
             self->displayThumbnail(tex, maxWidth, maxHeight, content, false);
+        } else {
+            auto content = self->m_mainLayer->getContentSize();
+            self->showNoThumbnail(content);
         }
     });
 }

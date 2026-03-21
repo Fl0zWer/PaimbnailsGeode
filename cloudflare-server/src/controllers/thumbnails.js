@@ -67,15 +67,19 @@ function toThumbnailPayload(levelId, env, v) {
   const uploadedBy = v.uploadedBy || 'Unknown';
   const uploadedAt = v.uploadedAt || '';
 
-  if (v.isLegacy) {
+  const legacy = v.isLegacy || version === 'legacy' || id === 'legacy';
+
+  if (legacy) {
     let filename = `${levelId}.${format}`;
-    if (v.id !== 'legacy_file') filename = `${levelId}_${v.id}.${format}`;
+    if (v.id && v.id !== 'legacy_file' && v.id !== 'legacy') {
+      filename = `${levelId}_${v.id}.${format}`;
+    }
     return {
       id,
       thumbnailId: id,
       position,
       url: `${env.R2_PUBLIC_URL}/${path}/${filename}`,
-      type: v.type,
+      type: v.type || 'static',
       format,
       creator: uploadedBy,
       date: uploadedAt
@@ -797,7 +801,13 @@ export async function handleListThumbnails(request, env) {
     versions = await getLegacyVersions(env, levelId);
   }
 
-  const results = versions.map(v => toThumbnailPayload(levelId, env, v));
+  const raw = versions.map(v => toThumbnailPayload(levelId, env, v));
+  const seen = new Set();
+  const results = raw.filter(t => {
+    if (seen.has(t.url)) return false;
+    seen.add(t.url);
+    return true;
+  });
 
   return new Response(JSON.stringify({ thumbnails: results }), {
     headers: { 'Content-Type': 'application/json', ...corsHeaders() }
@@ -875,11 +885,19 @@ export async function handleGetThumbnailInfo(request, env) {
       });
     }
 
+    const rawThumbs = versions.map(v => toThumbnailPayload(levelId, env, v));
+    const seenUrls = new Set();
+    const dedupedThumbs = rawThumbs.filter(t => {
+      if (seenUrls.has(t.url)) return false;
+      seenUrls.add(t.url);
+      return true;
+    });
+
     return new Response(JSON.stringify({
       success: true, levelId,
       url: `${env.R2_PUBLIC_URL}/${key}`,
       version: versionData, metadata,
-      thumbnails: versions.map(v => toThumbnailPayload(levelId, env, v)),
+      thumbnails: dedupedThumbs,
       fileInfo: { size: head.size, uploadedAt: head.uploaded, contentType: head.httpMetadata?.contentType }
     }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } });
   } catch (error) {
