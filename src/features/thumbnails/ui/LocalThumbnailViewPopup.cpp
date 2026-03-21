@@ -489,15 +489,17 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     this->m_mainLayer->addChild(menu, 10);
 
     auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    prevSpr->setScale(0.75f);
     m_leftArrow = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(LocalThumbnailViewPopup::onPrev));
-    m_leftArrow->setPosition({25.f, content.height / 2 + 5.f});
+    m_leftArrow->setPosition({15.f, content.height / 2 + 5.f});
     m_leftArrow->setVisible(false);
     menu->addChild(m_leftArrow);
 
     auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
     nextSpr->setFlipX(true);
+    nextSpr->setScale(0.75f);
     m_rightArrow = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(LocalThumbnailViewPopup::onNext));
-    m_rightArrow->setPosition({content.width - 25.f, content.height / 2 + 5.f});
+    m_rightArrow->setPosition({content.width - 15.f, content.height / 2 + 5.f});
     m_rightArrow->setVisible(false);
     menu->addChild(m_rightArrow);
 
@@ -835,14 +837,16 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         this->m_mainLayer->addChild(menu, 20);
 
         auto leftSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+        leftSpr->setScale(0.75f);
         m_leftArrow = CCMenuItemSpriteExtra::create(leftSpr, this, menu_selector(LocalThumbnailViewPopup::onPrevSuggestion));
-        m_leftArrow->setPosition({centerX - maxWidth/2 - 20.f, centerY});
+        m_leftArrow->setPosition({centerX - maxWidth/2 - 30.f, centerY});
         menu->addChild(m_leftArrow);
 
         auto rightSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
         rightSpr->setFlipX(true);
+        rightSpr->setScale(0.75f);
         m_rightArrow = CCMenuItemSpriteExtra::create(rightSpr, this, menu_selector(LocalThumbnailViewPopup::onNextSuggestion));
-        m_rightArrow->setPosition({centerX + maxWidth/2 + 20.f, centerY});
+        m_rightArrow->setPosition({centerX + maxWidth/2 + 30.f, centerY});
         menu->addChild(m_rightArrow);
 
         m_counterLabel = CCLabelBMFont::create(fmt::format("{}/{}", m_currentIndex + 1, m_suggestions.size()).c_str(), "bigFont.fnt");

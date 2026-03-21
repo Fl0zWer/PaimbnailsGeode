@@ -263,7 +263,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             this->addChild(finalSprite);
             m_fields->m_pixelBg = finalSprite;
 
-            // crossfade dinamico: zoom + fade con easing
+            // crossfade: fondo nuevo se desvanece encima del viejo (sin dual-fade que deja ver el fondo negro)
             if (oldBg && oldBg->getParent()) {
                 float targetScale = finalSprite->getScale();
                 finalSprite->setOpacity(0);
@@ -273,13 +273,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     CCEaseOut::create(CCScaleTo::create(0.5f, targetScale), 2.0f),
                     nullptr
                 ));
+                // viejo se queda a opacidad completa debajo; se elimina al terminar la transicion
                 auto* oldPtr = oldBg.data();
                 oldPtr->runAction(CCSequence::create(
-                    CCSpawn::create(
-                        CCFadeTo::create(0.4f, 0),
-                        CCEaseIn::create(CCScaleTo::create(0.4f, oldPtr->getScale() * 0.95f), 2.0f),
-                        nullptr
-                    ),
+                    CCDelayTime::create(0.55f),
                     CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
                     nullptr
                 ));
