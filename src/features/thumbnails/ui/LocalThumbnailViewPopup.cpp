@@ -33,6 +33,7 @@
 #include "../../profiles/ui/RatePopup.hpp"
 #include "ReportInputPopup.hpp"
 #include "ThumbnailSettingsPopup.hpp"
+#include <algorithm>
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -250,6 +251,10 @@ void LocalThumbnailViewPopup::onExit() {
     }
     m_isExiting = true;
     ++m_galleryRequestToken;
+    if (m_invalidationListenerId != 0) {
+        ThumbnailLoader::get().removeInvalidationListener(m_invalidationListenerId);
+        m_invalidationListenerId = 0;
+    }
 
     if (m_mainLayer) {
         m_mainLayer->removeAllChildren();
@@ -379,6 +384,41 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     auto& vctx = paimon::SessionState::get().verification;
     bool openedFromReport    = paimon::SessionState::consumeFlag(vctx.fromReportPopup);
     int  verificationCategory = paimon::SessionState::consumeInt(vctx.verificationCategory);
+    m_verificationCategory = verificationCategory;
+
+    if (verificationCategory < 0 && m_invalidationListenerId == 0) {
+        WeakRef<LocalThumbnailViewPopup> self = this;
+        m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([self](int invalidLevelID) {
+            auto popup = self.lock();
+            if (!popup || !popup->isUiAlive() || popup->m_levelID != invalidLevelID) return;
+
+            std::string currentId = "";
+            if (popup->m_currentIndex >= 0 && popup->m_currentIndex < static_cast<int>(popup->m_thumbnails.size())) {
+                currentId = popup->m_thumbnails[popup->m_currentIndex].id;
+            }
+
+            ThumbnailAPI::get().getThumbnails(popup->m_levelID, [self, currentId](bool ok, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
+                auto popup = self.lock();
+                if (!popup || !popup->isUiAlive() || !ok || thumbs.empty()) return;
+
+                popup->m_thumbnails = thumbs;
+                int newIndex = 0;
+                if (!currentId.empty()) {
+                    auto it = std::find_if(
+                        popup->m_thumbnails.begin(),
+                        popup->m_thumbnails.end(),
+                        [&currentId](ThumbnailAPI::ThumbnailInfo const& t) { return t.id == currentId; }
+                    );
+                    if (it != popup->m_thumbnails.end()) {
+                        newIndex = static_cast<int>(std::distance(popup->m_thumbnails.begin(), it));
+                    }
+                }
+                popup->m_currentIndex = newIndex;
+                popup->loadThumbnailAt(popup->m_currentIndex);
+                popup->setupRating();
+            });
+        });
+    }
 
     if (m_bgSprite) {
         m_bgSprite->setVisible(false);
@@ -473,8 +513,6 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     log::info("[ThumbnailViewPopup] === INICIANDO CARGA DE THUMBNAIL ===");
     log::info("[ThumbnailViewPopup] Level ID: {}", m_levelID);
     log::info("[ThumbnailViewPopup] Verification Category: {}", verificationCategory);
-    m_verificationCategory = verificationCategory;
-
     if (verificationCategory >= 0) {
         this->loadFromVerificationQueue(static_cast<PendingCategory>(verificationCategory), maxWidth, maxHeight, content, openedFromReport);
     } else {

@@ -62,6 +62,7 @@ class $modify(PaimonLevelPage, LevelPage) {
         int m_currentThumbnailIndex = 0;
         float m_cycleTimer = 0.f;
         int m_cycleToken = 0;
+        int m_invalidationListenerId = 0;
     };
 
     $override
@@ -74,6 +75,17 @@ class $modify(PaimonLevelPage, LevelPage) {
         m_fields->m_cycleTimer = 0.f;
         m_fields->m_currentThumbnailIndex = 0;
         this->unschedule(schedule_selector(PaimonLevelPage::updateGalleryCycle));
+
+        if (m_fields->m_invalidationListenerId == 0) {
+            WeakRef<PaimonLevelPage> safeRef = this;
+            m_fields->m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([safeRef](int invalidLevelID) {
+                auto ref = safeRef.lock();
+                auto* self = static_cast<PaimonLevelPage*>(ref.data());
+                if (!self || !self->getParent()) return;
+                if (!self->m_level || self->m_level->m_levelID != invalidLevelID) return;
+                self->updateDynamicPage(self->m_level);
+            });
+        }
         
         // solo id > 0
         if (level->m_levelID <= 0) return;
@@ -108,6 +120,10 @@ class $modify(PaimonLevelPage, LevelPage) {
     $override
     void onExit() {
         this->unschedule(schedule_selector(PaimonLevelPage::updateGalleryCycle));
+        if (m_fields->m_invalidationListenerId != 0) {
+            ThumbnailLoader::get().removeInvalidationListener(m_fields->m_invalidationListenerId);
+            m_fields->m_invalidationListenerId = 0;
+        }
         m_fields->m_cycleToken++;
         LevelPage::onExit();
     }
@@ -125,8 +141,10 @@ class $modify(PaimonLevelPage, LevelPage) {
         if (index < 0 || index >= static_cast<int>(m_fields->m_thumbnails.size())) return;
         m_fields->m_currentThumbnailIndex = index;
         int capturedLevelID = m_fields->m_levelID;
-        int token = m_fields->m_cycleToken;
+        int token = ++m_fields->m_cycleToken;
         std::string url = m_fields->m_thumbnails[index].url;
+        auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
+        url += fmt::format("{}_pv={}{}", sep, m_fields->m_thumbnails[index].id, token);
         Ref<LevelPage> safeRef = this;
         ThumbnailAPI::get().downloadFromUrl(url, [safeRef, capturedLevelID, token](bool success, CCTexture2D* tex) {
             auto* self = static_cast<PaimonLevelPage*>(safeRef.data());

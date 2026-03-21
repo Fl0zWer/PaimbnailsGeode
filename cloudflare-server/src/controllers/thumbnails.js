@@ -58,6 +58,42 @@ function buildThumbnailKey(levelId, versionEntry) {
   return `${path}/${levelId}_${versionEntry.version}.${format}`;
 }
 
+function toThumbnailPayload(levelId, env, v) {
+  const path = (v.path || 'thumbnails').replace(/^\//, '');
+  const format = v.format || 'webp';
+  const version = v.version;
+  const position = v.position || 1;
+  const id = v.id || version;
+  const uploadedBy = v.uploadedBy || 'Unknown';
+  const uploadedAt = v.uploadedAt || '';
+
+  if (v.isLegacy) {
+    let filename = `${levelId}.${format}`;
+    if (v.id !== 'legacy_file') filename = `${levelId}_${v.id}.${format}`;
+    return {
+      id,
+      thumbnailId: id,
+      position,
+      url: `${env.R2_PUBLIC_URL}/${path}/${filename}`,
+      type: v.type,
+      format,
+      creator: uploadedBy,
+      date: uploadedAt
+    };
+  }
+
+  return {
+    id,
+    thumbnailId: id,
+    position,
+    url: `${env.R2_PUBLIC_URL}/${path}/${levelId}_${version}.${format}`,
+    type: v.type || (format === 'gif' ? 'gif' : 'static'),
+    format,
+    creator: uploadedBy,
+    date: uploadedAt
+  };
+}
+
 // ===== Upload thumbnail (PNG/WebP) =====
 export async function handleUpload(request, env, ctx) {
   if (!verifyApiKey(request, env)) {
@@ -761,41 +797,7 @@ export async function handleListThumbnails(request, env) {
     versions = await getLegacyVersions(env, levelId);
   }
 
-  const results = versions.map(v => {
-    const path = v.path || 'thumbnails';
-    const format = v.format || 'webp';
-    const version = v.version;
-    const position = v.position || 1;
-    const id = v.id || version;
-    const uploadedBy = v.uploadedBy || 'Unknown';
-    const uploadedAt = v.uploadedAt || '';
-
-    if (v.isLegacy) {
-      let filename = `${levelId}.${format}`;
-      if (v.id !== 'legacy_file') filename = `${levelId}_${v.id}.${format}`;
-      return {
-        id,
-        thumbnailId: id,
-        position,
-        url: `${env.R2_PUBLIC_URL}/${path}/${filename}`,
-        type: v.type,
-        format,
-        creator: uploadedBy,
-        date: uploadedAt
-      };
-    }
-
-    return {
-      id,
-      thumbnailId: id,
-      position,
-      url: `${env.R2_PUBLIC_URL}/${path}/${levelId}_${version}.${format}`,
-      type: v.type || (format === 'gif' ? 'gif' : 'static'),
-      format,
-      creator: uploadedBy,
-      date: uploadedAt
-    };
-  });
+  const results = versions.map(v => toThumbnailPayload(levelId, env, v));
 
   return new Response(JSON.stringify({ thumbnails: results }), {
     headers: { 'Content-Type': 'application/json', ...corsHeaders() }
@@ -815,7 +817,11 @@ export async function handleGetThumbnailInfo(request, env) {
 
   try {
     const vm = new VersionManager(env.SYSTEM_BUCKET);
-    const versionData = await vm.getVersion(levelId);
+    let versions = await vm.getAllVersions(levelId);
+    if (versions.length === 0) {
+      versions = await getLegacyVersions(env, levelId);
+    }
+    const versionData = versions.length > 0 ? versions[versions.length - 1] : null;
 
     if (!versionData) {
       return new Response(JSON.stringify({ error: 'Thumbnail not found' }), {
@@ -873,16 +879,7 @@ export async function handleGetThumbnailInfo(request, env) {
       success: true, levelId,
       url: `${env.R2_PUBLIC_URL}/${key}`,
       version: versionData, metadata,
-      thumbnails: versions.map(v => ({
-        id: v.id,
-        thumbnailId: v.id,
-        position: v.position,
-        format: v.format,
-        type: v.type || (v.format === 'gif' ? 'gif' : 'static'),
-        url: `${env.R2_PUBLIC_URL}/${(v.path || 'thumbnails').replace(/^\//, '')}/${levelId}_${v.version}.${v.format}`,
-        creator: v.uploadedBy || 'Unknown',
-        date: v.uploadedAt || ''
-      })),
+      thumbnails: versions.map(v => toThumbnailPayload(levelId, env, v)),
       fileInfo: { size: head.size, uploadedAt: head.uploaded, contentType: head.httpMetadata?.contentType }
     }), { status: 200, headers: { 'Content-Type': 'application/json', ...corsHeaders() } });
   } catch (error) {

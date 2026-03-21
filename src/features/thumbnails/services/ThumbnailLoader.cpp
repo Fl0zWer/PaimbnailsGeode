@@ -822,6 +822,7 @@ void ThumbnailLoader::clearCache() {
 
 void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     int key = isGif ? -levelID : levelID;
+    std::vector<InvalidationCallback> listeners;
 
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
@@ -847,6 +848,19 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         // quito del cache de fallos y gif
         m_failedCache.erase(key);
         m_gifLevels.erase(levelID);
+
+        listeners.reserve(m_invalidationListeners.size());
+        for (auto const& [_, cb] : m_invalidationListeners) {
+            if (cb) listeners.push_back(cb);
+        }
+    }
+
+    if (!listeners.empty()) {
+        Loader::get()->queueInMainThread([listeners = std::move(listeners), levelID]() mutable {
+            for (auto& cb : listeners) {
+                if (cb) cb(levelID);
+            }
+        });
     }
 
     // borro ambos formatos en disco para no dejar huerfanos
@@ -872,6 +886,20 @@ int ThumbnailLoader::getInvalidationVersion(int levelID) const {
     std::lock_guard<std::mutex> lock(m_queueMutex);
     auto it = m_invalidationVersions.find(levelID);
     return it != m_invalidationVersions.end() ? it->second : 0;
+}
+
+int ThumbnailLoader::addInvalidationListener(InvalidationCallback callback) {
+    if (!callback) return 0;
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    int id = m_nextInvalidationListenerId++;
+    m_invalidationListeners[id] = std::move(callback);
+    return id;
+}
+
+void ThumbnailLoader::removeInvalidationListener(int listenerId) {
+    if (listenerId <= 0) return;
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    m_invalidationListeners.erase(listenerId);
 }
 
 void ThumbnailLoader::clearDiskCache() {

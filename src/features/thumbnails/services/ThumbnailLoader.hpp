@@ -28,6 +28,7 @@
 class ThumbnailLoader {
 public:
     using LoadCallback = geode::CopyableFunction<void(cocos2d::CCTexture2D* texture, bool success)>;
+    using InvalidationCallback = geode::CopyableFunction<void(int levelID)>;
 
     static ThumbnailLoader& get();
 
@@ -48,6 +49,8 @@ public:
     // los consumidores (LevelCell, etc) guardan la version cuando cargan
     // y la comparan pa saber si deben recargar
     int getInvalidationVersion(int levelID) const;
+    int addInvalidationListener(InvalidationCallback callback);
+    void removeInvalidationListener(int listenerId);
 
     // config
     void setMaxConcurrentTasks(int max);
@@ -109,6 +112,8 @@ private:
 
     // version de invalidacion por level (se incrementa al invalidar)
     std::unordered_map<int, int> m_invalidationVersions;
+    std::unordered_map<int, InvalidationCallback> m_invalidationListeners;
+    int m_nextInvalidationListenerId = 1;
 
     bool m_batchMode = false; // por defecto "smart" (desactivado por velocidad)
 

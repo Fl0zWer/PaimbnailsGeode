@@ -150,6 +150,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         float m_galleryTimer = 0.f;
         bool m_galleryRequested = false;
         int m_galleryToken = 0;
+        int m_invalidationListenerId = 0;
     };
     
     // destructor pa marcar celda como destruyendose
@@ -1101,6 +1102,10 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_galleryThumbnails.clear();
             fields->m_galleryRequested = false;
             fields->m_galleryToken++;
+            if (fields->m_invalidationListenerId != 0) {
+                ThumbnailLoader::get().removeInvalidationListener(fields->m_invalidationListenerId);
+                fields->m_invalidationListenerId = 0;
+            }
         }
 
         if (m_level) {
@@ -1624,6 +1629,26 @@ class $modify(PaimonLevelCell, LevelCell) {
             if (levelID <= 0) return;
             
             auto fields = m_fields.self();
+            if (fields->m_invalidationListenerId == 0) {
+                WeakRef<PaimonLevelCell> safeRef = this;
+                fields->m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([safeRef](int invalidLevelID) {
+                    auto selfRef = safeRef.lock();
+                    auto* self = static_cast<PaimonLevelCell*>(selfRef.data());
+                    if (!self || !self->getParent() || !self->m_level) return;
+                    if (self->m_level->m_levelID.value() != invalidLevelID) return;
+                    auto fields = self->m_fields.self();
+                    if (!fields) return;
+                    fields->m_thumbnailRequested = false;
+                    fields->m_thumbnailApplied = false;
+                    fields->m_galleryRequested = false;
+                    fields->m_galleryThumbnails.clear();
+                    fields->m_galleryIndex = 0;
+                    fields->m_galleryTimer = 0.f;
+                    fields->m_galleryToken++;
+                    fields->m_loadedInvalidationVersion = ThumbnailLoader::get().getInvalidationVersion(invalidLevelID);
+                    self->tryLoadThumbnail();
+                });
+            }
             
             // comprobar si el level cambio
             if (fields->m_lastRequestedLevelID != levelID) {

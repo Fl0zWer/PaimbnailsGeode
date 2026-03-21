@@ -90,6 +90,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         Ref<CCMenuItemSpriteExtra> m_rateBtn = nullptr;
         bool m_cycling = true;
         float m_cycleTimer = 0.0f;
+        int m_galleryToken = 0;
+        int m_bgRequestToken = 0;
+        int m_invalidationListenerId = 0;
     };
     
     void applyThumbnailBackground(CCTexture2D* tex, int32_t levelID) {
@@ -374,14 +377,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
             if (currentVersion != m_fields->m_loadedInvalidationVersion) {
                 m_fields->m_loadedInvalidationVersion = currentVersion;
-                std::string fileName = fmt::format("{}.png", levelID);
-                Ref<LevelInfoLayer> self = this;
-                ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
-                    if (!self->getParent()) return;
-                    if (tex) {
-                        static_cast<PaimonLevelInfoLayer*>(self.data())->applyThumbnailBackground(tex, levelID);
-                    }
-                }, 5);
+                refreshGalleryData(levelID, true);
             }
         }
 
@@ -438,6 +434,12 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     void onExit() {
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
+        if (m_fields->m_invalidationListenerId != 0) {
+            ThumbnailLoader::get().removeInvalidationListener(m_fields->m_invalidationListenerId);
+            m_fields->m_invalidationListenerId = 0;
+        }
+        m_fields->m_galleryToken++;
+        m_fields->m_bgRequestToken++;
         LevelInfoLayer::onExit();
     }
 
@@ -530,6 +532,17 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             // fondo pixel thumb
             bool isMainLevel = level->m_levelType == GJLevelType::Main;
+            if (m_fields->m_invalidationListenerId == 0) {
+                WeakRef<PaimonLevelInfoLayer> safeRef = this;
+                m_fields->m_invalidationListenerId = ThumbnailLoader::get().addInvalidationListener([safeRef](int invalidLevelID) {
+                    auto selfRef = safeRef.lock();
+                    auto* self = static_cast<PaimonLevelInfoLayer*>(selfRef.data());
+                    if (!self || !self->getParent() || !self->m_level) return;
+                    if (self->m_level->m_levelID.value() != invalidLevelID) return;
+                    self->m_fields->m_loadedInvalidationVersion = ThumbnailLoader::get().getInvalidationVersion(invalidLevelID);
+                    self->refreshGalleryData(invalidLevelID, true);
+                });
+            }
             if (!isMainLevel && !m_fields->m_thumbnailRequested) {
                 m_fields->m_thumbnailRequested = true;
                 int32_t levelID = level->m_levelID.value();
@@ -599,40 +612,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             button->setID("thumbnail-view-button"_spr);
             m_fields->m_thumbnailButton = button;
 
-            // thumbs galeria
-            Ref<LevelInfoLayer> selfGallery = this;
-            ThumbnailAPI::get().getThumbnails(level->m_levelID.value(), [selfGallery](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
-                auto* self = static_cast<PaimonLevelInfoLayer*>(selfGallery.data());
-                if (!self->getParent()) {
-                    return;
-                }
-                
-                if (success) {
-                    self->m_fields->m_thumbnails = thumbs;
-                }
-                
-                // vacio -> default
-                if (self->m_fields->m_thumbnails.empty()) {
-                     ThumbnailAPI::ThumbnailInfo mainThumb;
-                     mainThumb.id = "0";
-                     mainThumb.url = ThumbnailAPI::get().getThumbnailURL(self->m_level->m_levelID.value());
-                     self->m_fields->m_thumbnails.push_back(mainThumb);
-                }
-
-                bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
-                if (self->m_fields->m_thumbnails.size() > 1) {
-                    self->setupGallery();
-                    if (autoCycleEnabled) {
-                        self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
-                    } else {
-                        self->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
-                    }
-                } else {
-                    self->setupGallery();
-                    if (self->m_fields->m_prevBtn) self->m_fields->m_prevBtn->setVisible(false);
-                    if (self->m_fields->m_nextBtn) self->m_fields->m_nextBtn->setVisible(false);
-                }
-            });
+            // thumbs galeria (URLs versionadas via list endpoint)
+            this->refreshGalleryData(level->m_levelID.value(), true);
 
             // add primero pa layout default
             leftMenu->addChild(button);
@@ -913,6 +894,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
 
     void setupGallery() {
+        if (auto old = this->getChildByID("gallery-menu"_spr)) {
+            old->removeFromParent();
+        }
         // flechas
         auto menu = CCMenu::create();
         menu->setID("gallery-menu"_spr);
@@ -921,6 +905,42 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             menu->setPosition(m_fields->m_thumbnailButton->getPosition());
             this->addChild(menu, 100);
         }
+    }
+
+    void refreshGalleryData(int32_t levelID, bool refreshBackground) {
+        int token = ++m_fields->m_galleryToken;
+        Ref<LevelInfoLayer> safeRef = this;
+        ThumbnailAPI::get().getThumbnails(levelID, [safeRef, levelID, token, refreshBackground](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
+            auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
+            if (!self || !self->getParent() || !self->m_level || self->m_level->m_levelID.value() != levelID) return;
+            if (self->m_fields->m_galleryToken != token) return;
+
+            self->m_fields->m_thumbnails.clear();
+            if (success) self->m_fields->m_thumbnails = thumbs;
+            if (self->m_fields->m_thumbnails.empty()) {
+                ThumbnailAPI::ThumbnailInfo mainThumb;
+                mainThumb.id = "0";
+                mainThumb.url = ThumbnailAPI::get().getThumbnailURL(levelID);
+                self->m_fields->m_thumbnails.push_back(mainThumb);
+            }
+
+            self->m_fields->m_currentThumbnailIndex = 0;
+            self->m_fields->m_cycleTimer = 0.f;
+            self->setupGallery();
+
+            bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
+            if (self->m_fields->m_thumbnails.size() > 1 && autoCycleEnabled) {
+                self->schedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
+            } else {
+                self->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
+                if (self->m_fields->m_prevBtn) self->m_fields->m_prevBtn->setVisible(false);
+                if (self->m_fields->m_nextBtn) self->m_fields->m_nextBtn->setVisible(false);
+            }
+
+            if (refreshBackground) {
+                self->loadThumbnail(0);
+            }
+        });
     }
     
     void onRateBtn(CCObject* sender) {
@@ -961,11 +981,16 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (index < 0 || index >= m_fields->m_thumbnails.size()) return;
         
         auto& thumb = m_fields->m_thumbnails[index];
+        int requestToken = ++m_fields->m_bgRequestToken;
+        std::string url = thumb.url;
+        auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
+        url += fmt::format("{}_pv={}{}", sep, thumb.id, requestToken);
         // load desde url â€” use Ref<> for safe prevent use-after-free
         Ref<LevelInfoLayer> safeRef = this;
-        ThumbnailAPI::get().downloadFromUrl(thumb.url, [safeRef, index](bool success, CCTexture2D* tex) {
+        ThumbnailAPI::get().downloadFromUrl(url, [safeRef, index, requestToken](bool success, CCTexture2D* tex) {
             auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
             if (!self->getParent()) return;
+            if (self->m_fields->m_bgRequestToken != requestToken) return;
             if (success && tex) {
                 // update sprite btn thumb
                 if (self->m_fields->m_thumbnailButton) {
