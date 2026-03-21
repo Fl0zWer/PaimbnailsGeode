@@ -10,11 +10,11 @@
 #include "../utils/Shaders.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../framework/compat/SceneLocators.hpp"
 #include <algorithm>
 #include <string>
-#include <cmath>
-#include <vector>
 
 using namespace geode::prelude;
 
@@ -34,30 +34,62 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         bool m_hasCaveEffect = false;
     };
 
-    bool getPopupInteriorGeometry(CCPoint& outCenter, CCSize& outSize) {
+    bool getCommentsPanelGeometry(CCPoint& outPos, CCSize& outSize, CCNode*& outCommentNode) {
         auto layer = this->m_mainLayer;
         if (!layer) return false;
-        auto layerSize = layer->getContentSize();
-        CCSize popupSize = CCSize(440.f, 290.f);
-        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
-        if (auto bg = layer->getChildByID("background")) {
-            popupSize = bg->getScaledContentSize();
-            popupCenter = bg->getPosition();
-        } else {
-            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
-                if (typeinfo_cast<CCScale9Sprite*>(child)) {
-                    popupSize = child->getScaledContentSize();
-                    popupCenter = child->getPosition();
-                    break;
-                }
+
+        CCNode* found = nullptr;
+        auto dfs = [&](auto const& self, CCNode* node) -> void {
+            if (!node || found) return;
+            if (typeinfo_cast<GJCommentListLayer*>(node)) {
+                found = node;
+                return;
             }
+            auto children = node->getChildren();
+            if (!children) return;
+            for (auto* child : CCArrayExt<CCNode*>(children)) {
+                self(self, child);
+                if (found) return;
+            }
+        };
+        dfs(dfs, layer);
+
+        if (!found) return false;
+        outCommentNode = found;
+
+        // El blur de comentarios debe cubrir TODO el fondo del popup,
+        // no solo el bbox interno del GJCommentListLayer.
+        auto popupGeo = paimon::compat::InfoLayerLocator::findPopupGeometry(layer);
+        if (popupGeo.found) {
+            float padding = 3.f;
+            outSize = CCSize(
+                std::max(1.f, popupGeo.size.width - padding * 2.f),
+                std::max(1.f, popupGeo.size.height - padding * 2.f)
+            );
+            outPos = ccp(
+                popupGeo.center.x - outSize.width * 0.5f,
+                popupGeo.center.y - outSize.height * 0.5f
+            );
+            return true;
         }
-        float padding = 3.f;
-        outSize = CCSize(
-            std::max(1.0f, popupSize.width - padding * 2.f),
-            std::max(1.0f, popupSize.height - padding * 2.f)
-        );
-        outCenter = popupCenter;
+
+        auto parent = found->getParent();
+        if (!parent) return false;
+
+        CCRect localRect = found->boundingBox();
+        CCPoint worldMin = parent->convertToWorldSpace(localRect.origin);
+        CCPoint worldMax = parent->convertToWorldSpace(ccp(
+            localRect.origin.x + localRect.size.width,
+            localRect.origin.y + localRect.size.height
+        ));
+
+        CCPoint layerMin = layer->convertToNodeSpace(worldMin);
+        CCPoint layerMax = layer->convertToNodeSpace(worldMax);
+
+        float width = std::max(1.0f, std::abs(layerMax.x - layerMin.x));
+        float height = std::max(1.0f, std::abs(layerMax.y - layerMin.y));
+        outSize = CCSize(width, height);
+        outPos = ccp(std::min(layerMin.x, layerMax.x), std::min(layerMin.y, layerMax.y));
         return true;
     }
 
@@ -69,6 +101,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         if (level && level->m_levelID.value() > 0) {
             int32_t levelID = level->m_levelID.value();
             std::string fileName = fmt::format("{}.png", levelID);
+
+            // Si ya existe mini local, aplico al instante para evitar flicker.
+            if (auto* localTex = LocalThumbs::get().loadTexture(levelID)) {
+                applyCommentsBlurBackground(localTex);
+            }
+
             Ref<InfoLayer> safeRef = this;
             ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, fileName](CCTexture2D* texture, bool success) {
                 auto applyOnMain = [safeRef](CCTexture2D* tex) {
@@ -133,9 +171,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         auto layer = this->m_mainLayer;
         if (!layer) return;
 
-        CCPoint panelCenter;
+        CCPoint panelPos;
         CCSize panelSize;
-        if (!getPopupInteriorGeometry(panelCenter, panelSize)) return;
+        CCNode* commentNode = nullptr;
+        if (!getCommentsPanelGeometry(panelPos, panelSize, commentNode)) return;
 
         if (m_fields->m_commentsBlurClip) {
             m_fields->m_commentsBlurClip->removeFromParent();
@@ -150,36 +189,15 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         blurred->setID("paimon-infolayer-comments-blur-sprite"_spr);
 
         auto stencil = CCDrawNode::create();
-        float clipW = panelSize.width;
-        float clipH = panelSize.height;
-        float r = 6.f;
-        int segs = 8;
-        std::vector<CCPoint> verts;
-        constexpr float kPi = 3.14159265358979323846f;
-        for (int i = 0; i <= segs; i++) {
-            float a = kPi + (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
-            verts.push_back(ccp(r + r * std::cos(a), r + r * std::sin(a)));
-        }
-        for (int i = 0; i <= segs; i++) {
-            float a = 3.0f * kPi / 2.0f + (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
-            verts.push_back(ccp(clipW - r + r * std::cos(a), r + r * std::sin(a)));
-        }
-        for (int i = 0; i <= segs; i++) {
-            float a = (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
-            verts.push_back(ccp(clipW - r + r * std::cos(a), clipH - r + r * std::sin(a)));
-        }
-        for (int i = 0; i <= segs; i++) {
-            float a = kPi / 2.0f + (kPi / 2.0f) * static_cast<float>(i) / static_cast<float>(segs);
-            verts.push_back(ccp(r + r * std::cos(a), clipH - r + r * std::sin(a)));
-        }
+        CCPoint rect[4] = { ccp(0,0), ccp(panelSize.width,0), ccp(panelSize.width,panelSize.height), ccp(0,panelSize.height) };
         ccColor4F white = {1,1,1,1};
-        stencil->drawPolygon(verts.data(), static_cast<int>(verts.size()), white, 0, white);
+        stencil->drawPolygon(rect, 4, white, 0, white);
 
         auto clip = CCClippingNode::create();
         clip->setStencil(stencil);
         clip->setContentSize(panelSize);
-        clip->setAnchorPoint(ccp(0.5f, 0.5f));
-        clip->setPosition(panelCenter);
+        clip->setAnchorPoint({0.f, 0.f});
+        clip->setPosition(panelPos);
         clip->setID("paimon-infolayer-comments-blur-clip"_spr);
 
         clip->addChild(blurred);
@@ -191,14 +209,19 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         dark->setID("paimon-infolayer-comments-blur-dark"_spr);
         clip->addChild(dark);
 
-        layer->addChild(clip, -1);
+        int z = 0;
+        if (commentNode && commentNode->getParent() == layer) {
+            z = commentNode->getZOrder() - 1;
+        }
+        layer->addChild(clip, z);
 
         m_fields->m_commentsBlurClip = clip;
         m_fields->m_commentsBlurSprite = blurred;
         m_fields->m_commentsBlurDark = dark;
 
         styleInfoLayerBgs(layer);
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
+        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
     }
 
     void applyBlurredBackground(CCTexture2D* tex) {
@@ -273,7 +296,8 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         styleInfoLayerBgs(layer);
 
         // re-aplicar estilos periodicamente
-        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
+        this->unschedule(schedule_selector(PaimonInfoLayer::tickStyleBgs));
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.0f);
     }
 
     void styleInfoLayerBgs(CCNode* root) {
@@ -293,6 +317,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                 // GJCommentListLayer: transparentar y quitar bordes
                 if (auto* commentList = typeinfo_cast<GJCommentListLayer*>(child)) {
                     commentList->setOpacity(0);
+
                     auto* listChildren = commentList->getChildren();
                     if (listChildren) {
                         for (auto* lc : CCArrayExt<CCNode*>(listChildren)) {
@@ -386,11 +411,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     }
 
     void restoreMusicEffect() {
-        // quitar siempre si sigue activo, por si el flag local se desincronizo
-        auto& mgr = ProfileMusicManager::get();
-        if (m_fields->m_hasCaveEffect || mgr.hasCaveEffect()) {
-            mgr.forceRemoveCaveEffect();
+        if (m_fields->m_hasCaveEffect) {
+            // Forzar eliminacion inmediata para que el efecto no quede colgado al salir
+            ProfileMusicManager::get().forceRemoveCaveEffect();
+            m_fields->m_hasCaveEffect = false;
         }
-        m_fields->m_hasCaveEffect = false;
     }
 };

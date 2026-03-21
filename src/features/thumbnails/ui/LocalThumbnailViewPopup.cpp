@@ -37,6 +37,10 @@
 using namespace geode::prelude;
 using namespace cocos2d;
 
+bool LocalThumbnailViewPopup::isUiAlive() {
+    return !m_isExiting && this->getParent() && m_mainLayer;
+}
+
 
 void LocalThumbnailViewPopup::onPrev(CCObject*) {
     if (m_thumbnails.empty()) return;
@@ -134,6 +138,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     // update rating ui
     Ref<LocalThumbnailViewPopup> self = this;
     ThumbnailAPI::get().getRating(m_levelID, username, thumb.id, [self](bool success, float average, int count, int userVote) {
+        if (!self->isUiAlive()) return;
         if (success && self->m_ratingLabel) {
             self->m_ratingLabel->setString(fmt::format("{:.1f} ({})", average, count).c_str());
             if (count == 0) {
@@ -148,6 +153,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
 
     // download y mostrar
     ThumbnailAPI::get().downloadFromUrl(url, [self](bool success, CCTexture2D* tex) {
+        if (!self->isUiAlive()) return;
         if (success && tex) {
             auto content = self->m_mainLayer->getContentSize();
             float maxWidth = content.width - 40.f;
@@ -189,7 +195,7 @@ void LocalThumbnailViewPopup::loadCurrentSuggestion() {
     Ref<LocalThumbnailViewPopup> safeRef = this;
 
     ThumbnailAPI::get().downloadFromUrl(url, [safeRef](bool success, CCTexture2D* tex) {
-         if (!safeRef->getParent() || !safeRef->m_mainLayer) {
+         if (!safeRef->isUiAlive()) {
              return;
          }
 
@@ -459,7 +465,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
         WeakRef<LocalThumbnailViewPopup> self = this;
         ThumbnailAPI::get().getThumbnailInfo(m_levelID, [self](bool success, std::string const& response) {
             auto popup = self.lock();
-            if (!popup) return;
+            if (!popup || !popup->isUiAlive()) return;
 
             if (success) {
                 std::vector<ThumbnailAPI::ThumbnailInfo> thumbs;
@@ -630,7 +636,7 @@ void LocalThumbnailViewPopup::loadFromThumbnailLoader(float maxWidth, float maxH
     ThumbnailLoader::get().requestLoad(m_levelID, fileName, [safeRef, maxWidth, maxHeight, content, openedFromReport](CCTexture2D* tex, bool) {
         log::info("[ThumbnailViewPopup] === CALLBACK THUMBNAILLOADER ===");
 
-        if (!safeRef->getParent() || !safeRef->m_mainLayer) {
+        if (!safeRef->isUiAlive()) {
             log::warn("[ThumbnailViewPopup] Popup ya no tiene parent o mainLayer valido");
             return;
         }
@@ -742,6 +748,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
          auto path = ThumbnailLoader::get().getCachePath(m_levelID, true);
          Ref<LocalThumbnailViewPopup> safeRef = this;
          AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [safeRef, maxWidth, maxHeight](AnimatedGIFSprite* anim) {
+             if (!safeRef->isUiAlive()) return;
              if (anim && safeRef->m_thumbnailSprite) {
                  auto oldSprite = safeRef->m_thumbnailSprite;
                  auto parent = oldSprite->getParent();

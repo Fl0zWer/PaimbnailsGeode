@@ -75,6 +75,8 @@ protected:
     CCLabelBMFont* m_counterLabel = nullptr;
 
     // --- metodos protegidos ---
+    bool isUiAlive();
+
     void onPrev(CCObject*);
     void onNext(CCObject*);
     void onInfo(CCObject*);

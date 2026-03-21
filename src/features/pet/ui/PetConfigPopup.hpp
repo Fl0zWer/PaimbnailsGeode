@@ -4,6 +4,8 @@
 
 class PetConfigPopup : public geode::Popup {
 protected:
+    void onExit() override;
+
     // gallery
     cocos2d::CCNode* m_galleryContainer = nullptr;
     cocos2d::CCMenu* m_galleryMenu = nullptr;
@@ -58,7 +60,7 @@ protected:
     cocos2d::CCNode* m_settingsTab = nullptr;
     std::vector<CCMenuItemSpriteExtra*> m_tabs;
 
-    bool init();
+    bool init() override;
     void createTabButtons();
     void onTabSwitch(cocos2d::CCObject* sender);
 

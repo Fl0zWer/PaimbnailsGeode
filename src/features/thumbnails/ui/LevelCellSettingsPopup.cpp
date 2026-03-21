@@ -54,6 +54,16 @@ std::string LevelCellSettingsPopup::getAnimEffectDisplayName(std::string const& 
     return effect;
 }
 
+void LevelCellSettingsPopup::onExit() {
+    this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
+    if (m_scrollArrow) {
+        m_scrollArrow->stopAllActions();
+        m_scrollArrow->setPosition(m_scrollArrowBasePos);
+    }
+    m_scrollArrowBouncing = false;
+    Popup::onExit();
+}
+
 // ────────────────────────────────────────────────────────────
 // load / save
 // ────────────────────────────────────────────────────────────
@@ -124,17 +134,30 @@ void LevelCellSettingsPopup::checkScrollPosition(float dt) {
     // si el offset es cercano al minimo (abajo), ocultar la flecha
     bool nearBottom = (currentY <= -minY + 20.f);
 
-    if (nearBottom && m_scrollArrow->getOpacity() > 0) {
+    if (nearBottom) {
         m_scrollArrow->stopAllActions();
-        m_scrollArrow->runAction(CCFadeTo::create(0.3f, 0));
-    } else if (!nearBottom && m_scrollArrow->getOpacity() < 150) {
-        m_scrollArrow->stopAllActions();
-        m_scrollArrow->runAction(CCFadeTo::create(0.3f, 150));
-        // re-start bounce
-        auto moveUp = CCMoveBy::create(0.5f, {0, 3.f});
-        auto moveDown = CCMoveBy::create(0.5f, {0, -3.f});
-        auto seq = CCSequence::create(moveUp, moveDown, nullptr);
-        m_scrollArrow->runAction(CCRepeatForever::create(seq));
+        m_scrollArrow->setPosition(m_scrollArrowBasePos);
+        m_scrollArrowBouncing = false;
+        if (m_scrollArrow->getOpacity() > 0) {
+            m_scrollArrow->runAction(CCFadeTo::create(0.3f, 0));
+        }
+    } else {
+        if (!m_scrollArrowBouncing) {
+            m_scrollArrow->stopAllActions();
+            m_scrollArrow->setPosition(m_scrollArrowBasePos);
+            auto moveUp = CCMoveBy::create(0.5f, {0, 3.f});
+            auto moveDown = CCMoveBy::create(0.5f, {0, -3.f});
+            auto seq = CCSequence::create(moveUp, moveDown, nullptr);
+            auto bounce = CCRepeatForever::create(seq);
+            if (m_scrollArrow->getOpacity() < 150) {
+                auto fadeIn = CCFadeTo::create(0.3f, 150);
+                auto spawn = CCSpawn::create(fadeIn, bounce, nullptr);
+                m_scrollArrow->runAction(spawn);
+            } else {
+                m_scrollArrow->runAction(bounce);
+            }
+            m_scrollArrowBouncing = true;
+        }
     }
 }
 
@@ -413,7 +436,8 @@ bool LevelCellSettingsPopup::init() {
         scrollArrow->setRotation(-90.f); // apuntar hacia abajo
         scrollArrow->setScale(0.35f);
         scrollArrow->setOpacity(150);
-        scrollArrow->setPosition({content.width / 2.f, 18.f});
+        m_scrollArrowBasePos = {content.width / 2.f, 18.f};
+        scrollArrow->setPosition(m_scrollArrowBasePos);
         scrollArrow->setID("scroll-hint-arrow"_spr);
         m_mainLayer->addChild(scrollArrow, 20);
 
@@ -423,9 +447,11 @@ bool LevelCellSettingsPopup::init() {
         auto seq = CCSequence::create(moveUp, moveDown, nullptr);
         auto repeat = CCRepeatForever::create(seq);
         scrollArrow->runAction(repeat);
+        m_scrollArrowBouncing = true;
 
         // ocultar flecha cuando el usuario scrollea hasta abajo
         m_scrollArrow = scrollArrow;
+        this->unschedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition));
         this->schedule(schedule_selector(LevelCellSettingsPopup::checkScrollPosition), 0.2f);
     }
 

@@ -16,6 +16,18 @@ using namespace geode::prelude;
 // declarada en RuntimeLifecycle.cpp
 extern void cleanupDiskCache(char const* context);
 
+namespace {
+void applyLanguageSetting(std::string const& langStr) {
+    if (langStr == "english") {
+        Localization::get().setLanguage(Localization::Language::ENGLISH);
+    } else {
+        Localization::get().setLanguage(Localization::Language::SPANISH);
+    }
+}
+
+bool g_languageListenerRegistered = false;
+}
+
 void PaimonOnModLoaded() {
     log::info("[PaimonThumbnails][Init] Loaded event start");
 
@@ -38,8 +50,14 @@ void PaimonOnModLoaded() {
 
     std::string langStr = Mod::get()->getSettingValue<std::string>("language");
     log::info("[PaimonThumbnails][Init] Language setting='{}'", langStr);
-    if (langStr == "english") Localization::get().setLanguage(Localization::Language::ENGLISH);
-    else Localization::get().setLanguage(Localization::Language::SPANISH);
+    applyLanguageSetting(langStr);
+    if (!g_languageListenerRegistered) {
+        g_languageListenerRegistered = true;
+        geode::listenForSettingChanges<std::string>("language", +[](std::string value) {
+            applyLanguageSetting(value);
+            log::info("[PaimonThumbnails][Language] Changed to '{}'", value);
+        });
+    }
 
     log::info("[PaimonThumbnails][Init] Applying startup init");
 

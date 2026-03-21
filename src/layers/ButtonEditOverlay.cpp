@@ -185,7 +185,7 @@ void ButtonEditOverlay::createControls() {
 
     // titulo panel
     const float titleY = panelY + panelHeight / 2.f - 15.f;
-    auto titleLabel = CCLabelBMFont::create(Localization::get().getString("edit.title").c_str(), "bigFont.fnt");
+    auto titleLabel = CCLabelBMFont::create(Localization::get().getString("edit.buttons_title").c_str(), "bigFont.fnt");
     titleLabel->setScale(0.55f);
     titleLabel->setPosition({centerX, titleY});
     this->addChild(titleLabel);

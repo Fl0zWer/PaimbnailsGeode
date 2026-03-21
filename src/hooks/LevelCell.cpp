@@ -526,18 +526,19 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         CCSize scaledSize{ desiredWidth, sprite->getContentHeight() * scaleY };
         
-        CCNode* mask = nullptr;
-        // CCDrawNode geometrico con skew — evita conflictos con HappyTextures
-        // que hookea CCScale9Sprite::visit y puede alterar el rendering de CCLayerColor
-        auto drawStencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(scaledSize.width,0), ccp(scaledSize.width,scaledSize.height), ccp(0,scaledSize.height) };
+        CCPoint maskRect[4] = {
+            ccp(0, 0),
+            ccp(scaledSize.width, 0),
+            ccp(scaledSize.width, scaledSize.height),
+            ccp(0, scaledSize.height)
+        };
         ccColor4F white = {1,1,1,1};
-        drawStencil->drawPolygon(rect, 4, white, 0, white);
-        drawStencil->setContentSize(scaledSize);
-        drawStencil->setAnchorPoint({1,0});
-        drawStencil->ignoreAnchorPointForPosition(true);
-        drawStencil->setSkewX(angle);
-        mask = drawStencil;
+        auto drawMask = CCDrawNode::create();
+        drawMask->drawPolygon(maskRect, 4, white, 0, white);
+        drawMask->setContentSize(scaledSize);
+        drawMask->setAnchorPoint({1,0});
+        drawMask->ignoreAnchorPointForPosition(true);
+        drawMask->setSkewX(angle);
 
         auto clippingNode = CCClippingNode::create();
         if (!clippingNode) return;
@@ -547,7 +548,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         // no se puede desactivar touch en CCNode facilmente sin desregistrarlo, 
         // but it shouldn't be registered.
         
-        clippingNode->setStencil(mask);
+        clippingNode->setStencil(drawMask);
         // Reverted: No alpha threshold needed for layer mask
         
         clippingNode->setContentSize(scaledSize);
@@ -575,6 +576,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
 
         if (hoverEnabled) {
+            this->unschedule(schedule_selector(PaimonLevelCell::checkCenterPosition));
+            this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
             this->schedule(schedule_selector(PaimonLevelCell::checkCenterPosition), 0.05f);
             this->schedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
         }
@@ -688,15 +691,15 @@ class $modify(PaimonLevelCell, LevelCell) {
              }
              
              if (bgSprite) {
-                 // Create Clipper
-                 auto stencil = CCDrawNode::create();
-                 CCPoint rect[4];
-                 rect[0] = ccp(0, 0);
-                 rect[1] = ccp(bg->getContentWidth(), 0);
-                 rect[2] = ccp(bg->getContentWidth(), bg->getContentHeight());
-                 rect[3] = ccp(0, bg->getContentHeight());
-                 ccColor4F white = {1, 1, 1, 1};
-                 stencil->drawPolygon(rect, 4, white, 0, white);
+                auto stencil = CCDrawNode::create();
+                CCPoint rect[4] = {
+                    ccp(0, 0),
+                    ccp(bg->getContentWidth(), 0),
+                    ccp(bg->getContentWidth(), bg->getContentHeight()),
+                    ccp(0, bg->getContentHeight())
+                };
+                ccColor4F white = {1, 1, 1, 1};
+                stencil->drawPolygon(rect, 4, white, 0, white);
                  
                  auto clipper = CCClippingNode::create(stencil);
                  clipper->setContentSize(bg->getContentSize());
@@ -722,9 +725,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                  GLubyte opacity = static_cast<GLubyte>(std::clamp(darkness, 0.0f, 1.0f) * 255.0f);
 
                  auto overlay = CCLayerColor::create({0, 0, 0, opacity});
-                 overlay->setContentSize({bg->getContentWidth(), bg->getContentHeight() + 1.0f});
+                 overlay->setContentSize({bg->getContentWidth(), bg->getContentHeight()});
                  overlay->setPosition({0, 0});
                  clipper->addChild(overlay);
+                 fields->m_darkOverlay = overlay;
 
                  bg->addChild(clipper);
                  bg->reorderChild(clipper, 10);

@@ -56,6 +56,14 @@ bool PetConfigPopup::init() {
     return true;
 }
 
+void PetConfigPopup::onExit() {
+    this->unschedule(schedule_selector(PetConfigPopup::checkScrollPosition));
+    if (m_scrollArrow) {
+        m_scrollArrow->stopAllActions();
+    }
+    Popup::onExit();
+}
+
 // ════════════════════════════════════════════════════════════
 // tabs
 // ════════════════════════════════════════════════════════════
@@ -624,6 +632,7 @@ void PetConfigPopup::buildSettingsTab() {
             CCMoveBy::create(0.5f, {0, -3.f}), nullptr));
         scrollArrow->runAction(bounce);
         m_scrollArrow = scrollArrow;
+        this->unschedule(schedule_selector(PetConfigPopup::checkScrollPosition));
         this->schedule(schedule_selector(PetConfigPopup::checkScrollPosition), 0.2f);
     }
 }

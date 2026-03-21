@@ -3,8 +3,50 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../utils/Assets.hpp"
+#include <algorithm>
+#include <vector>
+#include <cmath>
 
 using namespace geode::prelude;
+
+static CCDrawNode* createRoundedRectStencil(float width, float height, float radius, int cornerSegments = 8) {
+    auto draw = CCDrawNode::create();
+    if (!draw || width <= 0.f || height <= 0.f) return draw;
+
+    float maxRadius = std::min(width, height) * 0.5f;
+    float r = std::clamp(radius, 0.f, maxRadius);
+
+    if (r <= 0.01f) {
+        CCPoint rect[4] = { ccp(0, 0), ccp(width, 0), ccp(width, height), ccp(0, height) };
+        ccColor4F white = {1.f, 1.f, 1.f, 1.f};
+        draw->drawPolygon(rect, 4, white, 0, white);
+        draw->setContentSize({width, height});
+        return draw;
+    }
+
+    int seg = std::max(2, cornerSegments);
+    std::vector<CCPoint> verts;
+    verts.reserve(static_cast<size_t>(seg * 4 + 4));
+
+    auto appendArc = [&verts, seg](float cx, float cy, float rad, float startDeg, float endDeg) {
+        for (int i = 0; i <= seg; ++i) {
+            float t = static_cast<float>(i) / static_cast<float>(seg);
+            float deg = startDeg + (endDeg - startDeg) * t;
+            float a = CC_DEGREES_TO_RADIANS(deg);
+            verts.push_back(ccp(cx + cosf(a) * rad, cy + sinf(a) * rad));
+        }
+    };
+
+    appendArc(r, r, r, 180.f, 270.f);
+    appendArc(width - r, r, r, 270.f, 360.f);
+    appendArc(width - r, height - r, r, 0.f, 90.f);
+    appendArc(r, height - r, r, 90.f, 180.f);
+
+    ccColor4F white = {1.f, 1.f, 1.f, 1.f};
+    draw->drawPolygon(verts.data(), static_cast<unsigned int>(verts.size()), white, 0, white);
+    draw->setContentSize({width, height});
+    return draw;
+}
 
 class $modify(PaimonLevelPage, LevelPage) {
     static void onModify(auto& self) {
@@ -57,12 +99,10 @@ class $modify(PaimonLevelPage, LevelPage) {
         
         CCSize boxSize = m_levelDisplay->getContentSize();
         
-        // clipping pa thumb en caja
-        // stencil geometrico — evita conflictos con HappyTextures/TextureLdr
-        auto stencil = CCDrawNode::create();
-        CCPoint rect[4] = { ccp(0,0), ccp(boxSize.width,0), ccp(boxSize.width,boxSize.height), ccp(0,boxSize.height) };
-        ccColor4F white = {1,1,1,1};
-        stencil->drawPolygon(rect, 4, white, 0, white);
+        // clipping redondeado para niveles oficiales (SelectLevel/LevelPage)
+        float cornerRadius = std::clamp(boxSize.height * 0.11f, 6.f, 14.f);
+        auto stencil = createRoundedRectStencil(boxSize.width, boxSize.height, cornerRadius, 8);
+        if (!stencil) return;
         
         auto clipper = CCClippingNode::create(stencil);
         clipper->setContentSize(boxSize);
@@ -76,9 +116,15 @@ class $modify(PaimonLevelPage, LevelPage) {
         
         sprite->setScale(scale);
         sprite->setPosition(boxSize / 2); // centro en el clipper
-        sprite->setColor({150, 150, 150}); // oscurezco un poco
+        sprite->setColor({255, 255, 255});
 
         clipper->addChild(sprite);
+
+        // filtro oscuro transparente dentro del mismo clipper (bordes redondeados)
+        auto darkOverlay = CCLayerColor::create({0, 0, 0, 90});
+        darkOverlay->setContentSize(boxSize);
+        darkOverlay->setPosition({0, 0});
+        clipper->addChild(darkOverlay, 2);
         
         // clipper a m_leveldisplay
         m_levelDisplay->addChild(clipper, -1);

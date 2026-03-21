@@ -85,8 +85,9 @@ void AnimatedGIFSprite::evictIfNeeded() {
         if (it != s_gifCache.end()) {
             size_t removeSize = 0;
             for (auto* tex : it->second.textures) {
+                if (!tex) continue;
                 removeSize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
-                if (tex) tex->release();
+                tex->release();
             }
             if (s_currentCacheSize >= removeSize) s_currentCacheSize -= removeSize;
             else s_currentCacheSize = 0;

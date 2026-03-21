@@ -1,4 +1,18 @@
 
+# v2.3.5
+
+**Important Changes for Players**
+
+- <cg>**Cleaner Comments View**</c>: Comment backgrounds now appear <cy>instantly</c>, without the brief flicker where one style shows and then changes.
+- <cg>**No More Empty Screens**</c>: If a profile or level <cy>has no image</c>, important UI elements stay visible so the view no longer looks blank.
+- <cg>**Profile GIF Fix**</c>: Profile GIFs now play <cy>properly animated</c> again and no longer get stuck.
+- <cg>**No Image Mix-Ups**</c>: Fixed cases where the wrong image could occasionally appear (for example, from another section).
+- <cg>**More Natural Daily & Weekly Audio**</c>: Removed the “cave” audio effect so sound feels <cy>cleaner and more consistent</c>.
+- <cg>**Official RobTop Levels**</c>: Visual thumbnail adjustments so they look <cy>more polished and consistent</c>.
+- <cg>**Better Overall Stability**</c>: Improvements to reduce visual glitches and make everyday use smoother.
+
+---
+
 # v2.3.1
 
 **What's New**

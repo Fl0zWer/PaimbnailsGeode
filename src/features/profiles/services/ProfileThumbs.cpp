@@ -782,12 +782,20 @@ void ProfileThumbs::processQueue() {
         }
 
         ThumbnailAPI::get().downloadProfile(accountID, username, [this, accountID](bool success, CCTexture2D* texture) {
+            if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) {
+                m_activeDownloads = std::max(0, m_activeDownloads - 1);
+                return;
+            }
             
             // Ref mantiene la textura viva durante la cadena async
             Ref<CCTexture2D> texRef = texture;
 
             // engancho la descarga de la config para tener imagen + settings
             ThumbnailAPI::get().downloadProfileConfig(accountID, [this, accountID, success, texRef](bool configSuccess, ProfileConfig const& config) {
+                if (ProfileThumbs::s_shutdownMode.load(std::memory_order_acquire)) {
+                    m_activeDownloads = std::max(0, m_activeDownloads - 1);
+                    return;
+                }
                 
                 if (success && texRef) {
                     // cacheo el perfil con la config (o defaults si la config fallo)

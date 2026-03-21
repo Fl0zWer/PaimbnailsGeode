@@ -35,6 +35,7 @@ protected:
 public:
     static ListThumbnailCarousel* create(std::vector<int> const& levelIDs, cocos2d::CCSize size);
     virtual ~ListThumbnailCarousel();
+    void onExit() override;
     
     void visit() override;
 

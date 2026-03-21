@@ -8,6 +8,7 @@
 #include "../utils/InfoButton.hpp"
 #include "../utils/FileDialog.hpp"
 #include "../utils/ShapeStencil.hpp"
+#include "../utils/Localization.hpp"
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/profiles/services/ProfilePicCustomizer.hpp"
 #include "../managers/ThumbnailAPI.hpp"
@@ -30,16 +31,26 @@ using namespace geode::prelude;
 
 // Available shaders for backgrounds
 static std::vector<std::pair<std::string, std::string>> BG_SHADERS = {
-    {"none",       "None"},
-    {"grayscale",  "Grayscale"},
-    {"sepia",      "Sepia"},
-    {"vignette",   "Vignette"},
-    {"bloom",      "Bloom"},
-    {"chromatic",  "Chromatic"},
-    {"pixelate",   "Pixelate"},
-    {"posterize",  "Posterize"},
-    {"scanlines",  "Scanlines"},
+    {"none",       "pai.config.shader.none"},
+    {"grayscale",  "pai.config.shader.grayscale"},
+    {"sepia",      "pai.config.shader.sepia"},
+    {"vignette",   "pai.config.shader.vignette"},
+    {"bloom",      "pai.config.shader.bloom"},
+    {"chromatic",  "pai.config.shader.chromatic"},
+    {"pixelate",   "pai.config.shader.pixelate"},
+    {"posterize",  "pai.config.shader.posterize"},
+    {"scanlines",  "pai.config.shader.scanlines"},
 };
+
+namespace {
+std::string tr(char const* key, char const* fallback = "") {
+    auto value = Localization::get().getString(key);
+    if (value == key && fallback && fallback[0] != '\0') {
+        return fallback;
+    }
+    return value;
+}
+}
 
 // ═══════════════════════════════════════════════════════════
 // Factory
@@ -88,7 +99,7 @@ bool PaiConfigLayer::init() {
     this->addChild(m_mainMenu, 10);
 
     // ── Title ──
-    auto title = CCLabelBMFont::create("Paimon Settings", "goldFont.fnt");
+    auto title = CCLabelBMFont::create(tr("pai.config.title", "Paimon Settings").c_str(), "goldFont.fnt");
     title->setPosition({cx, top - 20});
     title->setScale(0.65f);
     this->addChild(title);
@@ -103,7 +114,11 @@ bool PaiConfigLayer::init() {
     // 3 Main Tabs: Backgrounds | Profile | Extras
     // ═══════════════════════════════════════════
     float tabY = top - 46;
-    std::vector<std::string> tabNames = {"Backgrounds", "Profile", "Extras"};
+    std::vector<std::string> tabNames = {
+        tr("pai.config.tab.backgrounds", "Backgrounds"),
+        tr("pai.config.tab.profile", "Profile"),
+        tr("pai.config.tab.extras", "Extras")
+    };
     float tabW = 120.f;
     float tabStartX = cx - tabW * 1.0f; // 3 tabs centered
 
@@ -161,7 +176,7 @@ bool PaiConfigLayer::init() {
     // ═══════════════════════════════════════════
     // Apply button (always visible)
     // ═══════════════════════════════════════════
-    auto applySpr = ButtonSprite::create("Apply & Restart Menu", "goldFont.fnt", "GJ_button_01.png", .8f);
+    auto applySpr = ButtonSprite::create(tr("pai.config.apply", "Apply & Restart Menu").c_str(), "goldFont.fnt", "GJ_button_01.png", .8f);
     applySpr->setScale(0.5f);
     auto applyBtn = CCMenuItemSpriteExtra::create(applySpr, this, menu_selector(PaiConfigLayer::onApply));
     applyBtn->setPosition({cx, 20});
@@ -241,17 +256,22 @@ void PaiConfigLayer::buildBackgroundTab() {
 
     // Title + info
     float titleY = ctrlPanelY + ctrlPanelH / 2 - 10;
-    auto bgTitle = CCLabelBMFont::create("Background", "goldFont.fnt");
+    auto bgTitle = CCLabelBMFont::create(tr("pai.config.background.title", "Background").c_str(), "goldFont.fnt");
     bgTitle->setScale(0.35f);
     bgTitle->setPosition({rightCx - 25, titleY});
     m_bgTab->addChild(bgTitle, 1);
 
     {
-        auto iBtn = PaimonInfo::createInfoBtn("Background",
-            "<cy>Custom Image</c>: Local PNG/JPG/GIF.\n"
-            "<cy>Random</c>: Cached thumbnail.\n"
-            "<cy>Same as/Set ID/Default</c>: Other sources.\n"
-            "<cy>Dark</c>: Overlay + <cy>Adaptive</c> (Menu).", this, 0.49f);
+        auto iBtn = PaimonInfo::createInfoBtn(
+            tr("pai.config.background.info.title", "Background").c_str(),
+            tr("pai.config.background.info.body",
+                "<cy>Custom Image</c>: Local PNG/JPG/GIF.\n"
+                "<cy>Random</c>: Cached thumbnail.\n"
+                "<cy>Same as/Set ID/Default</c>: Other sources.\n"
+                "<cy>Dark</c>: Overlay + <cy>Adaptive</c> (Menu)."
+            ).c_str(),
+            this, 0.49f
+        );
         if (iBtn) {
             iBtn->setPosition({rightCx + 12, titleY});
             m_bgMenu->addChild(iBtn);
@@ -262,10 +282,10 @@ void PaiConfigLayer::buildBackgroundTab() {
     float row1 = titleY - 22;
     float btnSpacing = rightW / 5;
     float btnStart = rightX + btnSpacing / 2 + 5;
-    makeBtn("Custom Image", {btnStart, row1}, menu_selector(PaiConfigLayer::onBgCustomImage), m_bgMenu, 0.38f);
-    makeBtn("Random", {btnStart + btnSpacing, row1}, menu_selector(PaiConfigLayer::onBgRandom), m_bgMenu, 0.38f);
-    makeBtn("Same as...", {btnStart + btnSpacing * 2, row1}, menu_selector(PaiConfigLayer::onBgSameAs), m_bgMenu, 0.38f);
-    makeBtn("Default", {btnStart + btnSpacing * 3, row1}, menu_selector(PaiConfigLayer::onBgDefault), m_bgMenu, 0.36f);
+    makeBtn(tr("pai.config.background.custom_image", "Custom Image").c_str(), {btnStart, row1}, menu_selector(PaiConfigLayer::onBgCustomImage), m_bgMenu, 0.38f);
+    makeBtn(tr("pai.config.background.random", "Random").c_str(), {btnStart + btnSpacing, row1}, menu_selector(PaiConfigLayer::onBgRandom), m_bgMenu, 0.38f);
+    makeBtn(tr("pai.config.background.same_as", "Same as...").c_str(), {btnStart + btnSpacing * 2, row1}, menu_selector(PaiConfigLayer::onBgSameAs), m_bgMenu, 0.38f);
+    makeBtn(tr("pai.config.background.default", "Default").c_str(), {btnStart + btnSpacing * 3, row1}, menu_selector(PaiConfigLayer::onBgDefault), m_bgMenu, 0.36f);
 
     // Row 2: ID + Dark + Intensity
     float row2 = row1 - 22;
@@ -276,19 +296,19 @@ void PaiConfigLayer::buildBackgroundTab() {
     inputBg->setPosition({rightX + 42, row2});
     m_bgTab->addChild(inputBg, 1);
 
-    m_bgIdInput = TextInput::create(58, "Level ID");
+    m_bgIdInput = TextInput::create(58, tr("pai.config.background.level_id", "Level ID").c_str());
     m_bgIdInput->setPosition({rightX + 42, row2});
     m_bgIdInput->setFilter("0123456789");
     m_bgIdInput->setScale(0.55f);
     m_bgTab->addChild(m_bgIdInput, 2);
 
-    makeBtn("Set", {rightX + 95, row2}, menu_selector(PaiConfigLayer::onBgSetID), m_bgMenu, 0.34f);
+    makeBtn(tr("pai.config.background.set", "Set").c_str(), {rightX + 95, row2}, menu_selector(PaiConfigLayer::onBgSetID), m_bgMenu, 0.34f);
 
     m_darkToggle = CCMenuItemToggler::createWithStandardSprites(this, menu_selector(PaiConfigLayer::onDarkMode), 0.38f);
     m_darkToggle->setPosition({rightX + 140, row2});
     m_bgMenu->addChild(m_darkToggle);
 
-    auto darkLbl = CCLabelBMFont::create("Dark", "bigFont.fnt");
+    auto darkLbl = CCLabelBMFont::create(tr("pai.config.background.dark", "Dark").c_str(), "bigFont.fnt");
     darkLbl->setScale(0.18f);
     darkLbl->setPosition({rightX + 163, row2});
     m_bgTab->addChild(darkLbl, 1);
@@ -297,7 +317,7 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_darkSlider->setPosition({rightX + 250, row2});
     m_bgTab->addChild(m_darkSlider, 1);
 
-    auto intLbl = CCLabelBMFont::create("Intensity", "bigFont.fnt");
+    auto intLbl = CCLabelBMFont::create(tr("pai.config.background.intensity", "Intensity").c_str(), "bigFont.fnt");
     intLbl->setScale(0.16f);
     intLbl->setPosition({rightX + 250, row2 + 10});
     m_bgTab->addChild(intLbl, 1);
@@ -308,13 +328,13 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_adaptiveToggle->setPosition({rightX + 15, row3});
     m_bgMenu->addChild(m_adaptiveToggle);
 
-    m_adaptiveLabel = CCLabelBMFont::create("Adaptive Colors", "bigFont.fnt");
+    m_adaptiveLabel = CCLabelBMFont::create(tr("pai.config.background.adaptive_colors", "Adaptive Colors").c_str(), "bigFont.fnt");
     m_adaptiveLabel->setScale(0.2f);
     m_adaptiveLabel->setPosition({rightX + 75, row3});
     m_bgTab->addChild(m_adaptiveLabel, 1);
 
     // Shader selector (right side of row3)
-    auto shaderTitle = CCLabelBMFont::create("Shader:", "bigFont.fnt");
+    auto shaderTitle = CCLabelBMFont::create(tr("pai.config.background.shader", "Shader:").c_str(), "bigFont.fnt");
     shaderTitle->setScale(0.18f);
     shaderTitle->setPosition({rightX + 175, row3});
     m_bgTab->addChild(shaderTitle, 1);
@@ -326,7 +346,7 @@ void PaiConfigLayer::buildBackgroundTab() {
     prevBtn->setPosition({rightX + 210, row3});
     m_bgMenu->addChild(prevBtn);
 
-    m_shaderLabel = CCLabelBMFont::create("None", "bigFont.fnt");
+    m_shaderLabel = CCLabelBMFont::create(tr("pai.config.shader.none", "None").c_str(), "bigFont.fnt");
     m_shaderLabel->setScale(0.2f);
     m_shaderLabel->setColor({100, 255, 100});
     m_shaderLabel->setPosition({rightX + 270, row3});
@@ -349,13 +369,13 @@ void PaiConfigLayer::buildBackgroundTab() {
     previewPanel->setPosition({rightCx, previewY});
     m_bgTab->addChild(previewPanel, 0);
 
-    auto prevTitle = CCLabelBMFont::create("Preview", "goldFont.fnt");
+    auto prevTitle = CCLabelBMFont::create(tr("pai.config.preview", "Preview").c_str(), "goldFont.fnt");
     prevTitle->setScale(0.28f);
     prevTitle->setPosition({rightCx, previewY + previewH / 2 - 8});
     m_bgTab->addChild(prevTitle, 1);
 
     // Status label (shows current type)
-    m_bgStatusLabel = CCLabelBMFont::create("Default", "bigFont.fnt");
+    m_bgStatusLabel = CCLabelBMFont::create(tr("pai.config.status.default", "Default").c_str(), "bigFont.fnt");
     m_bgStatusLabel->setScale(0.18f);
     m_bgStatusLabel->setColor({180, 180, 180});
     m_bgStatusLabel->setPosition({rightCx, previewY - previewH / 2 + 8});
@@ -378,7 +398,9 @@ void PaiConfigLayer::buildBackgroundTab() {
     m_bgTab->addChild(m_blockedOverlay, 50);
 
     m_blockedLabel = CCLabelBMFont::create(
-        "Level Info uses its own\nthumbnail background.\n\nChange in Mod Settings\n> Background Style.",
+        tr("pai.config.background.blocked_message",
+           "Level Info uses its own\nthumbnail background.\n\nChange in Mod Settings\n> Background Style."
+        ).c_str(),
         "bigFont.fnt");
     m_blockedLabel->setScale(0.25f);
     m_blockedLabel->setAlignment(kCCTextAlignmentCenter);
@@ -406,17 +428,22 @@ void PaiConfigLayer::buildProfileTab() {
     m_profileTab->addChild(panel, 0);
 
     // Title
-    auto profTitle = CCLabelBMFont::create("Profile Picture", "goldFont.fnt");
+    auto profTitle = CCLabelBMFont::create(tr("pai.config.profile.title", "Profile Picture").c_str(), "goldFont.fnt");
     profTitle->setScale(0.4f);
     profTitle->setPosition({cx - 60, contentMid + panelH / 2 - 12});
     m_profileTab->addChild(profTitle, 1);
 
     {
-        auto iBtn = PaimonInfo::createInfoBtn("Profile",
-            "<cy>Set Image</c>: Pick a local image.\n"
-            "<cy>Clear</c>: Remove custom image.\n"
-            "<cy>Photo Shape</c>: Edit shape, border, effects.\n"
-            "Preview updates in real-time.", this, 0.49f);
+        auto iBtn = PaimonInfo::createInfoBtn(
+            tr("pai.config.profile.info.title", "Profile").c_str(),
+            tr("pai.config.profile.info.body",
+               "<cy>Set Image</c>: Pick a local image.\n"
+               "<cy>Clear</c>: Remove custom image.\n"
+               "<cy>Photo Shape</c>: Edit shape, border, effects.\n"
+               "Preview updates in real-time."
+            ).c_str(),
+            this, 0.49f
+        );
         if (iBtn) {
             iBtn->setPosition({cx - 14, contentMid + panelH / 2 - 12});
             m_profileMenu->addChild(iBtn);
@@ -427,19 +454,19 @@ void PaiConfigLayer::buildProfileTab() {
     float leftX = cx - 100;
     float btnTop = contentMid + 28;
 
-    auto imgSpr = ButtonSprite::create("Set Image", "goldFont.fnt", "GJ_button_02.png", .8f);
+    auto imgSpr = ButtonSprite::create(tr("pai.config.profile.set_image", "Set Image").c_str(), "goldFont.fnt", "GJ_button_02.png", .8f);
     imgSpr->setScale(0.45f);
     auto imgBtn = CCMenuItemSpriteExtra::create(imgSpr, this, menu_selector(PaiConfigLayer::onProfileImage));
     imgBtn->setPosition({leftX, btnTop});
     m_profileMenu->addChild(imgBtn);
 
-    auto clearSpr = ButtonSprite::create("Clear Image", "goldFont.fnt", "GJ_button_06.png", .8f);
+    auto clearSpr = ButtonSprite::create(tr("pai.config.profile.clear_image", "Clear Image").c_str(), "goldFont.fnt", "GJ_button_06.png", .8f);
     clearSpr->setScale(0.45f);
     auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(PaiConfigLayer::onProfileImageClear));
     clearBtn->setPosition({leftX, btnTop - 30});
     m_profileMenu->addChild(clearBtn);
 
-    auto shapeSpr = ButtonSprite::create("Photo Shape", "goldFont.fnt", "GJ_button_03.png", .8f);
+    auto shapeSpr = ButtonSprite::create(tr("pai.config.profile.photo_shape", "Photo Shape").c_str(), "goldFont.fnt", "GJ_button_03.png", .8f);
     shapeSpr->setScale(0.45f);
     auto shapeBtn = CCMenuItemSpriteExtra::create(shapeSpr, this, menu_selector(PaiConfigLayer::onProfilePhoto));
     shapeBtn->setPosition({leftX, btnTop - 60});
@@ -449,7 +476,7 @@ void PaiConfigLayer::buildProfileTab() {
     float previewX = cx + 100;
     float previewY = contentMid;
 
-    auto previewLabel = CCLabelBMFont::create("Preview", "goldFont.fnt");
+    auto previewLabel = CCLabelBMFont::create(tr("pai.config.preview", "Preview").c_str(), "goldFont.fnt");
     previewLabel->setScale(0.3f);
     previewLabel->setPosition({previewX, previewY + 48});
     m_profileTab->addChild(previewLabel, 1);
@@ -491,20 +518,20 @@ void PaiConfigLayer::buildExtrasTab() {
     panel->setPosition({cx, contentMid});
     m_extrasTab->addChild(panel, 0);
 
-    auto extTitle = CCLabelBMFont::create("Extras", "goldFont.fnt");
+    auto extTitle = CCLabelBMFont::create(tr("pai.config.extras.title", "Extras").c_str(), "goldFont.fnt");
     extTitle->setScale(0.4f);
     extTitle->setPosition({cx, contentMid + panelH / 2 - 12});
     m_extrasTab->addChild(extTitle, 1);
 
     // ── Pet Config button ──
-    auto petSpr = ButtonSprite::create("Pet Config", "goldFont.fnt", "GJ_button_03.png", .8f);
+    auto petSpr = ButtonSprite::create(tr("pai.config.extras.pet_config", "Pet Config").c_str(), "goldFont.fnt", "GJ_button_03.png", .8f);
     petSpr->setScale(0.55f);
     auto petBtn = CCMenuItemSpriteExtra::create(petSpr, this, menu_selector(PaiConfigLayer::onPetConfig));
     petBtn->setPosition({cx, contentMid + 20});
     m_extrasMenu->addChild(petBtn);
 
     // BETA badge
-    auto betaLabel = CCLabelBMFont::create("BETA", "bigFont.fnt");
+    auto betaLabel = CCLabelBMFont::create(tr("pai.config.extras.beta", "BETA").c_str(), "bigFont.fnt");
     betaLabel->setScale(0.25f);
     betaLabel->setColor({255, 80, 80});
     betaLabel->setPosition({cx + 58, contentMid + 36});
@@ -512,8 +539,13 @@ void PaiConfigLayer::buildExtrasTab() {
     m_extrasTab->addChild(betaLabel, 10);
 
     {
-        auto iBtn = PaimonInfo::createInfoBtn("Pet",
-            "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c> — expect bugs!", this, 0.49f);
+        auto iBtn = PaimonInfo::createInfoBtn(
+            tr("pai.config.extras.pet_info.title", "Pet").c_str(),
+            tr("pai.config.extras.pet_info.body",
+               "A cute pet follows your cursor.\nThis feature is in <cr>BETA</c> — expect bugs!"
+            ).c_str(),
+            this, 0.49f
+        );
         if (iBtn) {
             iBtn->setPosition({cx + 48, contentMid + 20});
             m_extrasMenu->addChild(iBtn);
@@ -521,7 +553,7 @@ void PaiConfigLayer::buildExtrasTab() {
     }
 
     // ── Transitions button ──
-    auto transSpr = ButtonSprite::create("Transitions", "goldFont.fnt", "GJ_button_04.png", .8f);
+    auto transSpr = ButtonSprite::create(tr("pai.config.extras.transitions", "Transitions").c_str(), "goldFont.fnt", "GJ_button_04.png", .8f);
     transSpr->setScale(0.55f);
     auto transBtn = CCMenuItemSpriteExtra::create(transSpr, this, menu_selector(PaiConfigLayer::onTransitions));
     transBtn->setID("transitions-config-btn"_spr);
@@ -529,10 +561,15 @@ void PaiConfigLayer::buildExtrasTab() {
     m_extrasMenu->addChild(transBtn);
 
     {
-        auto iBtn = PaimonInfo::createInfoBtn("Transitions",
-            "Configure custom scene transition effects.\n"
-            "Choose from 15+ built-in transitions or create your own\n"
-            "with a custom command sequence (DSL).", this, 0.49f);
+        auto iBtn = PaimonInfo::createInfoBtn(
+            tr("pai.config.extras.transitions_info.title", "Transitions").c_str(),
+            tr("pai.config.extras.transitions_info.body",
+               "Configure custom scene transition effects.\n"
+               "Choose from 15+ built-in transitions or create your own\n"
+               "with a custom command sequence (DSL)."
+            ).c_str(),
+            this, 0.49f
+        );
         if (iBtn) {
             iBtn->setPosition({cx + 55, contentMid - 20});
             m_extrasMenu->addChild(iBtn);
@@ -540,22 +577,27 @@ void PaiConfigLayer::buildExtrasTab() {
     }
 
     // ── Clear All Cache button ──
-    auto clearSpr = ButtonSprite::create("Clear All Cache", "goldFont.fnt", "GJ_button_06.png", .8f);
+    auto clearSpr = ButtonSprite::create(tr("pai.config.extras.clear_cache", "Clear All Cache").c_str(), "goldFont.fnt", "GJ_button_06.png", .8f);
     clearSpr->setScale(0.55f);
     auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(PaiConfigLayer::onClearAllCache));
     clearBtn->setPosition({cx, contentMid - 55});
     m_extrasMenu->addChild(clearBtn);
 
     {
-        auto iBtn = PaimonInfo::createInfoBtn("Clear Cache",
-            "<cr>Deletes ALL cached data:</c>\n"
-            "- Downloaded thumbnails (RAM + disk)\n"
-            "- Profile thumbnails & images\n"
-            "- Profile music cache\n"
-            "- GIF cache (RAM + disk)\n"
-            "- Profile background settings\n\n"
-            "This frees up space and fixes stale data.\n"
-            "Everything will re-download as needed.", this, 0.49f);
+        auto iBtn = PaimonInfo::createInfoBtn(
+            tr("pai.config.extras.clear_cache_info.title", "Clear Cache").c_str(),
+            tr("pai.config.extras.clear_cache_info.body",
+               "<cr>Deletes ALL cached data:</c>\n"
+               "- Downloaded thumbnails (RAM + disk)\n"
+               "- Profile thumbnails & images\n"
+               "- Profile music cache\n"
+               "- GIF cache (RAM + disk)\n"
+               "- Profile background settings\n\n"
+               "This frees up space and fixes stale data.\n"
+               "Everything will re-download as needed."
+            ).c_str(),
+            this, 0.49f
+        );
         if (iBtn) {
             iBtn->setPosition({cx + 68, contentMid - 55});
             m_extrasMenu->addChild(iBtn);
@@ -563,7 +605,7 @@ void PaiConfigLayer::buildExtrasTab() {
     }
 
     // Coming soon label
-    auto comingSoon = CCLabelBMFont::create("More features coming soon...", "bigFont.fnt");
+    auto comingSoon = CCLabelBMFont::create(tr("pai.config.extras.coming_soon", "More features coming soon...").c_str(), "bigFont.fnt");
     comingSoon->setScale(0.2f);
     comingSoon->setColor({150, 150, 150});
     comingSoon->setPosition({cx, contentMid - panelH / 2 + 12});
@@ -628,7 +670,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
         placeholder->setPosition({midX - thumbSize / 2, midY - thumbSize / 2});
         m_profilePreview->addChild(placeholder);
 
-        auto noImg = CCLabelBMFont::create("No\nImage", "bigFont.fnt");
+        auto noImg = CCLabelBMFont::create(tr("pai.config.profile.no_image", "No\nImage").c_str(), "bigFont.fnt");
         noImg->setScale(0.2f);
         noImg->setColor({180, 180, 180});
         noImg->setAlignment(kCCTextAlignmentCenter);
@@ -656,7 +698,7 @@ void PaiConfigLayer::rebuildProfilePreview() {
     }
 
     if (!imageNode) {
-        auto errLbl = CCLabelBMFont::create("Error", "bigFont.fnt");
+        auto errLbl = CCLabelBMFont::create(tr("general.error", "Error").c_str(), "bigFont.fnt");
         errLbl->setScale(0.2f);
         errLbl->setColor({255, 80, 80});
         errLbl->setPosition({midX, midY});
@@ -771,15 +813,15 @@ void PaiConfigLayer::refreshForCurrentLayer() {
 
     // Update status label
     if (m_bgStatusLabel) {
-        std::string status = "Default";
-        if (bgCfg.type == "custom") status = "Custom Image";
-        else if (bgCfg.type == "random") status = "Random";
-        else if (bgCfg.type == "id") status = "Level ID: " + std::to_string(bgCfg.levelId);
-        else if (bgCfg.type == "menu") status = "Same as Menu";
+        std::string status = tr("pai.config.status.default", "Default");
+        if (bgCfg.type == "custom") status = tr("pai.config.status.custom_image", "Custom Image");
+        else if (bgCfg.type == "random") status = tr("pai.config.status.random", "Random");
+        else if (bgCfg.type == "id") status = tr("pai.config.status.level_id", "Level ID: ") + std::to_string(bgCfg.levelId);
+        else if (bgCfg.type == "menu") status = tr("pai.config.status.same_as_menu", "Same as Menu");
         if (bgCfg.shader != "none" && !bgCfg.shader.empty()) {
             // Find display name
             for (auto& [k, v] : BG_SHADERS) {
-                if (k == bgCfg.shader) { status += " + " + v; break; }
+                if (k == bgCfg.shader) { status += " + " + tr(v.c_str(), v.c_str()); break; }
             }
         }
         m_bgStatusLabel->setString(status.c_str());
@@ -857,7 +899,7 @@ void PaiConfigLayer::rebuildBgPreview() {
         auto spinner = LoadingSpinner::create(20.f);
         spinner->setPosition({midX, midY + 8});
         m_bgPreview->addChild(spinner, 1);
-        auto lbl = CCLabelBMFont::create("Loading...", "bigFont.fnt");
+        auto lbl = CCLabelBMFont::create(tr("leaderboard.loading", "Loading...").c_str(), "bigFont.fnt");
         lbl->setScale(0.15f);
         lbl->setColor({200, 200, 100});
         lbl->setPosition({midX, midY - 12});
@@ -868,7 +910,7 @@ void PaiConfigLayer::rebuildBgPreview() {
     // Type: default
     // ══════════════════════════════════════
     if (cfg.type == "default") {
-        showPlaceholder("Default GD\nBackground");
+        showPlaceholder(tr("pai.config.preview.default_bg", "Default GD\nBackground").c_str());
         return;
     }
 
@@ -878,7 +920,7 @@ void PaiConfigLayer::rebuildBgPreview() {
     if (cfg.type == "custom") {
         std::error_code ecCustom;
         if (cfg.customPath.empty() || !std::filesystem::exists(cfg.customPath, ecCustom)) {
-            showPlaceholder("File not\nfound", {255, 100, 100});
+            showPlaceholder(tr("pai.config.preview.file_not_found", "File not\nfound").c_str(), {255, 100, 100});
             return;
         }
         auto ext = geode::utils::string::pathToString(std::filesystem::path(cfg.customPath).extension());
@@ -897,7 +939,7 @@ void PaiConfigLayer::rebuildBgPreview() {
                 }
                 self->m_bgPreview->removeAllChildren();
                 if (!anim) {
-                    auto lbl = CCLabelBMFont::create("GIF Error", "bigFont.fnt");
+                    auto lbl = CCLabelBMFont::create(tr("pai.config.preview.gif_error", "GIF Error").c_str(), "bigFont.fnt");
                     lbl->setScale(0.2f);
                     lbl->setColor({255, 80, 80});
                     lbl->setPosition({midX, midY});
@@ -935,7 +977,7 @@ void PaiConfigLayer::rebuildBgPreview() {
             addTextureToPreview(tex);
             addDarkOverlay();
         } else {
-            showPlaceholder("Load\nerror", {255, 100, 100});
+            showPlaceholder(tr("pai.config.preview.load_error", "Load\nerror").c_str(), {255, 100, 100});
         }
         return;
     }
@@ -992,7 +1034,7 @@ void PaiConfigLayer::rebuildBgPreview() {
                 auto bgRect = CCLayerColor::create({40, 40, 60, 200});
                 bgRect->setContentSize({pw, ph});
                 self->m_bgPreview->addChild(bgRect, 0);
-                auto lbl = CCLabelBMFont::create("Not found\non server", "bigFont.fnt");
+                auto lbl = CCLabelBMFont::create(tr("pai.config.preview.not_found_server", "Not found\non server").c_str(), "bigFont.fnt");
                 lbl->setScale(0.18f);
                 lbl->setColor({255, 120, 80});
                 lbl->setAlignment(kCCTextAlignmentCenter);
@@ -1019,7 +1061,7 @@ void PaiConfigLayer::rebuildBgPreview() {
                 return;
             }
         }
-        showPlaceholder("Random\n(no cache)", {180, 180, 100});
+        showPlaceholder(tr("pai.config.preview.random_no_cache", "Random\n(no cache)").c_str(), {180, 180, 100});
         return;
     }
 
@@ -1066,7 +1108,7 @@ void PaiConfigLayer::rebuildBgPreview() {
                     if (self->m_selectedKey != selectedKey || !self->m_bgPreview) { return; }
                     self->m_bgPreview->removeAllChildren();
                     if (!anim) {
-                        auto lbl = CCLabelBMFont::create("GIF Error", "bigFont.fnt");
+                        auto lbl = CCLabelBMFont::create(tr("pai.config.preview.gif_error", "GIF Error").c_str(), "bigFont.fnt");
                         lbl->setScale(0.2f); lbl->setColor({255, 80, 80}); lbl->setPosition({midX, midY});
                         self->m_bgPreview->addChild(lbl, 1);
                         return;
@@ -1123,7 +1165,7 @@ void PaiConfigLayer::rebuildBgPreview() {
     }
 
     // Fallback
-    showPlaceholder("Unknown\ntype", {200, 150, 150});
+        showPlaceholder(tr("pai.config.preview.unknown_type", "Unknown\ntype").c_str(), {200, 150, 150});
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1140,7 +1182,7 @@ void PaiConfigLayer::onBgCustomImage(CCObject*) {
             auto cfg = LayerBackgroundManager::get().getConfig(key);
             cfg.type = "custom"; cfg.customPath = pathStr;
             LayerBackgroundManager::get().saveConfig(key, cfg);
-            PaimonNotify::create("Custom image set!", NotificationIcon::Success)->show();
+            PaimonNotify::create(tr("pai.config.notify.custom_image_set", "Custom image set!"), NotificationIcon::Success)->show();
             self->refreshForCurrentLayer();
         }
     });
@@ -1150,7 +1192,7 @@ void PaiConfigLayer::onBgRandom(CCObject*) {
     auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
     cfg.type = "random";
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
-    PaimonNotify::create("Random background set!", NotificationIcon::Success)->show();
+    PaimonNotify::create(tr("pai.config.notify.random_set", "Random background set!"), NotificationIcon::Success)->show();
     refreshForCurrentLayer();
 }
 
@@ -1163,10 +1205,10 @@ void PaiConfigLayer::onBgSetID(CCObject*) {
         auto cfg = LayerBackgroundManager::get().getConfig(m_selectedKey);
         cfg.type = "id"; cfg.levelId = levelId;
         LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
-        PaimonNotify::create("Level ID set!", NotificationIcon::Success)->show();
+        PaimonNotify::create(tr("pai.config.notify.level_id_set", "Level ID set!"), NotificationIcon::Success)->show();
         refreshForCurrentLayer(); // triggers preview download + status update
     } else {
-        PaimonNotify::create("Invalid ID", NotificationIcon::Error)->show();
+        PaimonNotify::create(tr("pai.config.notify.invalid_id", "Invalid ID"), NotificationIcon::Error)->show();
     }
 }
 
@@ -1177,7 +1219,7 @@ void PaiConfigLayer::onBgSameAs(CCObject*) {
         auto cfg = LayerBackgroundManager::get().getConfig(key);
         cfg.type = picked;
         LayerBackgroundManager::get().saveConfig(key, cfg);
-        PaimonNotify::create(("Using same bg as " + picked + "!").c_str(), NotificationIcon::Success)->show();
+        PaimonNotify::create((tr("pai.config.notify.same_as_prefix", "Using same bg as ") + picked + "!").c_str(), NotificationIcon::Success)->show();
         if (self->m_selectedKey == key) self->refreshForCurrentLayer();
     });
     if (popup) popup->show();
@@ -1186,7 +1228,7 @@ void PaiConfigLayer::onBgSameAs(CCObject*) {
 void PaiConfigLayer::onBgDefault(CCObject*) {
     LayerBgConfig cfg; cfg.type = "default";
     LayerBackgroundManager::get().saveConfig(m_selectedKey, cfg);
-    PaimonNotify::create("Reverted to default!", NotificationIcon::Success)->show();
+    PaimonNotify::create(tr("pai.config.notify.reverted_default", "Reverted to default!"), NotificationIcon::Success)->show();
     refreshForCurrentLayer();
 }
 
@@ -1237,7 +1279,8 @@ void PaiConfigLayer::onShaderNext(CCObject*) {
 void PaiConfigLayer::updateShaderLabel() {
     if (!m_shaderLabel) return;
     if (m_shaderIndex >= 0 && m_shaderIndex < (int)BG_SHADERS.size()) {
-        m_shaderLabel->setString(BG_SHADERS[m_shaderIndex].second.c_str());
+        auto const& shaderLabelKey = BG_SHADERS[m_shaderIndex].second;
+        m_shaderLabel->setString(tr(shaderLabelKey.c_str(), shaderLabelKey.c_str()).c_str());
         m_shaderLabel->setColor(m_shaderIndex == 0 ? ccColor3B{180, 180, 180} : ccColor3B{100, 255, 100});
     }
 }
@@ -1260,7 +1303,7 @@ void PaiConfigLayer::onProfileImage(CCObject*) {
                 Mod::get()->setSavedValue<std::string>("profile-bg-type", "custom");
                 Mod::get()->setSavedValue<std::string>("profile-bg-path", pathStr);
                 (void)Mod::get()->saveData();
-                PaimonNotify::create("Profile image set!", NotificationIcon::Success)->show();
+                PaimonNotify::create(tr("pai.config.notify.profile_image_set", "Profile image set!"), NotificationIcon::Success)->show();
                 self->rebuildProfilePreview();
             }
         }
@@ -1271,7 +1314,7 @@ void PaiConfigLayer::onProfileImageClear(CCObject*) {
     Mod::get()->setSavedValue<std::string>("profile-bg-type", "none");
     Mod::get()->setSavedValue<std::string>("profile-bg-path", "");
     (void)Mod::get()->saveData();
-    PaimonNotify::create("Profile image cleared!", NotificationIcon::Success)->show();
+    PaimonNotify::create(tr("pai.config.notify.profile_image_cleared", "Profile image cleared!"), NotificationIcon::Success)->show();
     rebuildProfilePreview();
 }
 
@@ -1298,12 +1341,15 @@ void PaiConfigLayer::onTransitions(CCObject*) {
 void PaiConfigLayer::onClearAllCache(CCObject*) {
     WeakRef<PaiConfigLayer> self = this;
     geode::createQuickPopup(
-        "Clear All Cache",
-        "This will <cr>delete all cached data</c>:\n"
-        "thumbnails, profile images, profile music,\n"
-        "GIFs, and profile background settings.\n\n"
-        "Are you sure?",
-        "Cancel", "Clear",
+        tr("pai.config.clear_cache.title", "Clear All Cache").c_str(),
+        tr("pai.config.clear_cache.message",
+           "This will <cr>delete all cached data</c>:\n"
+           "thumbnails, profile images, profile music,\n"
+           "GIFs, and profile background settings.\n\n"
+           "Are you sure?"
+        ).c_str(),
+        tr("general.cancel", "Cancel").c_str(),
+        tr("pai.config.clear_cache.confirm", "Clear").c_str(),
         [self](auto*, bool confirmed) {
             if (!confirmed) return;
             auto layerRef = self.lock();
@@ -1351,7 +1397,7 @@ void PaiConfigLayer::onClearAllCache(CCObject*) {
             layer->rebuildProfilePreview();
 
             log::info("[PaiConfigLayer] All caches cleared by user");
-            PaimonNotify::create("All caches cleared!", NotificationIcon::Success)->show();
+            PaimonNotify::create(tr("pai.config.notify.cache_cleared", "All caches cleared!"), NotificationIcon::Success)->show();
         }
     );
 }
