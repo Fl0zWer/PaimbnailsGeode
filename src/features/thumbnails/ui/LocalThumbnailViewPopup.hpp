@@ -104,6 +104,7 @@ protected:
     void tryDirectServerDownload(float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
     void displayThumbnail(CCTexture2D* tex, float maxWidth, float maxHeight, CCSize content, bool openedFromReport);
     void showNoThumbnail(CCSize content);
+    void clearGalleryDisplay();
 
     void onDownloadBtn(CCObject*);
     void onDeleteReportedThumb(CCObject*);

@@ -130,6 +130,8 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
 void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     if (index < 0 || index >= static_cast<int>(m_thumbnails.size())) return;
 
+    clearGalleryDisplay();
+
     int requestToken = ++m_galleryRequestToken;
     auto& thumb = m_thumbnails[index];
     std::string url = thumb.url;
@@ -718,21 +720,13 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         return;
     }
 
-    if (m_thumbnailSprite) {
-        m_thumbnailSprite->removeFromParent();
-        m_thumbnailSprite = nullptr;
-    }
+    clearGalleryDisplay();
 
     if (!m_mainLayer) {
         log::error("[ThumbnailViewPopup] m_mainLayer es null!");
         return;
     }
 
-    m_thumbnailTexture = nullptr;
-    if (m_thumbnailSprite) {
-        m_thumbnailSprite->removeFromParent();
-        m_thumbnailSprite = nullptr;
-    }
     if (m_buttonMenu) {
         m_buttonMenu->removeFromParent();
         m_buttonMenu = nullptr;
@@ -974,30 +968,58 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     }
 }
 
+void LocalThumbnailViewPopup::clearGalleryDisplay() {
+    if (!m_mainLayer) return;
+
+    if (m_thumbnailSprite) {
+        m_thumbnailSprite->removeFromParent();
+        m_thumbnailSprite = nullptr;
+    }
+    m_thumbnailTexture = nullptr;
+
+    if (m_clippingNode) {
+        m_clippingNode->removeFromParent();
+        m_clippingNode = nullptr;
+    }
+
+    if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
+        node->removeFromParent();
+    }
+}
+
 void LocalThumbnailViewPopup::showNoThumbnail(CCSize content) {
+    clearGalleryDisplay();
+
     float centerX = content.width * 0.5f;
     float centerY = content.height * 0.5f + 10.f;
     float bgWidth = content.width - 60.f;
     float bgHeight = content.height - 80.f;
 
+    auto container = CCNode::create();
+    container->setContentSize(content);
+    container->setPosition({0, 0});
+    container->setID("nothumb-container"_spr);
+
     auto bg = CCLayerColor::create({0, 0, 0, 200});
     bg->setContentSize({bgWidth, bgHeight});
     bg->setPosition({centerX - bgWidth / 2, centerY - bgHeight / 2});
-    this->m_mainLayer->addChild(bg);
+    container->addChild(bg);
 
-    UIBorderHelper::createBorder(centerX, centerY, bgWidth, bgHeight, this->m_mainLayer);
+    UIBorderHelper::createBorder(centerX, centerY, bgWidth, bgHeight, container);
 
     auto sadLabel = CCLabelBMFont::create(":(", "bigFont.fnt");
     sadLabel->setScale(3.0f);
     sadLabel->setOpacity(100);
     sadLabel->setPosition({centerX, centerY + 20.f});
-    this->m_mainLayer->addChild(sadLabel, 2);
+    container->addChild(sadLabel, 2);
 
     auto noThumbLabel = CCLabelBMFont::create(Localization::get().getString("level.no_thumbnail_text").c_str(), "goldFont.fnt");
     noThumbLabel->setScale(0.6f);
     noThumbLabel->setOpacity(150);
     noThumbLabel->setPosition({centerX, centerY - 20.f});
-    this->m_mainLayer->addChild(noThumbLabel, 2);
+    container->addChild(noThumbLabel, 2);
+
+    this->m_mainLayer->addChild(container, 1);
 }
 
 // Acciones de botones

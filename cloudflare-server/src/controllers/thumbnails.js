@@ -58,7 +58,7 @@ function buildThumbnailKey(levelId, versionEntry) {
   return `${path}/${levelId}_${versionEntry.version}.${format}`;
 }
 
-function toThumbnailPayload(levelId, env, v) {
+function toThumbnailPayload(levelId, env, v, origin) {
   const path = (v.path || 'thumbnails').replace(/^\//, '');
   const format = v.format || 'webp';
   const version = v.version;
@@ -66,6 +66,7 @@ function toThumbnailPayload(levelId, env, v) {
   const id = v.id || version;
   const uploadedBy = v.uploadedBy || 'Unknown';
   const uploadedAt = v.uploadedAt || '';
+  const baseUrl = origin || env.R2_PUBLIC_URL;
 
   const legacy = v.isLegacy || version === 'legacy' || id === 'legacy';
 
@@ -78,7 +79,7 @@ function toThumbnailPayload(levelId, env, v) {
       id,
       thumbnailId: id,
       position,
-      url: `${env.R2_PUBLIC_URL}/${path}/${filename}`,
+      url: `${baseUrl}/api/download/${path}/${filename}`,
       type: v.type || 'static',
       format,
       creator: uploadedBy,
@@ -90,7 +91,7 @@ function toThumbnailPayload(levelId, env, v) {
     id,
     thumbnailId: id,
     position,
-    url: `${env.R2_PUBLIC_URL}/${path}/${levelId}_${version}.${format}`,
+    url: `${baseUrl}/api/download/${path}/${levelId}_${version}.${format}`,
     type: v.type || (format === 'gif' ? 'gif' : 'static'),
     format,
     creator: uploadedBy,
@@ -531,27 +532,20 @@ export async function handleDownload(request, env, ctx) {
     return new Response('Thumbnail not found', { status: 404, headers: corsHeaders() });
   }
 
-  const bunnyUrl = `${env.R2_PUBLIC_URL}/${foundKey.replace(/^\//, '')}`;
-
-  if (requestedFormat === 'png' && !foundKey.endsWith('.png')) {
-    try {
-      const imageRes = await fetch(bunnyUrl, {
-        headers: { 'Accept': 'image/png', 'Cache-Control': 'no-cache' },
-        cf: { image: { format: 'png' } }
-      });
-      if (imageRes.ok) {
-        const newHeaders = new Headers(imageRes.headers);
-        newHeaders.set('Content-Type', 'image/png');
-        const cors = corsHeaders();
-        for (const [k, v] of Object.entries(cors)) newHeaders.set(k, v);
-        return new Response(imageRes.body, { status: 200, headers: newHeaders });
-      }
-    } catch (err) { console.error(`[Download] Conversion error: ${err}`); }
+  const object = await env.THUMBNAILS_BUCKET.get(foundKey, { skipMeta: true });
+  if (!object) {
+    return new Response('Thumbnail not found in storage', { status: 404, headers: corsHeaders() });
   }
 
-  const ts = url.searchParams.get('t') || url.searchParams.get('_ts');
-  const finalUrl = ts ? `${bunnyUrl}?t=${ts}` : bunnyUrl;
-  return redirectNoStore(finalUrl, 302, corsHeaders());
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Cache-Control', NO_STORE_CACHE_CONTROL);
+  const cors = corsHeaders();
+  for (const [k, v] of Object.entries(cors)) headers.set(k, v);
+
+  const body = await object.arrayBuffer();
+  return new Response(body, { status: 200, headers });
 }
 
 // ===== Direct thumbnail (/t/:id) with CF Cache API =====
@@ -801,7 +795,8 @@ export async function handleListThumbnails(request, env) {
     versions = await getLegacyVersions(env, levelId);
   }
 
-  const raw = versions.map(v => toThumbnailPayload(levelId, env, v));
+  const origin = new URL(request.url).origin;
+  const raw = versions.map(v => toThumbnailPayload(levelId, env, v, origin));
   const seen = new Set();
   const results = raw.filter(t => {
     if (seen.has(t.url)) return false;
@@ -885,7 +880,8 @@ export async function handleGetThumbnailInfo(request, env) {
       });
     }
 
-    const rawThumbs = versions.map(v => toThumbnailPayload(levelId, env, v));
+    const infoOrigin = new URL(request.url).origin;
+    const rawThumbs = versions.map(v => toThumbnailPayload(levelId, env, v, infoOrigin));
     const seenUrls = new Set();
     const dedupedThumbs = rawThumbs.filter(t => {
       if (seenUrls.has(t.url)) return false;
@@ -895,7 +891,7 @@ export async function handleGetThumbnailInfo(request, env) {
 
     return new Response(JSON.stringify({
       success: true, levelId,
-      url: `${env.R2_PUBLIC_URL}/${key}`,
+      url: `${infoOrigin}/api/download/${key}`,
       version: versionData, metadata,
       thumbnails: dedupedThumbs,
       fileInfo: { size: head.size, uploadedAt: head.uploaded, contentType: head.httpMetadata?.contentType }
