@@ -26,7 +26,7 @@ CaptureEditPopup* CaptureEditPopup::create(CapturePreviewPopup* previewPopup) {
 bool CaptureEditPopup::init() {
     if (!Popup::init(220.f, 210.f)) return false;
 
-    this->setTitle(Localization::get().getString("edit.title").c_str());
+    this->setTitle(Localization::get().getString("edit.capture_title").c_str());
 
     auto content = this->m_mainLayer->getContentSize();
 

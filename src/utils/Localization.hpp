@@ -31,6 +31,10 @@ public:
         if (it != translations.end()) {
             return it->second;
         }
+        auto enIt = m_english.find(key);
+        if (enIt != m_english.end()) {
+            return enIt->second;
+        }
         return key; // Fallback to key if not found
     }
 
@@ -68,7 +72,7 @@ private:
             {"preview.process_error", "Error al procesar imagen"},
 
             // CaptureEditPopup
-            {"edit.title", "Editar"},
+            {"edit.capture_title", "Editar"},
             {"edit.toggle_player", "Ocultar jugador"},
             {"edit.hide_player1", "Ocultar P1"},
             {"edit.show_player1", "Mostrar P1"},
@@ -131,7 +135,7 @@ private:
             {"pause.gif_process_error", "Error al procesar GIF"},
             {"pause.file_open_error", "Error: No se pudo abrir el archivo"},
             {"pause.png_invalid", "Error: Archivo PNG invalido"},
-            {"pause.process_thumbnail_error", "Failed to process thumbnail"},
+            {"pause.process_thumbnail_error", "No se pudo procesar la miniatura"},
 
             // ProfilePage
             {"profile.username_error", "No se pudo obtener tu nombre de usuario"},
@@ -216,7 +220,12 @@ private:
             {"bulk.scanning", "Escaneando carpeta..."},
 
             // GIFUploadPopup
-            {"gaily.success_daily_title", "Exito"},
+            {"gif.upload.title", "GIF grabado"},
+            {"gif.label", "GIF"},
+            {"daily.title", "Establecer nivel destacado"},
+            {"daily.set_daily", "Poner Daily"},
+            {"daily.set_weekly", "Poner Weekly"},
+            {"daily.success_daily_title", "Exito"},
             {"daily.success_daily_msg", "Nivel establecido como Daily!"},
             {"daily.error_daily_title", "Error"},
             {"daily.error_daily_msg", "Fallo al establecer Daily."},
@@ -250,7 +259,7 @@ private:
             {"queue.claim_error", "Error: {}"},
 
             // ButtonEditOverlay
-            {"edit.title", "Editar Botones"},
+            {"edit.buttons_title", "Editar Botones"},
             {"edit.accept", "Aceptar"},
             {"edit.reset", "Reiniciar"},
             {"edit.scale", "Escala:"},
@@ -287,17 +296,17 @@ private:
             {"community.admin", "Admin"},
             {"community.mod", "Mod"},
             {"community.level", "Nivel"},
-            {"leaderboard.no_refreshes", "No more refreshes available today!"},
+            {"leaderboard.no_refreshes", "No hay mas recargas disponibles hoy!"},
             {"leaderboard.no_gamemanager", "No se pudo obtener GameManager"},
             {"leaderboard.empty_username", "Nombre de usuario vacio"},
             {"leaderboard.no_image", "No se selecciono imagen"},
             {"leaderboard.png_open_error", "No se pudo abrir PNG"},
-            {"leaderboard.profile_saved_local", "Profile saved locally (server upload disabled)"},
+            {"leaderboard.profile_saved_local", "Perfil guardado localmente (subida al servidor deshabilitada)"},
             {"leaderboard.uploading_profile", "Subiendo perfil..."},
             {"leaderboard.profile_uploaded", "Perfil subido"},
             {"leaderboard.profile_error", "Error al subir perfil"},
             {"leaderboard.unknown_error", "Error desconocido"},
-            {"leaderboard.synced", "Synced with server!"},
+            {"leaderboard.synced", "Sincronizado con el servidor!"},
 
             // GIFRecordSettingsPopup
             {"gif.start", "Iniciar"},
@@ -415,7 +424,7 @@ private:
             {"preview.process_error", "Failed to process image"},
 
             // CaptureEditPopup
-            {"edit.title", "Edit"},
+            {"edit.capture_title", "Edit"},
             {"edit.toggle_player", "Hide player"},
             {"edit.hide_player1", "Hide P1"},
             {"edit.show_player1", "Show P1"},
@@ -555,6 +564,13 @@ private:
             {"addmod.remove_error", "Could not remove moderator"},
             {"general.cancel", "Cancel"},
 
+            // BulkUploadPopup
+            {"bulk.title", "Bulk Upload"},
+            {"bulk.select_folder_label", "Select a folder with thumbnails"},
+            {"bulk.progress_label", "0 / 0 thumbnails"},
+            {"bulk.info_text", "Files must follow this format:\nlevelID.png (e.g: 12345.png)\n\nOnly thumbnails for levels\nthat don't already have one will be uploaded."},
+            {"bulk.scanning", "Scanning folder..."},
+
             // GIFUploadPopup
             {"gif.upload.title", "Recorded GIF"},
             {"gif.label", "GIF"},
@@ -597,7 +613,7 @@ private:
             {"queue.claim_error", "Error: {}"},
 
             // ButtonEditOverlay
-            {"edit.title", "Edit Buttons"},
+            {"edit.buttons_title", "Edit Buttons"},
             {"edit.accept", "Accept"},
             {"edit.reset", "Reset"},
             {"edit.scale", "Scale:"},
