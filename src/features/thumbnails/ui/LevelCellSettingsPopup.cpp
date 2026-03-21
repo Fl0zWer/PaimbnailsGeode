@@ -436,7 +436,7 @@ bool LevelCellSettingsPopup::init() {
         scrollArrow->setRotation(-90.f); // apuntar hacia abajo
         scrollArrow->setScale(0.35f);
         scrollArrow->setOpacity(150);
-        m_scrollArrowBasePos = {content.width / 2.f, 18.f};
+        m_scrollArrowBasePos = ccp(content.width / 2.f, 18.f);
         scrollArrow->setPosition(m_scrollArrowBasePos);
         scrollArrow->setID("scroll-hint-arrow"_spr);
         m_mainLayer->addChild(scrollArrow, 20);
