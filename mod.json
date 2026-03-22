@@ -399,12 +399,6 @@
       "description": "Settings for improving performance and resource usage",
       "type": "title"
     },
-    "optimizer": {
-      "type": "bool",
-      "name": "Optimizer Mode",
-      "description": "Disables all logs for maximum performance. Keep OFF for debugging.",
-      "default": false
-    },
     "gif-ram-cache": {
       "type": "bool",
       "name": "Cache GIFs in RAM",
@@ -451,16 +445,10 @@
       "description": "Delete downloaded thumbnails when the game closes. Next session will re-download them.",
       "default": true
     },
-    "debug-password": {
-      "type": "string",
-      "name": "Password",
-      "description": "Enter password to enable debug features",
-      "default": ""
-    },
     "enable-debug-logs": {
       "type": "bool",
       "name": "Enable Debug Logs",
-      "description": "Enable verbose debug logging (requires debug password)",
+      "description": "Show all mod logs. When disabled, no logs are emitted.",
       "default": false
     }
   },

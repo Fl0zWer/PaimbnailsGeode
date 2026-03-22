@@ -766,7 +766,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 }
 
 void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success) {
-    log::info("[ThumbnailLoader] finishTask: key={} success={} cancelled={} hasTex={}", task->levelID, success, task->cancelled.load(), texture != nullptr);
+    log::info("[ThumbnailLoader] finishTask: key={} success={} cancelled={} hasTex={}", task->levelID, success, task->cancelled, texture != nullptr);
     std::vector<LoadCallback> callbacks;
     bool shuttingDown = m_shuttingDown.load(std::memory_order_acquire);
     bool shouldNotify = !task->cancelled && !shuttingDown;

@@ -166,14 +166,8 @@ namespace general {
     inline std::string language() {
         return geode::Mod::get()->getSettingValue<std::string>("language");
     }
-    inline bool optimizer() {
-        return geode::Mod::get()->getSettingValue<bool>("optimizer");
-    }
     inline bool enableDebugLogs() {
         return geode::Mod::get()->getSettingValue<bool>("enable-debug-logs");
-    }
-    inline std::string debugPassword() {
-        return geode::Mod::get()->getSettingValue<std::string>("debug-password");
     }
 } // namespace general
 
