@@ -298,7 +298,8 @@ void PaiConfigLayer::buildBackgroundTab() {
 
     m_bgIdInput = TextInput::create(58, tr("pai.config.background.level_id", "Level ID").c_str());
     m_bgIdInput->setPosition({rightX + 42, row2});
-    m_bgIdInput->setFilter("0123456789");
+    m_bgIdInput->setCommonFilter(geode::CommonFilter::Uint);
+    m_bgIdInput->setMaxCharCount(10);
     m_bgIdInput->setScale(0.55f);
     m_bgTab->addChild(m_bgIdInput, 2);
 

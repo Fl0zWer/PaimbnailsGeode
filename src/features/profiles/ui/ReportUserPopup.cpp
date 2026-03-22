@@ -28,7 +28,7 @@ bool ReportUserPopup::init(int accountID, std::string const& username) {
     m_mainLayer->addChild(infoLabel);
 
     m_textInput = geode::TextInput::create(360.f, "Reason for reporting...", "chatFont.fnt");
-    m_textInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?()-_");
+    m_textInput->setCommonFilter(geode::CommonFilter::Any);
     m_textInput->setMaxCharCount(200);
     m_textInput->setPosition({contentSize.width / 2, contentSize.height / 2 - 5.f});
     m_mainLayer->addChild(m_textInput);

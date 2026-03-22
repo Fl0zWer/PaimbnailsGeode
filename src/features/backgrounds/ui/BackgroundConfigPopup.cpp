@@ -170,7 +170,8 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
 
     m_idInput = TextInput::create(90, "Level ID");
     m_idInput->setPosition({centerX - 40, centerY - 10});
-    m_idInput->setFilter("0123456789");
+    m_idInput->setCommonFilter(geode::CommonFilter::Uint);
+    m_idInput->setMaxCharCount(10);
     m_idInput->setScale(0.8f);
     node->addChild(m_idInput);
     
@@ -589,7 +590,8 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
 
     m_layerIdInput = TextInput::create(90, "Level ID");
     m_layerIdInput->setPosition({cx - 40, idY});
-    m_layerIdInput->setFilter("0123456789");
+    m_layerIdInput->setCommonFilter(geode::CommonFilter::Uint);
+    m_layerIdInput->setMaxCharCount(10);
     m_layerIdInput->setScale(0.8f);
     node->addChild(m_layerIdInput);
 

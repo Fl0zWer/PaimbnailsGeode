@@ -32,6 +32,8 @@ bool BanUserPopup::init(std::string const& username) {
     m_mainLayer->addChild(lbl);
 
     m_input = TextInput::create(240.f, Localization::get().getString("ban.popup.placeholder"));
+    m_input->setCommonFilter(geode::CommonFilter::Any);
+    m_input->setMaxCharCount(200);
     m_input->setID("reason-input"_spr);
     m_input->setPosition({content.width / 2, content.height / 2});
     m_mainLayer->addChild(m_input);

@@ -58,7 +58,7 @@ void ProfileMusicPopup::createSongIdInput() {
     // Input field usando TextInput de Geode (maneja touch correctamente)
     m_songIdInput = TextInput::create(120.f, "Enter ID...");
     m_songIdInput->setPosition({230.f, winSize.height - 50.f});
-    m_songIdInput->setFilter("0123456789");
+    m_songIdInput->setCommonFilter(geode::CommonFilter::Uint);
     m_songIdInput->setMaxCharCount(10);
     m_songIdInput->setID("song-id-input"_spr);
     m_mainLayer->addChild(m_songIdInput, 11);

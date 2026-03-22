@@ -18,7 +18,7 @@ bool ReportInputPopup::init(int levelID, geode::CopyableFunction<void(std::strin
 
     // campo de texto (geode::TextInput incluye fondo integrado)
     m_textInput = geode::TextInput::create(360.f, Localization::get().getString("report.placeholder").c_str(), "chatFont.fnt");
-    m_textInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 .,;:!?()-_");
+    m_textInput->setCommonFilter(geode::CommonFilter::Any);
     m_textInput->setMaxCharCount(120);
     m_textInput->setPosition({contentSize.width / 2, contentSize.height / 2 + 5.f});
     m_mainLayer->addChild(m_textInput);

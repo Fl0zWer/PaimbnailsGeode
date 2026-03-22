@@ -33,6 +33,8 @@ bool WhitelistPopup::init() {
     // ── input + add button ───────────────────────────────
     m_input = TextInput::create(180.f, "Username...");
     m_input->setPosition({cx - 30.f, content.height - 50.f});
+    m_input->setCommonFilter(geode::CommonFilter::ID);
+    m_input->setMaxCharCount(20);
     m_input->setID("wl-input"_spr);
     m_mainLayer->addChild(m_input);
 

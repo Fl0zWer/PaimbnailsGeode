@@ -9,7 +9,7 @@
 /**
  * AsyncHttp — Coroutine-based HTTP helpers for Paimbnails.
  *
- * Uses Geode 5.3.0 native co_await on web::WebRequest.
+ * Uses native Geode 5.x co_await support on web::WebRequest.
  * Requires C++23 (coroutine support).
  *
  * Usage:

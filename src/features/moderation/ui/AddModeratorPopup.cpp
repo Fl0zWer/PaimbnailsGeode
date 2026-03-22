@@ -75,7 +75,7 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
     // input de username
     m_usernameInput = TextInput::create(content.width - 40.f, Localization::get().getString("addmod.enter_username"));
     m_usernameInput->setPosition({cx, content.height / 2.f - 80.f});
-    m_usernameInput->setFilter("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-");
+    m_usernameInput->setCommonFilter(geode::CommonFilter::ID);
     m_usernameInput->setMaxCharCount(20);
     m_usernameInput->setID("username-input"_spr);
     m_mainLayer->addChild(m_usernameInput, 11);
