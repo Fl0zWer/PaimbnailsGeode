@@ -893,6 +893,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::createFromCache(std::string const& key) {
 }
 
 void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::string const& key, AsyncCallback callback) {
+    log::debug("[AnimatedGIFSprite] createAsync(data): key={} size={}", key, data.size());
     if (data.empty()) {
         if (callback) callback(nullptr);
         return;
@@ -922,6 +923,7 @@ void AnimatedGIFSprite::createAsync(std::vector<uint8_t> const& data, std::strin
 
 
 void AnimatedGIFSprite::createAsync(std::string const& path, AsyncCallback callback) {
+    log::debug("[AnimatedGIFSprite] createAsync(path): {}", path);
     std::error_code existsEc;
     if (!std::filesystem::exists(path, existsEc) || existsEc) {
         if (callback) callback(nullptr);

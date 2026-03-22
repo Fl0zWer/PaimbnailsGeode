@@ -29,6 +29,7 @@ LayerBgConfig LayerBackgroundManager::getConfig(std::string const& key) const {
 }
 
 void LayerBackgroundManager::saveConfig(std::string const& key, LayerBgConfig const& cfg) {
+    log::info("[LayerBgMgr] saveConfig: key={} type={}", key, cfg.type);
     Mod::get()->setSavedValue("layerbg-" + key + "-type", cfg.type);
     Mod::get()->setSavedValue("layerbg-" + key + "-path", cfg.customPath);
     Mod::get()->setSavedValue("layerbg-" + key + "-id", cfg.levelId);
@@ -45,6 +46,7 @@ bool LayerBackgroundManager::hasCustomBackground(std::string const& layerKey) co
 
 LayerBgConfig LayerBackgroundManager::resolveConfig(std::string const& layerKey) const {
     auto cfg = getConfig(layerKey);
+    log::debug("[LayerBgMgr] resolveConfig: key={} type={}", layerKey, cfg.type);
     if (cfg.type == "default") return cfg;
 
     std::string resolvedType = cfg.type;
@@ -230,6 +232,7 @@ void LayerBackgroundManager::hideOriginalBg(CCLayer* layer) {
 
 // ── cargar textura segun config (optimizado: cache-first) ──
 CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& cfg) {
+    log::debug("[LayerBgMgr] loadTextureForConfig: type={} id={}", cfg.type, cfg.levelId);
     if (cfg.type == "custom" && !cfg.customPath.empty()) {
         std::error_code ec;
         if (std::filesystem::exists(cfg.customPath, ec)) {
@@ -281,6 +284,7 @@ CCTexture2D* LayerBackgroundManager::loadTextureForConfig(LayerBgConfig const& c
 
 // ── aplicar fondo estatico ──
 void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, LayerBgConfig const& cfg) {
+    log::info("[LayerBgMgr] applyStaticBg: dark={} shader={}", cfg.darkMode, cfg.shader);
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
     auto container = CCNode::create();
@@ -337,6 +341,7 @@ void LayerBackgroundManager::applyStaticBg(CCLayer* layer, CCTexture2D* tex, Lay
 
 // ── aplicar fondo GIF ──
 void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path, LayerBgConfig const& cfg) {
+    log::info("[LayerBgMgr] applyGifBg: path={} dark={}", path, cfg.darkMode);
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
     auto container = CCNode::create();
@@ -392,6 +397,7 @@ void LayerBackgroundManager::applyGifBg(CCLayer* layer, std::string const& path,
 
 // ── API principal ──
 bool LayerBackgroundManager::applyBackground(CCLayer* layer, std::string const& layerKey) {
+    log::info("[LayerBgMgr] applyBackground: layerKey={}", layerKey);
     auto cfg = getConfig(layerKey);
 
     // Siempre limpiar container previo si existe

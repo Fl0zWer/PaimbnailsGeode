@@ -111,8 +111,9 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     $override
     bool init(LeaderboardType type, LeaderboardStat stat) {
         if (!LeaderboardsLayer::init(type, stat)) return false;
+        log::info("[LeaderboardsLayer] init: type={}", static_cast<int>(type));
         
-        // â”€â”€ Aplicar fondo custom unificado â”€â”€
+        // ── Aplicar fondo custom unificado ──â”€â”€
         LayerBackgroundManager::get().applyBackground(this, "leaderboards");
 
         createPaimonButtons();
@@ -238,6 +239,7 @@ class $modify(PaimonLeaderboardsLayer, LeaderboardsLayer) {
     }
 
     void onUploadBanner(CCObject*) {
+        log::info("[LeaderboardsLayer] onUploadBanner");
         bool canUploadGIF = Mod::get()->getSavedValue<bool>("is-verified-vip", false)
                          || Mod::get()->getSavedValue<bool>("is-verified-moderator", false)
                          || Mod::get()->getSavedValue<bool>("is-verified-admin", false);

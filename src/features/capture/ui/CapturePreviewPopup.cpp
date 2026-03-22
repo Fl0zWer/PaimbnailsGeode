@@ -93,6 +93,7 @@ CapturePreviewPopup* CapturePreviewPopup::create(
     bool isPlayer1Hidden, bool isPlayer2Hidden, bool isModerator
 ) {
     if (!texture) return nullptr;
+    log::info("[CapturePreview] create: levelID={} size={}x{}", levelID, width, height);
 
     auto ret = new CapturePreviewPopup();
     ret->m_texture = texture;
@@ -135,6 +136,7 @@ void CapturePreviewPopup::updateContent(CCTexture2D* texture,
     std::shared_ptr<uint8_t> buffer, int width, int height)
 {
     if (!texture) return;
+    log::debug("[CapturePreview] updateContent: {}x{}", width, height);
 
     m_texture  = texture;
     m_buffer   = buffer;

@@ -29,6 +29,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     $override
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
         if (!InfoLayer::init(level, score, list)) return false;
+        log::info("[InfoLayer] init: hasLevel={} hasScore={} hasList={}", level != nullptr, score != nullptr, list != nullptr);
 
     // solo aplicar fondo si es un perfil de usuario
         if (!score) return true;
@@ -67,6 +68,7 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     void applyBlurredBackground(CCTexture2D* tex) {
         if (!tex) return;
+        log::debug("[InfoLayer] applyBlurredBackground");
 
         auto layer = this->m_mainLayer;
         if (!layer) return;

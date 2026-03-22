@@ -585,6 +585,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     }
 
     void addOrUpdateProfileImgOnPage(int accountID, bool isSelf = false) {
+        log::info("[ProfilePage] addOrUpdateProfileImgOnPage: accountID={} isSelf={}", accountID, isSelf);
         auto f = m_fields.self();
         f->m_hasProfileBackdrop = false;
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
@@ -844,6 +845,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     // Geode node-ids asigna IDs aqui; es el momento mas fiable para ocultar icon-background.
     $override
     void loadPageFromUserInfo(GJUserScore* score) {
+        log::info("[ProfilePage] loadPageFromUserInfo: accountID={}", this->m_accountID);
         ProfilePage::loadPageFromUserInfo(score);
         if (m_fields->m_hasProfileBackdrop) {
             if (auto* layer = this->m_mainLayer) {
@@ -1054,6 +1056,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void displayProfileImg(int accountID, CCTexture2D* tex) {
         if (!tex) return;
+        log::info("[ProfilePage] displayProfileImg: accountID={}", accountID);
 
         auto texSize = tex->getContentSize();
         if (texSize.width <= 0.f || texSize.height <= 0.f) return;
@@ -1156,11 +1159,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
     $override
     bool init(int accountID, bool ownProfile) {
         if (!ProfilePage::init(accountID, ownProfile)) return false;
+        log::info("[ProfilePage] init: accountID={} ownProfile={}", accountID, ownProfile);
 
             // empiezo siempre como no moderador
             m_fields->m_isApprovedMod = false;
             m_fields->m_isAdmin = false;
-            PaimonDebug::log("[ProfilePage] Inicializando perfil - status moderador: false");
 
             // estado mod guardado
             bool wasVerified = Mod::get()->getSavedValue<bool>("is-verified-moderator", false);

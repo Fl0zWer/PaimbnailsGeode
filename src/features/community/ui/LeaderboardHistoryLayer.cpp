@@ -34,6 +34,7 @@ CCScene* LeaderboardHistoryLayer::scene() {
 
 bool LeaderboardHistoryLayer::init() {
     if (!CCLayer::init()) return false;
+    log::info("[LeaderboardHistory] init");
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 

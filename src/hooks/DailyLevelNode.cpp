@@ -156,6 +156,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
 
         if (!level) return true;
         m_fields->m_levelID = level->m_levelID;
+        log::info("[DailyLevelNode] init: levelID={}", level->m_levelID.value());
 
         // saco el size pa la miniatura
         CCSize nodeSize = this->getContentSize();
@@ -243,8 +244,9 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
         std::string fileName = fmt::format("{}.png", levelID);
         
         // Ref<> mantiene vivo este nodo hasta que el callback termine
+        log::info("[DailyLevelNode] requesting thumbnail: levelID={}", levelID);
         Ref<DailyLevelNode> self = this;
-        ThumbnailLoader::get().requestLoad(levelID, fileName, [self](CCTexture2D* tex, bool success) {
+        ThumbnailLoader::get().requestLoad(levelID, fileName, [self, levelID](CCTexture2D* tex, bool success) {
             auto* fields = static_cast<PaimonDailyLevelNode*>(self.data())->m_fields.self();
             // chequeo rapido por si ya no existo o el clipper se perdio
             if (!self->getParent() || !fields->m_paimonClipper) {
@@ -258,6 +260,7 @@ class $modify(PaimonDailyLevelNode, DailyLevelNode) {
             }
 
             if (success && tex && fields->m_paimonClipper) {
+                log::info("[DailyLevelNode] thumbnail loaded OK: levelID={}", levelID);
                 if (fields->m_paimonThumb) {
                     fields->m_paimonThumb->removeFromParent();
                 }

@@ -34,11 +34,13 @@ CCScene* CommunityHubLayer::scene() {
 }
 
 CommunityHubLayer::~CommunityHubLayer() {
+    log::info("[CommunityHub] destroyed");
     removeCaveEffect();
 }
 
 bool CommunityHubLayer::init() {
     if (!CCLayer::init()) return false;
+    log::info("[CommunityHub] init");
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
@@ -137,6 +139,7 @@ bool CommunityHubLayer::init() {
 }
 
 void CommunityHubLayer::onEnterTransitionDidFinish() {
+    log::info("[CommunityHub] onEnterTransitionDidFinish");
     CCLayer::onEnterTransitionDidFinish();
     applyCaveEffect();
 }
@@ -150,6 +153,7 @@ void CommunityHubLayer::update(float dt) {
 }
 
 void CommunityHubLayer::applyCaveEffect() {
+    log::debug("[CommunityHub] applyCaveEffect");
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system || !engine->m_backgroundMusicChannel) return;
     if (m_caveApplied) return;

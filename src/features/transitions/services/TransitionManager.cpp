@@ -590,11 +590,13 @@ TransitionConfig TransitionManager::getLevelEntryConfig() const {
 }
 
 void TransitionManager::setLevelEntryConfig(TransitionConfig const& cfg) {
+    log::info("[TransitionManager] setLevelEntryConfig: type={} dur={}", typeToString(cfg.type), cfg.duration);
     m_levelEntryConfig = cfg;
     m_hasLevelEntryConfig = true;
 }
 
 void TransitionManager::clearLevelEntryConfig() {
+    log::info("[TransitionManager] clearLevelEntryConfig");
     m_hasLevelEntryConfig = false;
     m_levelEntryConfig = TransitionConfig{};
 }
@@ -605,6 +607,7 @@ void TransitionManager::clearLevelEntryConfig() {
 
 CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScene* dest) {
     if (!m_loaded) loadConfig();
+    log::info("[TransitionManager] createTransition: type={} dur={}", typeToString(cfg.type), cfg.duration);
 
     if (cfg.type == TransitionType::None) return dest;
 
@@ -648,6 +651,7 @@ CCScene* TransitionManager::createTransition(TransitionConfig const& cfg, CCScen
 
 void TransitionManager::replaceScene(CCScene* dest) {
     if (!dest) return;
+    log::info("[TransitionManager] replaceScene: enabled={}", m_enabled);
 
     try {
         if (m_enabled) {
@@ -668,6 +672,7 @@ void TransitionManager::replaceScene(CCScene* dest) {
 
 void TransitionManager::pushScene(CCScene* dest) {
     if (!dest) return;
+    log::info("[TransitionManager] pushScene: enabled={}", m_enabled);
 
     try {
         if (m_enabled) {
@@ -749,10 +754,11 @@ CCTransitionScene* TransitionManager::createNativeTransition(TransitionConfig co
 // ════════════════════════════════════════════════════════════
 
 std::vector<TransitionCommand> TransitionManager::parseScriptFile(std::string const& scriptPath) const {
+    log::info("[TransitionManager] parseScriptFile: {}", scriptPath);
     std::vector<TransitionCommand> commands;
     auto fullPath = Mod::get()->getSaveDir() / scriptPath;
     std::error_code ec;
-    if (!std::filesystem::exists(fullPath, ec)) return commands;
+    if (!std::filesystem::exists(fullPath, ec)) { log::warn("[TransitionManager] parseScriptFile: file not found"); return commands; }
 
     auto readRes = geode::utils::file::readString(fullPath);
     if (!readRes) return commands;

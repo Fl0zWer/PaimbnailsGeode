@@ -85,6 +85,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
+        log::info("[LevelSelectLayer] init: page={}", p0);
 
         DynamicSongManager::get()->enterLayer(DynSongLayer::LevelSelect);
 
@@ -294,6 +295,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     
 
     void updateThumbnailBackground(int levelID) {
+        log::debug("[LevelSelectLayer] updateThumbnailBackground: levelID={}", levelID);
         // solo niveles 1-22 tienen thumbnail
         bool isMainLevel = (levelID >= 1 && levelID <= 22);
 
@@ -322,6 +324,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     
     
     void applyBackground(CCTexture2D* tex, int levelID = -1) {
+        log::debug("[LevelSelectLayer] applyBackground: levelID={} hasTex={}", levelID, tex != nullptr);
         auto win = CCDirector::sharedDirector()->getWinSize();
         CCSprite* finalSprite = nullptr;
         CCSprite* sharpSprite = nullptr;

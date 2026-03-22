@@ -506,6 +506,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         pushGameColorLayersBehind(this);
 
         if (!score) return;
+        log::info("[GJScoreCell] loadFromScore: accountID={} user={}", score->m_accountID, std::string(score->m_userName));
 
             int accountID = score->m_accountID;
             if (accountID <= 0) return;

@@ -214,6 +214,7 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
 void DynamicSongManager::playSong(GJGameLevel* level) {
     if (!Mod::get()->getSettingValue<bool>("dynamic-song")) return;
     if (!level) return;
+    log::debug("[DynamicSong] playSong: levelID={}", level->m_levelID.value());
 
     if (!isInValidLayer()) return;
 
@@ -328,6 +329,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
 }
 
 void DynamicSongManager::stopSong() {
+    log::debug("[DynamicSong] stopSong: active={}", m_isDynamicSongActive);
     if (!m_isDynamicSongActive) return;
 
     if (m_isFadingOut) return;
@@ -515,6 +517,7 @@ void DynamicSongManager::executeLevelStartFade(int step, int totalSteps, float v
 }
 
 void DynamicSongManager::forceKill() {
+    log::info("[DynamicSong] forceKill");
     m_isFadingIn = false;
     m_isFadingOut = false;
 

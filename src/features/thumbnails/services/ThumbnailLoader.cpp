@@ -36,10 +36,12 @@ ThumbnailLoader::ThumbnailLoader() {
 #else
     m_maxConcurrentTasks = 20;
 #endif
+    log::info("[ThumbnailLoader] constructor: maxConcurrent={}", m_maxConcurrentTasks);
     initDiskCache();
 }
 
 ThumbnailLoader::~ThumbnailLoader() {
+    log::info("[ThumbnailLoader] destructor: shutting down");
     // le aviso a los threads de background que paren
     m_shuttingDown = true;
     waitBackgroundWorkers();
@@ -268,6 +270,7 @@ std::filesystem::path ThumbnailLoader::getCachePath(int levelID, bool isGif) {
 
 void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallback callback, int priority, bool isGif) {
     int key = isGif ? -levelID : levelID;
+    log::info("[ThumbnailLoader] requestLoad: levelID={} key={} priority={} isGif={}", levelID, key, priority, isGif);
     
     // lock protege m_textureCache, m_failedCache y m_tasks de carreras con finishTask
     std::lock_guard<std::mutex> lock(m_queueMutex);
@@ -281,6 +284,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
         int cachedVer = it->second.version;
         int currentVer = getVersionForKeyLocked(key);
         if (cachedVer != currentVer) {
+            log::info("[ThumbnailLoader] requestLoad: RAM cache stale for key={} cachedVer={} currentVer={}", key, cachedVer, currentVer);
             // entrada stale: la version no coincide, evicto y sigo como cache miss
             if (it->second.texture) {
                 size_t bytes = static_cast<size_t>(it->second.texture->getPixelsWide()) * static_cast<size_t>(it->second.texture->getPixelsHigh()) * 4;
@@ -303,6 +307,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
             m_lruMap[key] = std::prev(m_lruOrder.end());
             
             // fuerzo callback asincrono para no trabar la UI
+            log::debug("[ThumbnailLoader] requestLoad: RAM cache hit for key={}", key);
             auto tex = it->second.texture;
             Loader::get()->queueInMainThread([callback, tex]() {
                 if (callback) callback(tex, true);
@@ -315,18 +320,21 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     auto failIt = m_failedCache.find(key);
     if (failIt != m_failedCache.end()) {
         if (now - failIt->second < FAILED_CACHE_TTL) {
+            log::debug("[ThumbnailLoader] requestLoad: failed cache hit for key={}", key);
             Loader::get()->queueInMainThread([callback]() {
                 if (callback) callback(nullptr, false);
             });
             return;
         }
         // TTL expirado, permito reintento
+        log::debug("[ThumbnailLoader] requestLoad: failed cache expired for key={}, retrying", key);
         m_failedCache.erase(failIt);
     }
 
     // 3. reviso si ya hay una tarea en cola
     auto taskIt = m_tasks.find(key);
     if (taskIt != m_tasks.end()) {
+        log::debug("[ThumbnailLoader] requestLoad: task already queued for key={}, appending callback", key);
         // solo agrego el callback a la tarea existente
         if (callback) taskIt->second->callbacks.push_back(callback);
         // si viene con mas prioridad se la subo
@@ -338,6 +346,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     }
 
     // 4. creo una tarea nueva
+    log::info("[ThumbnailLoader] requestLoad: creating new task for key={} priority={}", key, priority);
     auto task = std::make_shared<Task>();
     task->levelID = key;
     task->fileName = fileName;
@@ -355,6 +364,7 @@ void ThumbnailLoader::cancelLoad(int levelID, bool isGif) {
     std::lock_guard<std::mutex> lock(m_queueMutex);
     auto it = m_tasks.find(key);
     if (it != m_tasks.end()) {
+        log::info("[ThumbnailLoader] cancelLoad: key={}", key);
         it->second->cancelled = true;
         // si ya va corriendo no la paro, solo ignoro el resultado
         // si esta en cola con marcarla cancelada me sobra
@@ -412,6 +422,7 @@ void ThumbnailLoader::processQueue() {
 void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
     task->running = true;
     m_activeTaskCount.fetch_add(1, std::memory_order_relaxed);
+    log::debug("[ThumbnailLoader] startTask: key={} active={}", task->levelID, m_activeTaskCount.load());
 
     // siempre tiro de disco primero para evitar carreras con initDiskCache
     // workerLoadFromDisk mira el FS y si no encuentra descarga
@@ -429,6 +440,7 @@ void ThumbnailLoader::startTask(std::shared_ptr<Task> task) {
 }
 
 void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
+    log::debug("[ThumbnailLoader] workerLoadFromDisk: key={}", task->levelID);
     if (task->cancelled) {
         Loader::get()->queueInMainThread([this, task]() {
             finishTask(task, nullptr, false);
@@ -647,6 +659,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 
     int realID = std::abs(task->levelID);
     bool isGif = task->levelID < 0;
+    log::info("[ThumbnailLoader] workerDownload: levelID={} isGif={}", realID, isGif);
 
     Loader::get()->queueInMainThread([this, task, realID, isGif]() {
         HttpClient::get().downloadThumbnail(realID, isGif, 
@@ -753,6 +766,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 }
 
 void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success) {
+    log::info("[ThumbnailLoader] finishTask: key={} success={} cancelled={} hasTex={}", task->levelID, success, task->cancelled.load(), texture != nullptr);
     std::vector<LoadCallback> callbacks;
     bool shuttingDown = m_shuttingDown.load(std::memory_order_acquire);
     bool shouldNotify = !task->cancelled && !shuttingDown;
@@ -836,6 +850,7 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture, int
 }
 
 void ThumbnailLoader::clearCache() {
+    log::info("[ThumbnailLoader] clearCache: clearing RAM cache");
     std::lock_guard<std::mutex> lock(m_queueMutex);
     m_textureCache.clear();
     m_lruOrder.clear();
@@ -847,6 +862,7 @@ void ThumbnailLoader::clearCache() {
 
 void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     int key = isGif ? -levelID : levelID;
+    log::info("[ThumbnailLoader] invalidateLevel: levelID={} key={}", levelID, key);
     std::vector<InvalidationCallback> listeners;
 
     {
@@ -928,6 +944,7 @@ void ThumbnailLoader::removeInvalidationListener(int listenerId) {
 }
 
 void ThumbnailLoader::clearDiskCache() {
+    log::info("[ThumbnailLoader] clearDiskCache: clearing disk cache");
     // hilo de I/O de disco — no migrable a WebTask
     spawnBackground([this]() {
         geode::utils::thread::setName("ThumbnailLoader Disk Clear");
@@ -957,6 +974,7 @@ void ThumbnailLoader::updateSessionCache(int levelID, cocos2d::CCTexture2D* text
 }
 
 void ThumbnailLoader::cleanup() {
+    log::info("[ThumbnailLoader] cleanup: shutting down loader");
     m_shuttingDown.store(true, std::memory_order_release);
     clearPendingQueue();
     waitBackgroundWorkers();

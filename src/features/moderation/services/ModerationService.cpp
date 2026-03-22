@@ -27,6 +27,7 @@ void ModerationService::updateModCache(bool isMod, bool isAdmin) {
 // ── moderator checks ───────────────────────────────────────────────
 
 void ModerationService::checkModerator(std::string const& username, ModeratorCallback callback) {
+    log::info("[ModService] checkModerator: user={}", username);
     if (!m_serverEnabled) { callback(false, false); return; }
     if (tryModCache(callback)) return;
 
@@ -124,6 +125,7 @@ void ModerationService::removeModerator(std::string const& username, std::string
 // ── queue operations ────────────────────────────────────────────────
 
 void ModerationService::syncVerificationQueue(PendingCategory category, QueueCallback callback) {
+    log::debug("[ModService] syncVerificationQueue: category={}", static_cast<int>(category));
     if (!m_serverEnabled) {
         callback(true, PendingQueue::get().list(category));
         return;

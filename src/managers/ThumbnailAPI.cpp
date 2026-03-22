@@ -33,6 +33,7 @@ void ThumbnailAPI::setServerEnabled(bool enabled) {
 // â”€â”€ Thumbnail core (ThumbnailTransportClient) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void ThumbnailAPI::getThumbnails(int levelId, ThumbnailListCallback callback) {
+    log::info("[ThumbnailAPI] getThumbnails: levelId={}", levelId);
     ThumbnailTransportClient::get().getThumbnails(levelId, std::move(callback));
 }
 void ThumbnailAPI::getThumbnailInfo(int levelId, ActionCallback callback) {
@@ -42,18 +43,22 @@ std::string ThumbnailAPI::getThumbnailURL(int levelId) {
     return ThumbnailTransportClient::get().getThumbnailURL(levelId);
 }
 void ThumbnailAPI::uploadThumbnail(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+    log::info("[ThumbnailAPI] uploadThumbnail: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailTransportClient::get().uploadThumbnail(levelId, pngData, username, std::move(callback));
 }
 void ThumbnailAPI::uploadGIF(int levelId, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
     ThumbnailTransportClient::get().uploadGIF(levelId, gifData, username, std::move(callback));
 }
 void ThumbnailAPI::downloadThumbnail(int levelId, DownloadCallback callback) {
+    log::info("[ThumbnailAPI] downloadThumbnail: levelId={}", levelId);
     ThumbnailTransportClient::get().downloadThumbnail(levelId, std::move(callback));
 }
 void ThumbnailAPI::checkExists(int levelId, ExistsCallback callback) {
+    log::debug("[ThumbnailAPI] checkExists: levelId={}", levelId);
     ThumbnailTransportClient::get().checkExists(levelId, std::move(callback));
 }
 void ThumbnailAPI::deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username, int accountID, ActionCallback callback) {
+    log::info("[ThumbnailAPI] deleteThumbnail: levelId={} thumbId={} user={}", levelId, thumbnailId, username);
     ThumbnailTransportClient::get().deleteThumbnail(levelId, thumbnailId, username, accountID, std::move(callback));
 }
 void ThumbnailAPI::getRating(int levelId, std::string const& username, std::string const& thumbnailId, geode::CopyableFunction<void(bool success, float average, int count, int userVote)> callback) {
@@ -66,6 +71,7 @@ void ThumbnailAPI::getThumbnail(int levelId, DownloadCallback callback) {
     ThumbnailTransportClient::get().getThumbnail(levelId, std::move(callback));
 }
 void ThumbnailAPI::downloadFromUrl(std::string const& url, DownloadCallback callback) {
+    log::debug("[ThumbnailAPI] downloadFromUrl: url={}", url);
     ThumbnailTransportClient::get().downloadFromUrl(url, std::move(callback));
 }
 void ThumbnailAPI::downloadFromUrlData(std::string const& url, DownloadDataCallback callback) {
@@ -84,9 +90,11 @@ cocos2d::CCTexture2D* ThumbnailAPI::webpToTexture(std::vector<uint8_t> const& we
 // â”€â”€ Submissions (ThumbnailSubmissionService) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void ThumbnailAPI::uploadSuggestion(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+    log::info("[ThumbnailAPI] uploadSuggestion: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailSubmissionService::get().uploadSuggestion(levelId, pngData, username, std::move(callback));
 }
 void ThumbnailAPI::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+    log::info("[ThumbnailAPI] uploadUpdate: levelId={} user={} bytes={}", levelId, username, pngData.size());
     ThumbnailSubmissionService::get().uploadUpdate(levelId, pngData, username, std::move(callback));
 }
 void ThumbnailAPI::downloadSuggestion(int levelId, DownloadCallback callback) {
@@ -108,6 +116,7 @@ void ThumbnailAPI::checkModerator(std::string const& username, ModeratorCallback
     ModerationService::get().checkModerator(username, std::move(callback));
 }
 void ThumbnailAPI::checkModeratorAccount(std::string const& username, int accountID, ModeratorCallback callback) {
+    log::info("[ThumbnailAPI] checkModeratorAccount: user={} accountID={}", username, accountID);
     ModerationService::get().checkModeratorAccount(username, accountID, std::move(callback));
 }
 void ThumbnailAPI::checkUserStatus(std::string const& username, ModeratorCallback callback) {
@@ -132,18 +141,21 @@ void ThumbnailAPI::rejectQueueItem(int levelId, PendingCategory category, std::s
     ModerationService::get().rejectQueueItem(levelId, category, username, reason, std::move(callback), type);
 }
 void ThumbnailAPI::submitReport(int levelId, std::string const& username, std::string const& note, ActionCallback callback) {
+    log::info("[ThumbnailAPI] submitReport: levelId={} user={}", levelId, username);
     ModerationService::get().submitReport(levelId, username, note, std::move(callback));
 }
 
 // â”€â”€ Profiles (ProfileImageService) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void ThumbnailAPI::uploadProfile(int accountID, std::vector<uint8_t> const& pngData, std::string const& username, UploadCallback callback) {
+    log::info("[ThumbnailAPI] uploadProfile: accountID={} user={} bytes={}", accountID, username, pngData.size());
     ProfileImageService::get().uploadProfile(accountID, pngData, username, std::move(callback));
 }
 void ThumbnailAPI::uploadProfileGIF(int accountID, std::vector<uint8_t> const& gifData, std::string const& username, UploadCallback callback) {
     ProfileImageService::get().uploadProfileGIF(accountID, gifData, username, std::move(callback));
 }
 void ThumbnailAPI::downloadProfile(int accountID, std::string const& username, DownloadCallback callback) {
+    log::info("[ThumbnailAPI] downloadProfile: accountID={} user={}", accountID, username);
     ProfileImageService::get().downloadProfile(accountID, username, std::move(callback));
 }
 void ThumbnailAPI::uploadProfileImg(int accountID, std::vector<uint8_t> const& imgData, std::string const& username, std::string const& contentType, UploadCallback callback) {

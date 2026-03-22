@@ -403,6 +403,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     $override
     void onEnter() {
         LevelInfoLayer::onEnter();
+        log::info("[LevelInfoLayer] onEnter: levelID={}", m_level ? m_level->m_levelID.value() : 0);
 
         // detecta si la miniatura cambio mientras estábamos en PlayLayer
         // (p.ej. el usuario subio una thumb desde PauseLayer)
@@ -410,6 +411,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             int32_t levelID = m_level->m_levelID.value();
             int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
             if (currentVersion != m_fields->m_loadedInvalidationVersion) {
+                log::info("[LevelInfoLayer] onEnter: thumbnail invalidated levelID={} ver {} -> {}", levelID, m_fields->m_loadedInvalidationVersion, currentVersion);
                 m_fields->m_loadedInvalidationVersion = currentVersion;
                 refreshGalleryData(levelID, true);
             }
@@ -466,6 +468,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     $override
     void onExit() {
+        log::info("[LevelInfoLayer] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
         if (m_fields->m_invalidationListenerId != 0) {
@@ -521,6 +524,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     $override
     bool init(GJGameLevel* level, bool challenge) {
+        log::info("[LevelInfoLayer] init: levelID={} challenge={}", level ? level->m_levelID.value() : 0, challenge);
         // vinimos de leaderboards?
         if (auto scene = CCDirector::sharedDirector()->getRunningScene()) {
             if (scene->getChildByType<LeaderboardsLayer>(0)) {
@@ -533,7 +537,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         // thumbnailLoader::get().pauseQueue(); // removido para permitir carga en segundo plano
         
         if (!level || level->m_levelID <= 0) {
-                log::debug("Level ID invalid, skipping thumbnail button");
+                log::debug("[LevelInfoLayer] Level ID invalid, skipping thumbnail button");
                 return true;
             }
 
@@ -873,6 +877,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     $override
     void onPlay(CCObject* sender) {
+        log::info("[LevelInfoLayer] onPlay: levelID={}", m_level ? m_level->m_levelID.value() : 0);
         // Fade-out de la dynamic song al entrar al nivel
         DynamicSongManager::get()->fadeOutForLevelStart();
         LevelInfoLayer::onPlay(sender);
@@ -880,6 +885,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     $override
     void onBack(CCObject* sender) {
+        log::info("[LevelInfoLayer] onBack: levelID={} fromVerify={} fromLeaderboards={}", m_level ? m_level->m_levelID.value() : 0, m_fields->m_fromVerificationQueue, m_fields->m_fromLeaderboards);
         auto* dsm = DynamicSongManager::get();
         dsm->exitLayer(DynSongLayer::LevelInfo);
 
@@ -979,6 +985,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
     void refreshGalleryData(int32_t levelID, bool refreshBackground) {
         int token = ++m_fields->m_galleryToken;
+        log::info("[LevelInfoLayer] refreshGalleryData: levelID={} refreshBg={} token={}", levelID, refreshBackground, token);
         Ref<LevelInfoLayer> safeRef = this;
         ThumbnailAPI::get().getThumbnails(levelID, [safeRef, levelID, token, refreshBackground](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
             auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
@@ -987,6 +994,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
             self->m_fields->m_thumbnails.clear();
             if (success) self->m_fields->m_thumbnails = thumbs;
+            log::info("[LevelInfoLayer] refreshGalleryData callback: levelID={} success={} thumbCount={}", levelID, success, thumbs.size());
             if (self->m_fields->m_thumbnails.empty()) {
                 ThumbnailAPI::ThumbnailInfo mainThumb;
                 mainThumb.id = "0";
@@ -1033,6 +1041,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
     
     void onPrevBtn(CCObject*) {
+        log::info("[LevelInfoLayer] onPrevBtn: currentIndex={}", m_fields->m_currentThumbnailIndex);
         m_fields->m_cycling = false; // detener auto-ciclado al interactuar
         m_fields->m_currentThumbnailIndex--;
         if (m_fields->m_currentThumbnailIndex < 0) m_fields->m_currentThumbnailIndex = m_fields->m_thumbnails.size() - 1;
@@ -1040,6 +1049,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     }
     
     void onNextBtn(CCObject*) {
+        log::info("[LevelInfoLayer] onNextBtn: currentIndex={}", m_fields->m_currentThumbnailIndex);
         m_fields->m_cycling = false;
         m_fields->m_currentThumbnailIndex = (m_fields->m_currentThumbnailIndex + 1) % m_fields->m_thumbnails.size();
         this->loadThumbnail(m_fields->m_currentThumbnailIndex);
@@ -1050,6 +1060,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         
         auto& thumb = m_fields->m_thumbnails[index];
         int requestToken = ++m_fields->m_bgRequestToken;
+        log::info("[LevelInfoLayer] loadThumbnail: index={}/{} thumbId={} token={}", index, m_fields->m_thumbnails.size(), thumb.id, requestToken);
         std::string url = thumb.url;
         auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
         url += fmt::format("{}_pv={}{}", sep, thumb.id, requestToken);
@@ -1060,9 +1071,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             if (!self->getParent()) return;
             if (self->m_fields->m_bgRequestToken != requestToken) return;
             if (success && tex) {
+                log::info("[LevelInfoLayer] loadThumbnail callback: index={} OK", index);
                 int32_t levelID = (index == 0 && self->m_level) ? self->m_level->m_levelID.value() : 0;
                 self->applyThumbnailBackground(tex, levelID);
             } else if (self->m_fields->m_thumbnails.size() > 1) {
+                log::warn("[LevelInfoLayer] loadThumbnail callback: index={} FAILED, trying next", index);
                 int next = (index + 1) % static_cast<int>(self->m_fields->m_thumbnails.size());
                 if (next != index) self->loadThumbnail(next);
             }

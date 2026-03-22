@@ -111,6 +111,7 @@ CCScene* LeaderboardLayer::scene(BackTarget backTarget) {
 
 bool LeaderboardLayer::init() {
     if (!CCLayer::init()) return false;
+    log::info("[PaimonLeaderboard] init");
     
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 

@@ -134,6 +134,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
         if (!MenuLayer::init()) {
             return false;
         }
+        log::info("[MenuLayer] init");
 
         // inicializacion diferida del mod (una sola vez)
         static bool s_paimonLoaded = false;
@@ -324,6 +325,7 @@ class $modify(PaimonMenuLayer, MenuLayer) {
     }
 
     void updateBackground() {
+        log::info("[MenuLayer] updateBackground");
         // ── Leer config unificada (layerbg-menu-*) ──
         auto cfg = LayerBackgroundManager::get().getConfig("menu");
 

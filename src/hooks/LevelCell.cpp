@@ -603,7 +603,10 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     CCClippingNode* createThumbnailClippingNode(CCNode* bg, CCSprite* sprite, float& outCoverScale) {
-        if (!bg || !sprite) return nullptr;
+        if (!bg || !sprite) {
+            log::warn("[LevelCell] createThumbnailClippingNode: null bg or sprite");
+            return nullptr;
+        }
 
         float kThumbWidthFactor = getLevelCellThumbWidthFactor();
         const float bgWidth = bg->getContentWidth();
@@ -614,6 +617,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         calculateLevelCellThumbScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX, scaleY);
         outCoverScale = calculateLevelCellThumbCoverScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX);
         sprite->setScale(outCoverScale);
+        log::debug("[LevelCell] createThumbnailClippingNode: bgSize=({:.1f},{:.1f}) widthFactor={:.2f} coverScale={:.4f} scaleX={:.4f} scaleY={:.4f}",
+            bgWidth, bgHeight, kThumbWidthFactor, outCoverScale, scaleX, scaleY);
 
         CCSize scaledSize{ desiredWidth, bgHeight };
         CCPoint maskRect[4] = {
@@ -648,6 +653,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite) {
         auto fields = m_fields.self();
         if (!fields) return;
+        log::info("[LevelCell] setupClippingAndSeparator: entering");
 
         // forzar ancho completo pa celdas Daily
         bool isDaily = false;
@@ -664,6 +670,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_clipBasePos = clippingNode->getPosition();
         fields->m_thumbBaseScaleX = coverScale;
         fields->m_thumbBaseScaleY = coverScale;
+        log::info("[LevelCell] setupClippingAndSeparator: coverScale={:.4f} clipPos=({:.1f},{:.1f}) thumbPos=({:.1f},{:.1f})",
+            coverScale, clippingNode->getPosition().x, clippingNode->getPosition().y, sprite->getPosition().x, sprite->getPosition().y);
         
         bool hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
 
@@ -701,6 +709,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
     void setupGradient(CCNode* bg, int levelID, CCTexture2D* texture) {
         auto fields = m_fields.self();
+        log::info("[LevelCell] setupGradient: levelID={} hasTexture={}", levelID, texture != nullptr);
 
         // Clean up previous background nodes
         if (auto children = bg->getChildren()) {
@@ -1070,13 +1079,18 @@ class $modify(PaimonLevelCell, LevelCell) {
     void applyGalleryTransition(CCNode* newNode, CCSprite* newSprite,
                                 CCNode* oldNode, CCSprite* oldSprite,
                                 PaimonGalleryTransition type, float dur, CCSize clipSize) {
-        if (!newNode || !newSprite) return;
+        if (!newNode || !newSprite) {
+            log::warn("[LevelCell] applyGalleryTransition: null node/sprite");
+            return;
+        }
         if (type == PaimonGalleryTransition::Random)
             type = resolveRandomTransition();
 
         CCPoint targetPos = newNode->getPosition();
         float sx = newNode->getScaleX();
         float sy = newNode->getScaleY();
+        log::info("[LevelCell] applyGalleryTransition: type={} dur={:.2f} targetPos=({:.1f},{:.1f}) sx={:.3f} sy={:.3f} hasOld={}",
+            static_cast<int>(type), dur, targetPos.x, targetPos.y, sx, sy, oldNode != nullptr);
         float halfDur = dur * 0.5f;
         float removeDelay = dur + 0.05f;
 
@@ -1279,13 +1293,17 @@ class $modify(PaimonLevelCell, LevelCell) {
     // Aplica transicion de entrada (primera aparicion del thumbnail)
     void applyEntryTransition(CCNode* clipNode, CCSprite* sprite, PaimonGalleryTransition type,
                               float dur, CCSize clipSize) {
+        log::info("[LevelCell] applyEntryTransition: type={} dur={:.2f} clipSize=({:.1f},{:.1f})", static_cast<int>(type), dur, clipSize.width, clipSize.height);
         applyGalleryTransition(clipNode, sprite, nullptr, nullptr, type, dur, clipSize);
     }
 
     // Marca fin de transicion de galeria (permite que hover animation retome control)
     void endGalleryTransition(float /*dt*/) {
         auto fields = m_fields.self();
-        if (fields) fields->m_isGalleryTransitioning = false;
+        if (fields) {
+            fields->m_isGalleryTransitioning = false;
+            log::info("[LevelCell] endGalleryTransition: transition guard released");
+        }
     }
 
     // Activa el guard de transicion y programa su fin tras la duracion dada
@@ -1293,22 +1311,28 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto fields = m_fields.self();
         if (!fields) return;
         fields->m_isGalleryTransitioning = true;
+        log::info("[LevelCell] beginGalleryTransitionGuard: dur={:.2f}", dur);
         // cancelar callback anterior si habia una transicion previa aun pendiente
         this->unschedule(schedule_selector(PaimonLevelCell::endGalleryTransition));
         this->scheduleOnce(schedule_selector(PaimonLevelCell::endGalleryTransition), dur + 0.1f);
     }
 
     void crossfadeToThumb(CCTexture2D* texture) {
-        if (!texture) return;
+        if (!texture) {
+            log::warn("[LevelCell] crossfadeToThumb: null texture");
+            return;
+        }
         auto fields = m_fields.self();
         if (!fields || fields->m_isBeingDestroyed) return;
 
         // fallback to full rebuild if clipping node or sprite missing
         if (!fields->m_clippingNode || !fields->m_clippingNode->getParent() ||
             !fields->m_thumbSprite || !fields->m_thumbSprite->getParent()) {
+            log::info("[LevelCell] crossfadeToThumb: fallback to full rebuild (missing clip/sprite)");
             addOrUpdateThumb(texture);
             return;
         }
+        log::info("[LevelCell] crossfadeToThumb: starting, oldBaseScale={:.4f}", fields->m_thumbBaseScaleX);
 
         auto oldClip = fields->m_clippingNode;
         auto oldSprite = fields->m_thumbSprite;
@@ -1324,9 +1348,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto bg = m_backgroundLayer;
         auto newClip = createThumbnailClippingNode(bg, newSprite, newBaseScale);
         if (!newClip) {
+            log::warn("[LevelCell] crossfadeToThumb: createThumbnailClippingNode failed, fallback");
             addOrUpdateThumb(texture);
             return;
         }
+        log::debug("[LevelCell] crossfadeToThumb: newBaseScale={:.4f} clipSize=({:.1f},{:.1f})", newBaseScale, newClip->getContentSize().width, newClip->getContentSize().height);
 
         newSprite->setAnchorPoint(oldSprite->getAnchorPoint());
         newSprite->setZOrder(oldSprite->getZOrder());
@@ -1363,16 +1389,23 @@ class $modify(PaimonLevelCell, LevelCell) {
         float dur = fields->m_cachedTransitionDuration;
         CCSize clipSize = newClip->getContentSize();
 
-        this->addChild(newClip);
-        beginGalleryTransitionGuard(dur);
-        applyGalleryTransition(newClip, newSprite, oldClip, oldSprite, transType, dur, clipSize);
+        log::info("[LevelCell] crossfadeToThumb: transType={} dur={:.2f}", static_cast<int>(transType), dur);
 
+        // Update fields BEFORE applying the transition so that:
+        // 1) m_clipBasePos stores the correct target position (not the offset
+        //    position that applyGalleryTransition may set for slide animations)
+        // 2) updateCenterAnimation (which is guarded by m_isGalleryTransitioning)
+        //    will have the right base values once the transition ends
         fields->m_clippingNode = newClip;
         fields->m_thumbSprite = newSprite;
         fields->m_thumbBasePos = newSprite->getPosition();
         fields->m_clipBasePos = newClip->getPosition();
         fields->m_thumbBaseScaleX = newBaseScale;
         fields->m_thumbBaseScaleY = newBaseScale;
+
+        this->addChild(newClip);
+        beginGalleryTransitionGuard(dur);
+        applyGalleryTransition(newClip, newSprite, oldClip, oldSprite, transType, dur, clipSize);
 
         // crossfade gradient background if bgType is thumbnail
         if (bgType == "thumbnail" && m_level && fields->m_gradientLayer &&
@@ -1421,14 +1454,17 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         if (auto it = fields->m_galleryTextureCache.find(thumb.url); it != fields->m_galleryTextureCache.end() && it->second.data()) {
             if (fields->m_galleryIndex == index) {
+                log::info("[LevelCell] requestGalleryThumbnail: cache hit index={} url={}", index, thumb.url);
                 this->crossfadeToThumb(it->second.data());
             }
             return;
         }
 
         if (!fields->m_galleryPendingUrls.insert(thumb.url).second) {
+            log::debug("[LevelCell] requestGalleryThumbnail: already pending index={}", index);
             return;
         }
+        log::info("[LevelCell] requestGalleryThumbnail: downloading index={} url={}", index, thumb.url);
 
         const int levelID = m_level->m_levelID.value();
         const int galleryToken = fields->m_galleryToken;
@@ -1442,7 +1478,11 @@ class $modify(PaimonLevelCell, LevelCell) {
             if (!fields) return;
             fields->m_galleryPendingUrls.erase(url);
             if (fields->m_galleryToken != galleryToken) return;
-            if (!success || !tex) return;
+            if (!success || !tex) {
+                log::warn("[LevelCell] requestGalleryThumbnail callback: download failed index={} url={}", index, url);
+                return;
+            }
+            log::info("[LevelCell] requestGalleryThumbnail callback: downloaded index={} success={}", index, success);
 
             fields->m_galleryTextureCache[url] = tex;
             if (fields->m_galleryIndex == index) {
@@ -1502,6 +1542,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
 
             setupClippingAndSeparator(bg, sprite);
+            log::info("[LevelCell] addOrUpdateThumb: setup complete, baseScaleX={:.4f}", fields->m_thumbBaseScaleX);
 
             // Entry animation for first thumbnail appearance
             if (fields->m_clippingNode && fields->m_thumbSprite) {
@@ -1589,7 +1630,8 @@ class $modify(PaimonLevelCell, LevelCell) {
     }
 
     $override void onExit() {
-        // parar animaciones (movido desde destructor â€” Geode desaconseja
+        log::info("[LevelCell] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
+        // parar animaciones (movido desde destructor — Geode desaconseja
         // logica pesada en destructores de $modify)
         this->unscheduleUpdate();
         this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
@@ -1866,8 +1908,9 @@ class $modify(PaimonLevelCell, LevelCell) {
             spriteRotation *= 0.55f;
         }
 
-        // Apply transforms to clipping node
-        if (fields->m_clippingNode) {
+        // Apply transforms to clipping node (skip during gallery transition to avoid
+        // fighting with the transition animation actions on the same node)
+        if (fields->m_clippingNode && !fields->m_isGalleryTransitioning) {
             float posAdjustment = 0.0f;
             if (animType != PaimonAnimType::None && animType != PaimonAnimType::Slide) {
                 posAdjustment = (zoomFactor - 1.0f) * fields->m_clippingNode->getContentSize().width;
@@ -1877,7 +1920,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_clippingNode->setRotation(rotation);
         }
 
-        if (fields->m_separator) {
+        if (fields->m_separator && !fields->m_isGalleryTransitioning) {
             fields->m_separator->setPosition({fields->m_separatorBasePos.x + offsetX, fields->m_separatorBasePos.y});
             fields->m_separator->setRotation(rotation);
         }
@@ -2126,14 +2169,24 @@ class $modify(PaimonLevelCell, LevelCell) {
     void tryLoadThumbnail() {
             configureThumbnailLoader();
 
-            if (!m_level) return;
+            if (!m_level) {
+                log::warn("[LevelCell] tryLoadThumbnail: m_level is null, aborting");
+                return;
+            }
             
             int dailyID = m_level->m_dailyID.value();
             bool isDaily = dailyID > 0;
-            if (isDaily) return;
+            if (isDaily) {
+                log::debug("[LevelCell] tryLoadThumbnail: skipping daily cell dailyID={}", dailyID);
+                return;
+            }
             
             int32_t levelID = m_level->m_levelID.value();
-            if (levelID <= 0) return;
+            if (levelID <= 0) {
+                log::debug("[LevelCell] tryLoadThumbnail: invalid levelID={}", levelID);
+                return;
+            }
+            log::info("[LevelCell] tryLoadThumbnail: levelID={}", levelID);
             
             auto fields = m_fields.self();
             if (fields->m_invalidationListenerId == 0) {
@@ -2161,6 +2214,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             // comprobar si el level cambio
             if (fields->m_lastRequestedLevelID != levelID) {
+                log::info("[LevelCell] tryLoadThumbnail: level changed {} -> {}, resetting state", fields->m_lastRequestedLevelID, levelID);
                 fields->m_thumbnailRequested = false;
                 fields->m_thumbnailApplied = false;
                 fields->m_lastRequestedLevelID = levelID;
@@ -2181,7 +2235,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             // comprobar si la miniatura fue invalidada (usuario subiÃƒÂ³ una nueva)
             int currentVersion = ThumbnailLoader::get().getInvalidationVersion(levelID);
             if (fields->m_thumbnailApplied && currentVersion != fields->m_loadedInvalidationVersion) {
-                // la miniatura cambio, forzar recarga
+                log::info("[LevelCell] tryLoadThumbnail: thumbnail invalidated for levelID={}, ver {} -> {}", levelID, fields->m_loadedInvalidationVersion, currentVersion);
                 fields->m_thumbnailRequested = false;
                 fields->m_thumbnailApplied = false;
                 fields->m_hasGif = false;
@@ -2193,6 +2247,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             if (!fields->m_galleryRequested) {
                 fields->m_galleryRequested = true;
                 int galleryToken = ++fields->m_galleryToken;
+                log::info("[LevelCell] tryLoadThumbnail: requesting gallery for levelID={} token={}", levelID, galleryToken);
                 WeakRef<PaimonLevelCell> safeGalleryRef = this;
                 ThumbnailAPI::get().getThumbnails(levelID, [safeGalleryRef, levelID, galleryToken](bool success, std::vector<ThumbnailAPI::ThumbnailInfo> const& thumbs) {
                     auto cellRef = safeGalleryRef.lock();
@@ -2206,11 +2261,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                         levelID,
                         success ? thumbs : std::vector<ThumbnailAPI::ThumbnailInfo>{}
                     );
+                    log::info("[LevelCell] gallery callback: levelID={} success={} thumbCount={}", levelID, success, fields->m_galleryThumbnails.size());
                     fields->m_galleryIndex = -1;
                     fields->m_galleryTimer = 0.f;
                     bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
                     cell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
                     if (autoCycleEnabled && fields->m_galleryThumbnails.size() > 1) {
+                        log::info("[LevelCell] gallery: auto-cycle enabled for levelID={} with {} thumbs", levelID, fields->m_galleryThumbnails.size());
                         cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 3.0f);
                     }
                     for (int i = 0; i < static_cast<int>(fields->m_galleryThumbnails.size()); ++i) {
@@ -2219,7 +2276,10 @@ class $modify(PaimonLevelCell, LevelCell) {
                 });
             }
 
-            if (fields->m_thumbnailRequested) return;
+            if (fields->m_thumbnailRequested) {
+                log::debug("[LevelCell] tryLoadThumbnail: already requested for levelID={}", levelID);
+                return;
+            }
             
             fields->m_requestId++;
             int currentRequestId = fields->m_requestId;
@@ -2234,6 +2294,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             if (enableSpinners) showLoadingSpinner();
             
+            log::info("[LevelCell] tryLoadThumbnail: requesting load levelID={} requestId={} hasGif={}", levelID, currentRequestId, fields->m_hasGif);
             WeakRef<PaimonLevelCell> safeRef = this;
             int capturedVersion = fields->m_loadedInvalidationVersion;
 
@@ -2252,11 +2313,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                 }
 
                 if (gifSuccess && gifTex) {
+                    log::info("[LevelCell] tryLoadThumbnail: GIF loaded OK levelID={}", levelID);
                     auto fields = cell->m_fields.self();
                     if (fields) fields->m_hasGif = true;
                     cell->applyStaticThumbnailTexture(levelID, currentRequestId, gifTex, enableSpinners);
                     return;
                 }
+                log::debug("[LevelCell] tryLoadThumbnail: GIF not found for levelID={}, trying static", levelID);
 
                 // 2) fallback a estatico si no hay GIF remoto/local
                 ThumbnailLoader::get().requestLoad(levelID, fileName, [safeRef, levelID, enableSpinners, currentRequestId, capturedVersion](CCTexture2D* tex, bool success) {
@@ -2273,9 +2336,11 @@ class $modify(PaimonLevelCell, LevelCell) {
                     }
 
                     if (!success || !tex) {
+                        log::warn("[LevelCell] tryLoadThumbnail: static load FAILED levelID={}", levelID);
                         cell2->applyStaticThumbnailTexture(levelID, currentRequestId, nullptr, enableSpinners);
                         return;
                     }
+                    log::info("[LevelCell] tryLoadThumbnail: static texture loaded OK levelID={}", levelID);
 
                     auto fields2 = cell2->m_fields.self();
                     if (fields2) {
@@ -2373,11 +2438,13 @@ class $modify(PaimonLevelCell, LevelCell) {
 
     $override void loadCustomLevelCell() {
         LevelCell::loadCustomLevelCell();
+        log::info("[LevelCell] loadCustomLevelCell levelID={}", m_level ? m_level->m_levelID.value() : 0);
         tryLoadThumbnail();
     }
 
     $override void loadFromLevel(GJGameLevel* level) {
         LevelCell::loadFromLevel(level);
+        log::info("[LevelCell] loadFromLevel levelID={}", level ? level->m_levelID.value() : 0);
         tryLoadThumbnail();
     }
 

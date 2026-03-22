@@ -15,6 +15,7 @@ bool ThumbnailTransportClient::isGIFData(std::vector<uint8_t> const& data) {
 
 cocos2d::CCTexture2D* ThumbnailTransportClient::bytesToTexture(std::vector<uint8_t> const& data) {
     if (data.empty()) return nullptr;
+    log::debug("[ThumbTransport] bytesToTexture: {} bytes", data.size());
 
     // GIF: decode first frame manually since CCImage doesn't handle GIF
     if (isGIFData(data)) {
@@ -73,10 +74,11 @@ cocos2d::CCTexture2D* ThumbnailTransportClient::loadFromLocal(int levelId) {
 // ── queries ─────────────────────────────────────────────────────────
 
 void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback callback) {
-    if (!m_serverEnabled) { callback(false, {}); return; }
+    if (!m_serverEnabled) { log::debug("[ThumbTransport] getThumbnails: server disabled"); callback(false, {}); return; }
+    log::info("[ThumbTransport] getThumbnails: levelId={}", levelId);
 
-    HttpClient::get().getThumbnails(levelId, [callback](bool success, std::string const& response) {
-        if (!success) { callback(false, {}); return; }
+    HttpClient::get().getThumbnails(levelId, [callback, levelId](bool success, std::string const& response) {
+        if (!success) { log::warn("[ThumbTransport] getThumbnails callback: FAILED levelId={}", levelId); callback(false, {}); return; }
 
         auto res = matjson::parse(response);
         if (!res.isOk()) { callback(false, {}); return; }
@@ -112,6 +114,7 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
                 thumbnails.push_back(info);
             }
         }
+        log::info("[ThumbTransport] getThumbnails callback: levelId={} count={}", levelId, thumbnails.size());
         callback(true, thumbnails);
     });
 }
@@ -171,19 +174,22 @@ void ThumbnailTransportClient::uploadGIF(int levelId, std::vector<uint8_t> const
 
 void ThumbnailTransportClient::downloadThumbnail(int levelId, DownloadCallback callback) {
     if (!m_serverEnabled) { callback(false, nullptr); return; }
+    log::info("[ThumbTransport] downloadThumbnail: levelId={}", levelId);
 
     HttpClient::get().downloadThumbnail(levelId,
-        [callback](bool success, std::vector<uint8_t> const& data, int, int) {
-            if (!success || data.empty()) { callback(false, nullptr); return; }
+        [callback, levelId](bool success, std::vector<uint8_t> const& data, int, int) {
+            if (!success || data.empty()) { log::warn("[ThumbTransport] downloadThumbnail callback: FAILED levelId={}", levelId); callback(false, nullptr); return; }
+            log::info("[ThumbTransport] downloadThumbnail callback: OK levelId={} bytes={}", levelId, data.size());
             callback(success, bytesToTexture(data));
         });
 }
 
 void ThumbnailTransportClient::getThumbnail(int levelId, DownloadCallback callback) {
     // 1. local
-    if (auto* tex = loadFromLocal(levelId)) { callback(true, tex); return; }
+    if (auto* tex = loadFromLocal(levelId)) { log::debug("[ThumbTransport] getThumbnail: local hit levelId={}", levelId); callback(true, tex); return; }
     // 2. servidor
     if (m_serverEnabled) {
+        log::debug("[ThumbTransport] getThumbnail: fetching from server levelId={}", levelId);
         downloadThumbnail(levelId, callback);
     } else {
         callback(false, nullptr);
@@ -191,9 +197,10 @@ void ThumbnailTransportClient::getThumbnail(int levelId, DownloadCallback callba
 }
 
 void ThumbnailTransportClient::downloadFromUrl(std::string const& url, DownloadCallback callback) {
-    HttpClient::get().downloadFromUrl(url, [callback](bool success, std::vector<uint8_t> const& data, int, int) {
-        if (success) { callback(success, bytesToTexture(data)); }
-        else         { callback(false, nullptr); }
+    log::debug("[ThumbTransport] downloadFromUrl: {}", url);
+    HttpClient::get().downloadFromUrl(url, [callback, url](bool success, std::vector<uint8_t> const& data, int, int) {
+        if (success) { log::debug("[ThumbTransport] downloadFromUrl callback: OK bytes={}", data.size()); callback(success, bytesToTexture(data)); }
+        else         { log::warn("[ThumbTransport] downloadFromUrl callback: FAILED url={}", url); callback(false, nullptr); }
     });
 }
 
@@ -207,12 +214,14 @@ void ThumbnailTransportClient::downloadFromUrlData(std::string const& url, Downl
 
 void ThumbnailTransportClient::checkExists(int levelId, ExistsCallback callback) {
     if (!m_serverEnabled) { callback(false); return; }
+    log::debug("[ThumbTransport] checkExists: levelId={}", levelId);
     HttpClient::get().checkThumbnailExists(levelId, callback);
 }
 
 void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& thumbnailId, std::string const& username,
                                                int accountID, ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "servidor desactivado"); return; }
+    log::info("[ThumbTransport] deleteThumbnail: levelId={} thumbId={} user={}", levelId, thumbnailId, username);
 
     std::string endpoint = fmt::format("/api/thumbnails/delete/{}", levelId);
 
@@ -227,9 +236,11 @@ void ThumbnailTransportClient::deleteThumbnail(int levelId, std::string const& t
     HttpClient::get().postWithAuth(endpoint, postData,
         [callback, levelId](bool success, std::string const& response) {
             if (success) {
+                log::info("[ThumbTransport] deleteThumbnail callback: OK levelId={}", levelId);
                 ThumbnailLoader::get().invalidateLevel(levelId);
                 callback(true, "miniatura borrada con exito");
             } else {
+                log::warn("[ThumbTransport] deleteThumbnail callback: FAILED levelId={} resp={}", levelId, response);
                 callback(false, response);
             }
         });
@@ -241,6 +252,7 @@ void ThumbnailTransportClient::getRating(int levelId, std::string const& usernam
                                          std::string const& thumbnailId,
                                          geode::CopyableFunction<void(bool, float, int, int)> callback) {
     if (!m_serverEnabled) { callback(false, 0, 0, 0); return; }
+    log::debug("[ThumbTransport] getRating: levelId={} thumbId={}", levelId, thumbnailId);
 
     HttpClient::get().getRating(levelId, username, thumbnailId,
         [callback](bool success, std::string const& response) {
@@ -258,6 +270,7 @@ void ThumbnailTransportClient::getRating(int levelId, std::string const& usernam
 void ThumbnailTransportClient::submitVote(int levelId, int stars, std::string const& username,
                                           std::string const& thumbnailId, ActionCallback callback) {
     if (!m_serverEnabled) { callback(false, "Server disabled"); return; }
+    log::info("[ThumbTransport] submitVote: levelId={} stars={} thumbId={}", levelId, stars, thumbnailId);
     HttpClient::get().submitVote(levelId, stars, username, thumbnailId, callback);
 }
 

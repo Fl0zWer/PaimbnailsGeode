@@ -64,7 +64,7 @@ class $modify(PaimonPauseLayer, PauseLayer) {
     void customSetup() {
         PauseLayer::customSetup();
 
-        log::debug("PauseLayer customSetup called");
+        log::info("[PauseLayer] customSetup");
 
         if (!Mod::get()->getSettingValue<bool>("enable-thumbnail-taking")) {
             log::debug("Thumbnail taking disabled in settings");

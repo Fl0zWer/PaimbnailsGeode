@@ -29,6 +29,7 @@ LocalThumbs::LocalThumbs() {
 }
 
 void LocalThumbs::initCache() {
+    log::info("[LocalThumbs] initCache: scanning local thumbnails");
     std::lock_guard<std::mutex> lock(m_mutex);
     m_availableLevels.clear();
     
@@ -53,6 +54,7 @@ void LocalThumbs::initCache() {
         }
     }
 
+    log::info("[LocalThumbs] initCache: found {} levels", m_availableLevels.size());
     m_cacheInitialized.store(true, std::memory_order_release);
 }
 
@@ -156,7 +158,7 @@ std::vector<int32_t> LocalThumbs::getAllLevelIDs() const {
 }
 
 CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
-    log::debug("cargando miniatura pal nivel: {}", levelID);
+    log::info("[LocalThumbs] loadTexture: levelID={}", levelID);
     
     // try load desde carpeta
     auto tryLoadFromDir = [&](std::filesystem::path const& baseDir) -> CCTexture2D* {
@@ -220,12 +222,12 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
     // buscar en carpeta cache
     if (auto tex = tryLoadFromDir(Mod::get()->getSaveDir() / "cache")) return tex;
     
-    log::debug("no se hallo miniatura pal nivel: {}", levelID);
+    log::debug("[LocalThumbs] loadTexture: not found levelID={}", levelID);
     return nullptr;
 }
 
 bool LocalThumbs::saveRGB(int32_t levelID, const uint8_t* data, uint32_t width, uint32_t height) {
-    log::info("guardando miniatura nivel: {} ({}x{})", levelID, width, height);
+    log::info("[LocalThumbs] saveRGB: levelID={} {}x{}", levelID, width, height);
     
     if (!data) {
         log::error("no se puede guardar: data es null");
@@ -343,6 +345,7 @@ void LocalThumbs::saveMappings() {
 }
 
 void LocalThumbs::shutdown() {
+    log::info("[LocalThumbs] shutdown");
     m_shuttingDown.store(true, std::memory_order_release);
     if (m_initFuture.valid()) {
         m_initFuture.wait();

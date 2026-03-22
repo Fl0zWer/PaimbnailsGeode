@@ -49,6 +49,7 @@ std::filesystem::path PetManager::galleryDir() const {
 // ════════════════════════════════════════════════════════════
 
 void PetManager::loadConfig() {
+    log::debug("[PetManager] loadConfig");
     auto path = configPath();
     std::error_code ec;
     if (!std::filesystem::exists(path, ec)) return;
@@ -355,10 +356,12 @@ CCTexture2D* PetManager::loadGalleryThumb(std::string const& filename) const {
 // ════════════════════════════════════════════════════════════
 
 void PetManager::init() {
+    log::info("[PetManager] init");
     loadConfig();
 }
 
 void PetManager::setImage(std::string const& galleryFilename) {
+    log::info("[PetManager] setImage: {}", galleryFilename);
     m_config.selectedImage = galleryFilename;
     saveConfig();
     reloadSprite();
@@ -423,6 +426,7 @@ void PetManager::reloadSprite() {
 }
 
 void PetManager::attachToScene(CCScene* scene) {
+    log::debug("[PetManager] attachToScene: enabled={}", m_config.enabled);
     if (!scene) return;
 
     // remove from old scene

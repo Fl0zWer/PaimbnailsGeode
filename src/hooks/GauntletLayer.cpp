@@ -130,6 +130,7 @@ public:
     void loadAllThumbnails() {
         if (m_loadingStarted) return;
         m_loadingStarted = true;
+        log::info("[GauntletLayer] loadAllThumbnails: {} levels", m_levelIDs.size());
 
         // Ref<> mantiene vivo este nodo hasta que los callbacks terminen
         Ref<GauntletThumbnailNode> self = this;
@@ -288,6 +289,7 @@ class $modify(PaimonGauntletLayer, GauntletLayer) {
     $override
     bool init(GauntletType type) {
         if (!GauntletLayer::init(type)) return false;
+        log::info("[GauntletLayer] init: type={}", static_cast<int>(type));
         
         // hide bg default
         if (auto bg = this->getChildByID("background")) {
