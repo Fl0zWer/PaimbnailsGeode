@@ -53,6 +53,25 @@ static float safeCoverScale(float targetWidth, float targetHeight, float content
     return std::clamp(scale, 0.01f, 64.0f);
 }
 
+static float getLevelCellThumbWidthFactor() {
+    float widthFactor = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
+    return std::clamp(widthFactor, PaimonConstants::MIN_THUMB_WIDTH_FACTOR, PaimonConstants::MAX_THUMB_WIDTH_FACTOR);
+}
+
+static float calculateLevelCellThumbCoverScale(CCSprite* sprite, float bgWidth, float bgHeight, float widthFactor, float fallback = 1.0f) {
+    if (!sprite) {
+        return fallback;
+    }
+
+    return safeCoverScale(
+        bgWidth * widthFactor,
+        bgHeight,
+        sprite->getContentSize().width,
+        sprite->getContentSize().height,
+        fallback
+    );
+}
+
 static PaimonAnimType parseAnimType(std::string const& s) {
     if (s == "zoom-slide") return PaimonAnimType::ZoomSlide;
     if (s == "zoom") return PaimonAnimType::Zoom;
@@ -546,8 +565,7 @@ class $modify(PaimonLevelCell, LevelCell) {
     void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite) {
         auto fields = m_fields.self();
         
-        float kThumbWidthFactor = static_cast<float>(Mod::get()->getSettingValue<double>("level-thumb-width"));
-        kThumbWidthFactor = std::max(PaimonConstants::MIN_THUMB_WIDTH_FACTOR, std::min(PaimonConstants::MAX_THUMB_WIDTH_FACTOR, kThumbWidthFactor));
+        float kThumbWidthFactor = getLevelCellThumbWidthFactor();
         
         // forzar ancho completo pa celdas Daily
         bool isDaily = false;
@@ -556,19 +574,17 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         const float bgWidth = bg->getContentWidth();
         const float bgHeight = bg->getContentHeight();
+        const float desiredWidth = bgWidth * kThumbWidthFactor;
 
         float scaleX, scaleY;
         // revertido: usar siempre calculo estandar
         calculateLevelCellThumbScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX, scaleY);
-
-        sprite->setScaleY(scaleY);
-        sprite->setScaleX(scaleX);
-
-        float desiredWidth = bgWidth * kThumbWidthFactor;
+        float coverScale = calculateLevelCellThumbCoverScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX);
+        sprite->setScale(coverScale);
         float angle = 18.f;
         // if (isDaily) angle = 0.f; // Reverted: Daily uses skew
 
-        CCSize scaledSize{ desiredWidth, sprite->getContentHeight() * scaleY };
+        CCSize scaledSize{ desiredWidth, bgHeight };
         
         CCPoint maskRect[4] = {
             ccp(0, 0),
@@ -614,8 +630,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_thumbSprite = sprite;
         fields->m_thumbBasePos = sprite->getPosition();
         fields->m_clipBasePos = clippingNode->getPosition();
-        fields->m_thumbBaseScaleX = scaleX;
-        fields->m_thumbBaseScaleY = scaleY;
+        fields->m_thumbBaseScaleX = coverScale;
+        fields->m_thumbBaseScaleY = coverScale;
         
         bool hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
 
@@ -1082,8 +1098,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         } break;
 
         case PaimonGalleryTransition::ZoomIn: {
-            newSprite->setScaleX(sx * 0.3f);
-            newSprite->setScaleY(sy * 0.3f);
+            // Keep the thumbnail in cover mode for the whole transition.
+            newSprite->setScaleX(sx * 1.12f);
+            newSprite->setScaleY(sy * 1.12f);
             newSprite->setOpacity(0);
             newSprite->runAction(CCSpawn::create(
                 CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f),
@@ -1264,10 +1281,22 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
         newSprite->setID("paimon-thumbnail"_spr);
 
+        float oldBaseScale = fields->m_thumbBaseScaleX;
+        float newBaseScale = oldBaseScale;
+        if (auto bg = m_backgroundLayer) {
+            float widthFactor = getLevelCellThumbWidthFactor();
+            newBaseScale = calculateLevelCellThumbCoverScale(
+                newSprite,
+                bg->getContentWidth(),
+                bg->getContentHeight(),
+                widthFactor,
+                oldBaseScale
+            );
+        }
+
         // use BASE visual properties (not hover-modified) so transitions
         // animate from/to the correct resting state
-        newSprite->setScaleX(fields->m_thumbBaseScaleX);
-        newSprite->setScaleY(fields->m_thumbBaseScaleY);
+        newSprite->setScale(newBaseScale);
         newSprite->setPosition(fields->m_thumbBasePos);
         newSprite->setAnchorPoint(oldSprite->getAnchorPoint());
         newSprite->setSkewX(oldSprite->getSkewX());
@@ -1277,8 +1306,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
         // reset old sprite to base state before animating it out
         oldSprite->setPosition(fields->m_thumbBasePos);
-        oldSprite->setScaleX(fields->m_thumbBaseScaleX);
-        oldSprite->setScaleY(fields->m_thumbBaseScaleY);
+        oldSprite->setScale(oldBaseScale);
         oldSprite->setRotation(0.0f);
         oldSprite->setOpacity(255);
 
@@ -1306,6 +1334,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         applyGalleryTransition(newSprite, oldSprite, transType, dur, clipSize);
 
         fields->m_thumbSprite = newSprite;
+        fields->m_thumbBaseScaleX = newBaseScale;
+        fields->m_thumbBaseScaleY = newBaseScale;
 
         // crossfade gradient background if bgType is thumbnail
         if (bgType == "thumbnail" && m_level && fields->m_gradientLayer &&
