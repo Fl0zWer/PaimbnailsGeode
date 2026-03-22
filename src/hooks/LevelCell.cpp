@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <string_view>
 #include <random>
+#include <unordered_map>
 #include <unordered_set>
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
@@ -70,6 +71,43 @@ static float calculateLevelCellThumbCoverScale(CCSprite* sprite, float bgWidth, 
         sprite->getContentSize().height,
         fallback
     );
+}
+
+static std::vector<ThumbnailAPI::ThumbnailInfo> normalizeLevelCellGalleryThumbnails(
+    int32_t levelID,
+    std::vector<ThumbnailAPI::ThumbnailInfo> thumbnails
+) {
+    std::erase_if(thumbnails, [](ThumbnailAPI::ThumbnailInfo const& thumb) {
+        return thumb.url.empty();
+    });
+
+    std::stable_sort(thumbnails.begin(), thumbnails.end(), [](ThumbnailAPI::ThumbnailInfo const& a, ThumbnailAPI::ThumbnailInfo const& b) {
+        if (a.position != b.position) return a.position < b.position;
+        if (a.id != b.id) return a.id < b.id;
+        return a.url < b.url;
+    });
+
+    std::unordered_set<std::string> seenUrls;
+    std::vector<ThumbnailAPI::ThumbnailInfo> normalized;
+    normalized.reserve(thumbnails.size() + 1);
+
+    for (auto& thumb : thumbnails) {
+        if (!seenUrls.insert(thumb.url).second) {
+            continue;
+        }
+        normalized.push_back(std::move(thumb));
+    }
+
+    if (normalized.empty() && levelID > 0) {
+        ThumbnailAPI::ThumbnailInfo mainThumb;
+        mainThumb.id = "0";
+        mainThumb.url = ThumbnailAPI::get().getThumbnailURL(levelID);
+        mainThumb.type = "static";
+        mainThumb.position = 0;
+        normalized.push_back(std::move(mainThumb));
+    }
+
+    return normalized;
 }
 
 static PaimonAnimType parseAnimType(std::string const& s) {
@@ -202,7 +240,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool m_isDailyCell = false;
         bool m_isDailyCellCached = false;
         std::vector<ThumbnailAPI::ThumbnailInfo> m_galleryThumbnails;
-        int m_galleryIndex = 0;
+        std::unordered_map<std::string, Ref<CCTexture2D>> m_galleryTextureCache;
+        std::unordered_set<std::string> m_galleryPendingUrls;
+        int m_galleryIndex = -1;
         float m_galleryTimer = 0.f;
         bool m_galleryRequested = false;
         int m_galleryToken = 0;
@@ -478,13 +518,13 @@ class $modify(PaimonLevelCell, LevelCell) {
 
     // setupDarkMode removed Ã¢â‚¬â€ was empty (dead code)
 
-    CCSprite* createThumbnailSprite(CCTexture2D* texture) {
+    CCSprite* createThumbnailSprite(CCTexture2D* texture, bool allowLevelGIF = true) {
         CCSprite* sprite = PaimonShaderSprite::createWithTexture(texture);
         if (!sprite) return nullptr;
 
         int32_t levelIDForGIF = m_level ? m_level->m_levelID.value() : 0;
         
-        if (levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF)) {
+        if (allowLevelGIF && levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF)) {
             auto path = ThumbnailLoader::get().getCachePath(levelIDForGIF, true);
             
             WeakRef<PaimonLevelCell> safeRef = this;
@@ -562,30 +602,20 @@ class $modify(PaimonLevelCell, LevelCell) {
         return sprite;
     }
 
-    void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite) {
-        auto fields = m_fields.self();
-        
-        float kThumbWidthFactor = getLevelCellThumbWidthFactor();
-        
-        // forzar ancho completo pa celdas Daily
-        bool isDaily = false;
-        if (m_level && m_level->m_dailyID > 0) isDaily = true;
-        // if (isDaily) kThumbWidthFactor = 1.0f; // Reverted: Daily uses normal width
+    CCClippingNode* createThumbnailClippingNode(CCNode* bg, CCSprite* sprite, float& outCoverScale) {
+        if (!bg || !sprite) return nullptr;
 
+        float kThumbWidthFactor = getLevelCellThumbWidthFactor();
         const float bgWidth = bg->getContentWidth();
         const float bgHeight = bg->getContentHeight();
         const float desiredWidth = bgWidth * kThumbWidthFactor;
 
         float scaleX, scaleY;
-        // revertido: usar siempre calculo estandar
         calculateLevelCellThumbScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX, scaleY);
-        float coverScale = calculateLevelCellThumbCoverScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX);
-        sprite->setScale(coverScale);
-        float angle = 18.f;
-        // if (isDaily) angle = 0.f; // Reverted: Daily uses skew
+        outCoverScale = calculateLevelCellThumbCoverScale(sprite, bgWidth, bgHeight, kThumbWidthFactor, scaleX);
+        sprite->setScale(outCoverScale);
 
         CCSize scaledSize{ desiredWidth, bgHeight };
-        
         CCPoint maskRect[4] = {
             ccp(0, 0),
             ccp(scaledSize.width, 0),
@@ -598,33 +628,35 @@ class $modify(PaimonLevelCell, LevelCell) {
         drawMask->setContentSize(scaledSize);
         drawMask->setAnchorPoint({1,0});
         drawMask->ignoreAnchorPointForPosition(true);
-        drawMask->setSkewX(angle);
+        drawMask->setSkewX(18.f);
 
         auto clippingNode = CCClippingNode::create();
-        if (!clippingNode) return;
-        
-        // FIX: Disable touch for clipping node to prevent blocking buttons
-        // CCClippingNode doesn't consume touches by default, but let's be sure
-        // no se puede desactivar touch en CCNode facilmente sin desregistrarlo, 
-        // but it shouldn't be registered.
-        
+        if (!clippingNode) return nullptr;
+
         clippingNode->setStencil(drawMask);
-        // Reverted: No alpha threshold needed for layer mask
-        
         clippingNode->setContentSize(scaledSize);
         clippingNode->setAnchorPoint({1,0});
-        
-        // Reverted: Standard position
         clippingNode->setPosition({ bgWidth, 0.3f });
-        
         clippingNode->setID("paimon-clipping-node"_spr);
         clippingNode->setZOrder(-1);
 
         sprite->setPosition(clippingNode->getContentSize() * 0.5f);
         clippingNode->addChild(sprite);
-        
-        // Revert: Add to 'this' (LevelCell) instead of 'bg' to ensure visibility
-        // Adding to 'bg' caused the thumbnail to be hidden or clipped incorrectly
+        return clippingNode;
+    }
+
+    void setupClippingAndSeparator(CCNode* bg, CCSprite* sprite) {
+        auto fields = m_fields.self();
+        if (!fields) return;
+
+        // forzar ancho completo pa celdas Daily
+        bool isDaily = false;
+        if (m_level && m_level->m_dailyID > 0) isDaily = true;
+
+        float coverScale = 1.0f;
+        auto clippingNode = createThumbnailClippingNode(bg, sprite, coverScale);
+        if (!clippingNode) return;
+
         this->addChild(clippingNode);
 
         fields->m_thumbSprite = sprite;
@@ -643,10 +675,10 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
 
         fields->m_clippingNode = clippingNode;
-        
-        // NOTE: clippingNode is added to 'this' above.
-        
+
         bool showSeparator = Mod::get()->getSettingValue<bool>("levelcell-show-separator");
+        const float bgWidth = bg->getContentWidth();
+        CCSize scaledSize = clippingNode->getContentSize();
 
         if (showSeparator && !isDaily) { // No separator for Daily
             float separatorXMul = m_compactView ? 0.75f : 1.0f;
@@ -655,7 +687,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             separator->setOpacity(50);
             separator->setScaleX(0.45f);
             separator->ignoreAnchorPointForPosition(false);
-            separator->setSkewX(angle * 2);
+            separator->setSkewX(36.f);
             separator->setContentSize(scaledSize);
             separator->setAnchorPoint({1,0});
             separator->setPosition({bgWidth - separator->getContentWidth()/2 - (20.f * separatorXMul), 0.3f});
@@ -1034,16 +1066,17 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
-    // Aplica la transicion configurada entre dos sprites dentro del clipping node.
-    // oldSprite puede ser nullptr para transiciones de entrada (primera aparicion).
-    void applyGalleryTransition(CCSprite* newSprite, CCNode* oldSprite,
+    // Aplica la transicion configurada manteniendo el cover-scale dentro del clip.
+    void applyGalleryTransition(CCNode* newNode, CCSprite* newSprite,
+                                CCNode* oldNode, CCSprite* oldSprite,
                                 PaimonGalleryTransition type, float dur, CCSize clipSize) {
+        if (!newNode || !newSprite) return;
         if (type == PaimonGalleryTransition::Random)
             type = resolveRandomTransition();
 
-        CCPoint targetPos = newSprite->getPosition();
-        float sx = newSprite->getScaleX();
-        float sy = newSprite->getScaleY();
+        CCPoint targetPos = newNode->getPosition();
+        float sx = newNode->getScaleX();
+        float sy = newNode->getScaleY();
         float halfDur = dur * 0.5f;
         float removeDelay = dur + 0.05f;
 
@@ -1052,145 +1085,150 @@ class $modify(PaimonLevelCell, LevelCell) {
         case PaimonGalleryTransition::Crossfade: {
             newSprite->setOpacity(0);
             newSprite->runAction(CCFadeTo::create(dur, 255));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCDelayTime::create(removeDelay),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::SlideLeft: {
-            newSprite->setPosition({targetPos.x + clipSize.width, targetPos.y});
-            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newNode->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x - clipSize.width, targetPos.y}), 2.0f),
-                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.8f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::SlideRight: {
-            newSprite->setPosition({targetPos.x - clipSize.width, targetPos.y});
-            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->setPosition({targetPos.x - clipSize.width, targetPos.y});
+            newNode->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x + clipSize.width, targetPos.y}), 2.0f),
-                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.8f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::SlideUp: {
-            newSprite->setPosition({targetPos.x, targetPos.y - clipSize.height});
-            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->setPosition({targetPos.x, targetPos.y - clipSize.height});
+            newNode->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x, targetPos.y + clipSize.height}), 2.0f),
-                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.8f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::SlideDown: {
-            newSprite->setPosition({targetPos.x, targetPos.y + clipSize.height});
-            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->setPosition({targetPos.x, targetPos.y + clipSize.height});
+            newNode->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.5f));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x, targetPos.y - clipSize.height}), 2.0f),
-                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.8f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::ZoomIn: {
-            // Keep the thumbnail in cover mode for the whole transition.
-            newSprite->setScaleX(sx * 1.12f);
-            newSprite->setScaleY(sy * 1.12f);
+            newNode->setScaleX(sx * 1.12f);
+            newNode->setScaleY(sy * 1.12f);
             newSprite->setOpacity(0);
-            newSprite->runAction(CCSpawn::create(
-                CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f),
-                CCFadeTo::create(dur * 0.7f, 255), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->runAction(CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f));
+            newSprite->runAction(CCFadeTo::create(dur * 0.7f, 255));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCDelayTime::create(removeDelay),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::ZoomOut: {
-            newSprite->setScaleX(sx * 1.6f);
-            newSprite->setScaleY(sy * 1.6f);
+            newNode->setScaleX(sx * 1.6f);
+            newNode->setScaleY(sy * 1.6f);
             newSprite->setOpacity(0);
-            newSprite->runAction(CCSpawn::create(
-                CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f),
-                CCFadeTo::create(dur * 0.7f, 255), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->runAction(CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f));
+            newSprite->runAction(CCFadeTo::create(dur * 0.7f, 255));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCDelayTime::create(removeDelay),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::FlipHorizontal: {
-            newSprite->setScaleX(0.01f);
+            newNode->setScaleX(0.01f);
             newSprite->setOpacity(0);
+            newNode->runAction(CCSequence::create(
+                CCDelayTime::create(halfDur),
+                CCEaseOut::create(CCScaleTo::create(halfDur, sx, sy), 2.0f), nullptr));
             newSprite->runAction(CCSequence::create(
                 CCDelayTime::create(halfDur),
-                CCSpawn::create(
-                    CCEaseOut::create(CCScaleTo::create(halfDur, sx, sy), 2.0f),
-                    CCFadeTo::create(halfDur * 0.5f, 255), nullptr), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCFadeTo::create(halfDur * 0.5f, 255), nullptr));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCScaleTo::create(halfDur, 0.01f, sy), 2.0f),
-                    CCFadeTo::create(halfDur, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(halfDur, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(halfDur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::FlipVertical: {
-            newSprite->setScaleY(0.01f);
+            newNode->setScaleY(0.01f);
             newSprite->setOpacity(0);
+            newNode->runAction(CCSequence::create(
+                CCDelayTime::create(halfDur),
+                CCEaseOut::create(CCScaleTo::create(halfDur, sx, sy), 2.0f), nullptr));
             newSprite->runAction(CCSequence::create(
                 CCDelayTime::create(halfDur),
-                CCSpawn::create(
-                    CCEaseOut::create(CCScaleTo::create(halfDur, sx, sy), 2.0f),
-                    CCFadeTo::create(halfDur * 0.5f, 255), nullptr), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+                CCFadeTo::create(halfDur * 0.5f, 255), nullptr));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCScaleTo::create(halfDur, sx, 0.01f), 2.0f),
-                    CCFadeTo::create(halfDur, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(halfDur, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(halfDur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::RotateCW: {
-            newSprite->setRotation(90.0f);
+            newNode->setRotation(90.0f);
             newSprite->setOpacity(0);
-            newSprite->runAction(CCSpawn::create(
-                CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f),
-                CCFadeTo::create(dur * 0.6f, 255), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->runAction(CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f));
+            newSprite->runAction(CCFadeTo::create(dur * 0.6f, 255));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCRotateTo::create(dur, -90.0f), 2.0f),
-                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.8f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::RotateCCW: {
-            newSprite->setRotation(-90.0f);
+            newNode->setRotation(-90.0f);
             newSprite->setOpacity(0);
-            newSprite->runAction(CCSpawn::create(
-                CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f),
-                CCFadeTo::create(dur * 0.6f, 255), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->runAction(CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f));
+            newSprite->runAction(CCFadeTo::create(dur * 0.6f, 255));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCRotateTo::create(dur, 90.0f), 2.0f),
-                    CCFadeTo::create(dur * 0.8f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.8f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::Cube: {
             // 3D cube illusion: slide + scaleX perspective
             float offset = clipSize.width * 0.5f;
-            newSprite->setPosition({targetPos.x + offset, targetPos.y});
-            newSprite->setScaleX(0.01f);
-            newSprite->runAction(CCSpawn::create(
+            newNode->setPosition({targetPos.x + offset, targetPos.y});
+            newNode->setScaleX(0.01f);
+            newNode->runAction(CCSpawn::create(
                 CCEaseOut::create(CCMoveTo::create(dur, targetPos), 2.0f),
                 CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.0f), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCMoveTo::create(dur, {targetPos.x - offset, targetPos.y}), 2.0f),
                     CCEaseIn::create(CCScaleTo::create(dur, 0.01f, sy), 2.0f), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::Dissolve: {
@@ -1203,44 +1241,45 @@ class $modify(PaimonLevelCell, LevelCell) {
                 CCFadeTo::create(step, 180),
                 CCFadeTo::create(step, 220),
                 CCFadeTo::create(step, 255), nullptr));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCDelayTime::create(removeDelay),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::Swipe: {
             // new covers old from right — old stays still
-            newSprite->setPosition({targetPos.x + clipSize.width, targetPos.y});
-            newSprite->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 3.0f));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newNode->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 3.0f));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCDelayTime::create(removeDelay),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         case PaimonGalleryTransition::Bounce: {
-            newSprite->setPosition({targetPos.x + clipSize.width, targetPos.y});
-            newSprite->runAction(CCEaseBounceOut::create(CCMoveTo::create(dur, targetPos)));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            newNode->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newNode->runAction(CCEaseBounceOut::create(CCMoveTo::create(dur, targetPos)));
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCSpawn::create(
                     CCEaseIn::create(CCMoveTo::create(dur * 0.5f, {targetPos.x - clipSize.width * 0.3f, targetPos.y}), 2.0f),
-                    CCFadeTo::create(dur * 0.5f, 0), nullptr),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.5f, 0)) : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur * 0.5f)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
         default: { // fallback = crossfade
             newSprite->setOpacity(0);
             newSprite->runAction(CCFadeTo::create(dur, 255));
-            if (oldSprite) oldSprite->runAction(CCSequence::create(
+            if (oldNode) oldNode->runAction(CCSequence::create(
                 CCDelayTime::create(removeDelay),
-                CCCallFunc::create(oldSprite, callfunc_selector(CCNode::removeFromParent)), nullptr));
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
         }
     }
 
     // Aplica transicion de entrada (primera aparicion del thumbnail)
-    void applyEntryTransition(CCSprite* sprite, PaimonGalleryTransition type,
+    void applyEntryTransition(CCNode* clipNode, CCSprite* sprite, PaimonGalleryTransition type,
                               float dur, CCSize clipSize) {
-        applyGalleryTransition(sprite, nullptr, type, dur, clipSize);
+        applyGalleryTransition(clipNode, sprite, nullptr, nullptr, type, dur, clipSize);
     }
 
     // Marca fin de transicion de galeria (permite que hover animation retome control)
@@ -1271,40 +1310,35 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
 
+        auto oldClip = fields->m_clippingNode;
         auto oldSprite = fields->m_thumbSprite;
 
-        // create new sprite with same texture
-        CCSprite* newSprite = PaimonShaderSprite::createWithTexture(texture);
+        CCSprite* newSprite = createThumbnailSprite(texture, false);
         if (!newSprite) {
             addOrUpdateThumb(texture);
             return;
         }
-        newSprite->setID("paimon-thumbnail"_spr);
 
         float oldBaseScale = fields->m_thumbBaseScaleX;
         float newBaseScale = oldBaseScale;
-        if (auto bg = m_backgroundLayer) {
-            float widthFactor = getLevelCellThumbWidthFactor();
-            newBaseScale = calculateLevelCellThumbCoverScale(
-                newSprite,
-                bg->getContentWidth(),
-                bg->getContentHeight(),
-                widthFactor,
-                oldBaseScale
-            );
+        auto bg = m_backgroundLayer;
+        auto newClip = createThumbnailClippingNode(bg, newSprite, newBaseScale);
+        if (!newClip) {
+            addOrUpdateThumb(texture);
+            return;
         }
 
-        // use BASE visual properties (not hover-modified) so transitions
-        // animate from/to the correct resting state
-        newSprite->setScale(newBaseScale);
-        newSprite->setPosition(fields->m_thumbBasePos);
         newSprite->setAnchorPoint(oldSprite->getAnchorPoint());
-        newSprite->setSkewX(oldSprite->getSkewX());
-        newSprite->setSkewY(oldSprite->getSkewY());
         newSprite->setZOrder(oldSprite->getZOrder());
         newSprite->setColor(oldSprite->getColor());
+        newSprite->setPosition(newClip->getContentSize() * 0.5f);
+        newClip->setPosition(fields->m_clipBasePos);
+        newClip->setScale(1.0f);
+        newClip->setRotation(0.0f);
 
-        // reset old sprite to base state before animating it out
+        oldClip->setPosition(fields->m_clipBasePos);
+        oldClip->setScale(1.0f);
+        oldClip->setRotation(0.0f);
         oldSprite->setPosition(fields->m_thumbBasePos);
         oldSprite->setScale(oldBaseScale);
         oldSprite->setRotation(0.0f);
@@ -1327,13 +1361,16 @@ class $modify(PaimonLevelCell, LevelCell) {
         cacheSettings();
         auto transType = fields->m_cachedGalleryTransition;
         float dur = fields->m_cachedTransitionDuration;
-        CCSize clipSize = fields->m_clippingNode->getContentSize();
+        CCSize clipSize = newClip->getContentSize();
 
-        fields->m_clippingNode->addChild(newSprite);
+        this->addChild(newClip);
         beginGalleryTransitionGuard(dur);
-        applyGalleryTransition(newSprite, oldSprite, transType, dur, clipSize);
+        applyGalleryTransition(newClip, newSprite, oldClip, oldSprite, transType, dur, clipSize);
 
+        fields->m_clippingNode = newClip;
         fields->m_thumbSprite = newSprite;
+        fields->m_thumbBasePos = newSprite->getPosition();
+        fields->m_clipBasePos = newClip->getPosition();
         fields->m_thumbBaseScaleX = newBaseScale;
         fields->m_thumbBaseScaleY = newBaseScale;
 
@@ -1374,6 +1411,46 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
     }
 
+    void requestGalleryThumbnail(int index) {
+        auto fields = m_fields.self();
+        if (!fields || fields->m_isBeingDestroyed || !m_level) return;
+        if (index < 0 || index >= static_cast<int>(fields->m_galleryThumbnails.size())) return;
+
+        auto const& thumb = fields->m_galleryThumbnails[index];
+        if (thumb.url.empty()) return;
+
+        if (auto it = fields->m_galleryTextureCache.find(thumb.url); it != fields->m_galleryTextureCache.end() && it->second.data()) {
+            if (fields->m_galleryIndex == index) {
+                this->crossfadeToThumb(it->second.data());
+            }
+            return;
+        }
+
+        if (!fields->m_galleryPendingUrls.insert(thumb.url).second) {
+            return;
+        }
+
+        const int levelID = m_level->m_levelID.value();
+        const int galleryToken = fields->m_galleryToken;
+        WeakRef<PaimonLevelCell> safeRef = this;
+        ThumbnailAPI::get().downloadFromUrl(thumb.url, [safeRef, levelID, galleryToken, index, url = thumb.url](bool success, CCTexture2D* tex) {
+            auto cellRef = safeRef.lock();
+            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+            if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
+
+            auto fields = cell->m_fields.self();
+            if (!fields) return;
+            fields->m_galleryPendingUrls.erase(url);
+            if (fields->m_galleryToken != galleryToken) return;
+            if (!success || !tex) return;
+
+            fields->m_galleryTextureCache[url] = tex;
+            if (fields->m_galleryIndex == index) {
+                cell->crossfadeToThumb(tex);
+            }
+        });
+    }
+
     void updateGalleryCycle(float dt) {
         auto fields = m_fields.self();
         if (!fields || fields->m_isBeingDestroyed || !m_level) return;
@@ -1382,19 +1459,14 @@ class $modify(PaimonLevelCell, LevelCell) {
             return;
         }
         fields->m_galleryIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
-        auto next = fields->m_galleryThumbnails[fields->m_galleryIndex];
-        const int levelID = m_level->m_levelID.value();
-        const int token = ++fields->m_galleryToken;
-        WeakRef<PaimonLevelCell> safeRef = this;
-        ThumbnailAPI::get().downloadFromUrl(next.url, [safeRef, levelID, token](bool success, CCTexture2D* tex) {
-            auto cellRef = safeRef.lock();
-            auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
-            if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
-            auto fields = cell->m_fields.self();
-            if (!fields || fields->m_galleryToken != token) return;
-            if (!success || !tex) return;
-            cell->crossfadeToThumb(tex);
-        });
+        this->requestGalleryThumbnail(fields->m_galleryIndex);
+
+        if (fields->m_galleryThumbnails.size() > 2) {
+            int prefetchIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
+            if (prefetchIndex != fields->m_galleryIndex) {
+                this->requestGalleryThumbnail(prefetchIndex);
+            }
+        }
     }
 
     void addOrUpdateThumb(CCTexture2D* texture) {
@@ -1438,7 +1510,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                 float dur = fields->m_cachedTransitionDuration;
                 CCSize clipSize = fields->m_clippingNode->getContentSize();
                 beginGalleryTransitionGuard(dur);
-                applyEntryTransition(fields->m_thumbSprite, transType, dur, clipSize);
+                applyEntryTransition(fields->m_clippingNode, fields->m_thumbSprite, transType, dur, clipSize);
             }
 
             if (m_level) {
@@ -1531,6 +1603,8 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_thumbnailRequested = false;
             fields->m_staticThumbLoad.reset();
             fields->m_galleryThumbnails.clear();
+            fields->m_galleryTextureCache.clear();
+            fields->m_galleryPendingUrls.clear();
             fields->m_galleryRequested = false;
             fields->m_galleryToken++;
             if (fields->m_invalidationListenerId != 0) {
@@ -2075,7 +2149,9 @@ class $modify(PaimonLevelCell, LevelCell) {
                     fields->m_thumbnailApplied = false;
                     fields->m_galleryRequested = false;
                     fields->m_galleryThumbnails.clear();
-                    fields->m_galleryIndex = 0;
+                    fields->m_galleryTextureCache.clear();
+                    fields->m_galleryPendingUrls.clear();
+                    fields->m_galleryIndex = -1;
                     fields->m_galleryTimer = 0.f;
                     fields->m_galleryToken++;
                     fields->m_loadedInvalidationVersion = ThumbnailLoader::get().getInvalidationVersion(invalidLevelID);
@@ -2094,7 +2170,9 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_loadedInvalidationVersion = 0;
                 fields->m_isDailyCellCached = false;
                 fields->m_galleryThumbnails.clear();
-                fields->m_galleryIndex = 0;
+                fields->m_galleryTextureCache.clear();
+                fields->m_galleryPendingUrls.clear();
+                fields->m_galleryIndex = -1;
                 fields->m_galleryTimer = 0.f;
                 fields->m_galleryRequested = false;
                 fields->m_galleryToken++;
@@ -2122,16 +2200,21 @@ class $modify(PaimonLevelCell, LevelCell) {
                     if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
                     auto fields = cell->m_fields.self();
                     if (!fields || fields->m_galleryToken != galleryToken) return;
-                    if (!success || thumbs.size() < 2) {
-                        fields->m_galleryThumbnails.clear();
-                        return;
-                    }
-                    fields->m_galleryThumbnails = thumbs;
-                    fields->m_galleryIndex = 0;
+                    fields->m_galleryTextureCache.clear();
+                    fields->m_galleryPendingUrls.clear();
+                    fields->m_galleryThumbnails = normalizeLevelCellGalleryThumbnails(
+                        levelID,
+                        success ? thumbs : std::vector<ThumbnailAPI::ThumbnailInfo>{}
+                    );
+                    fields->m_galleryIndex = -1;
                     fields->m_galleryTimer = 0.f;
                     bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
-                    if (autoCycleEnabled) {
+                    cell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+                    if (autoCycleEnabled && fields->m_galleryThumbnails.size() > 1) {
                         cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 3.0f);
+                    }
+                    for (int i = 0; i < static_cast<int>(fields->m_galleryThumbnails.size()); ++i) {
+                        cell->requestGalleryThumbnail(i);
                     }
                 });
             }
