@@ -2,6 +2,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "ReportUserPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -51,8 +52,8 @@ bool RateProfilePopup::init(int accountID, std::string const& targetUsername) {
     m_mainLayer->addChild(starMenu);
 
     for (int i = 1; i <= 5; i++) {
-        auto spr = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
-        if (!spr) spr = CCSprite::createWithSpriteFrameName("GJ_starBtn_001.png");
+        auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+        if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
         if (!spr) spr = CCSprite::create();
         spr->setColor({100, 100, 100});
         spr->setScale(0.7f);

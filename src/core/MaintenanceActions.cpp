@@ -1,4 +1,5 @@
 #include <Geode/Geode.hpp>
+#include <Geode/loader/SettingV3.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include "../utils/PaimonNotification.hpp"
@@ -170,18 +171,11 @@ MaintenanceStats runMaintenanceCleanup() {
     return stats;
 }
 
-void resetActionToggle(char const* key) {
-    Loader::get()->queueInMainThread([key]() {
-        if (Mod::get()->getSettingValue<bool>(key)) {
-            Mod::get()->setSettingValue(key, false);
-        }
-    });
-}
 } // namespace
 
 $execute {
-    geode::listenForSettingChanges<bool>("maintenance-cleanup", +[](bool value) {
-        if (!value) return;
+    ButtonSettingPressedEventV3(Mod::get(), "maintenance-cleanup").listen([](auto buttonKey) {
+        if (buttonKey != "run") return;
 
         auto stats = runMaintenanceCleanup();
 
@@ -201,12 +195,10 @@ $execute {
             );
             PaimonNotify::create(msg, NotificationIcon::Warning)->show();
         }
+    }).leak();
 
-        resetActionToggle("maintenance-cleanup");
-    });
-
-    geode::listenForSettingChanges<bool>("maintenance-refresh-mod-code", +[](bool value) {
-        if (!value) return;
+    ButtonSettingPressedEventV3(Mod::get(), "maintenance-refresh-mod-code").listen([](auto buttonKey) {
+        if (buttonKey != "run") return;
 
         auto* gm = GameManager::get();
         auto* am = GJAccountManager::get();
@@ -215,7 +207,6 @@ $execute {
 
         if (username.empty() || accountID <= 0) {
             PaimonNotify::create("Necesitas iniciar sesion para obtener el mod code.", NotificationIcon::Error)->show();
-            resetActionToggle("maintenance-refresh-mod-code");
             return;
         }
 
@@ -258,7 +249,5 @@ $execute {
                 }
             });
         });
-
-        resetActionToggle("maintenance-refresh-mod-code");
-    });
+    }).leak();
 }

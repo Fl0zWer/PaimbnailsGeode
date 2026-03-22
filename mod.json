@@ -425,16 +425,20 @@
       "type": "title"
     },
     "maintenance-cleanup": {
-      "type": "bool",
-      "name": "Run Mod Cleanup (Button)",
-      "description": "Turn ON to clean temporary/cache files and run a health check. It resets automatically.",
-      "default": false
+      "type": "button",
+      "name": "Run Mod Cleanup",
+      "description": "Clean temporary/cache files and run a health check.",
+      "buttons": {
+        "run": "Run Cleanup"
+      }
     },
     "maintenance-refresh-mod-code": {
-      "type": "bool",
-      "name": "Fetch Mod Code (Button)",
-      "description": "Turn ON to verify mod/admin status and fetch a fresh moderator code. It resets automatically.",
-      "default": false
+      "type": "button",
+      "name": "Fetch Mod Code",
+      "description": "Verify mod/admin status and fetch a fresh moderator code.",
+      "buttons": {
+        "run": "Fetch Code"
+      }
     },
     "test-category": {
       "name": "Test / Debug",

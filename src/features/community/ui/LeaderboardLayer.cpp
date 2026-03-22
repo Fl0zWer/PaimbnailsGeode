@@ -18,6 +18,7 @@
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include "../../../utils/Shaders.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <random>
 #include <thread>
 #include <chrono>
@@ -227,8 +228,8 @@ bool LeaderboardLayer::init() {
     tabMenu->addChild(weeklyBtn);
 
     // boton historial (icono de lista)
-    auto historySpr = CCSprite::createWithSpriteFrameName("GJ_menuBtn_001.png");
-    if (!historySpr) historySpr = CCSprite::createWithSpriteFrameName("GJ_plainBtn_001.png");
+    auto historySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_menuBtn_001.png");
+    if (!historySpr) historySpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plainBtn_001.png");
     if (historySpr) {
         historySpr->setScale(0.45f);
         auto historyBtn = CCMenuItemSpriteExtra::create(
@@ -499,8 +500,8 @@ void LeaderboardLayer::createList(std::string type) {
     card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.4f, 1.0f)));
 
     // ── fondo de la tarjeta ──────────────────────────────
-    auto cardBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-    if (!cardBg) cardBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    auto cardBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
+    if (!cardBg) cardBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
     if (cardBg) {
         cardBg->setColor({14, 14, 22});
         cardBg->setOpacity(230);
@@ -510,8 +511,8 @@ void LeaderboardLayer::createList(std::string type) {
     }
 
     // ── borde sutil ──────────────────────────────────────
-    auto border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-    if (!border) border = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    auto border = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
+    if (!border) border = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
     if (border) {
         border->setColor({60, 60, 80});
         border->setOpacity(100);
@@ -522,8 +523,8 @@ void LeaderboardLayer::createList(std::string type) {
 
     // ── badge DAILY / WEEKLY ─────────────────────────────
     bool isDaily = (type == "daily");
-    auto badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-    if (!badgeBg) badgeBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    auto badgeBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
+    if (!badgeBg) badgeBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
     if (badgeBg) {
         badgeBg->setContentSize({80, 22});
         badgeBg->setColor(isDaily ? ccColor3B{200, 150, 30} : ccColor3B{100, 80, 200});
@@ -1123,9 +1124,9 @@ void LeaderboardLayer::spawnThemeParticle(float dt) {
     int idx = rand() % 3;
     
     CCSprite* particle = nullptr;
-    particle = CCSprite::createWithSpriteFrameName(spriteNames[idx]);
+    particle = paimon::SpriteHelper::safeCreateWithFrameName(spriteNames[idx]);
     if (!particle) {
-        particle = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
+        particle = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
     }
     if (!particle) return;
 

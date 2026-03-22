@@ -1,6 +1,7 @@
 #include "LeaderboardHistoryLayer.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <asp/time.hpp>
 #include "../../thumbnails/services/LocalThumbs.hpp"
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
@@ -454,8 +455,8 @@ void LeaderboardHistoryLayer::createList() {
         content->addChild(cell);
 
         // fondo de celda alternado
-        auto cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-        if (!cellBg) cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+        auto cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
+        if (!cellBg) cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
         if (cellBg) {
             cellBg->setColor(p % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32});
             cellBg->setOpacity(200);

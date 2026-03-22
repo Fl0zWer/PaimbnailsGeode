@@ -5,10 +5,9 @@
 
 namespace paimon {
 
-// Utilidad para validar sprites y evitar cuadros magenta cuando mods de texturas
-// (HappyTextures, TextureLdr, ImagePlus) interceptan la carga de sprite frames.
-// En GD, createWithSpriteFrameName puede retornar un sprite con la textura
-// magenta 2x2 por defecto en vez de null cuando falla.
+// Utilidad para validar sprites y mantener fallbacks deterministas.
+// Con Geode 5.4, createWithSpriteFrameName / create(file) pueden devolver
+// un fallback sprite en vez de nullptr cuando el asset falta.
 struct SpriteHelper {
 
     // Crea un CCDrawNode rectangular para usar como stencil en CCClippingNode.
@@ -27,10 +26,10 @@ struct SpriteHelper {
         return stencil;
     }
 
-    // Verifica si un sprite tiene una textura valida (no es la textura magenta
-    // placeholder de 2x2 que GD usa cuando falla la carga).
+    // Verifica si un sprite es utilizable para el mod.
     static bool isValidSprite(cocos2d::CCSprite* spr) {
         if (!spr) return false;
+        if (spr->isUsingFallback()) return false;
         auto tex = spr->getTexture();
         if (!tex) return false;
         auto size = tex->getContentSizeInPixels();
@@ -39,10 +38,20 @@ struct SpriteHelper {
         return true;
     }
 
-    // Wrapper seguro de createWithSpriteFrameName que retorna null si el sprite
-    // resulta ser la textura placeholder magenta.
+    // Wrapper seguro de createWithSpriteFrameName que retorna null si el frame
+    // no existe o si Geode devolvio un fallback sprite/frame.
     static cocos2d::CCSprite* safeCreateWithFrameName(const char* frameName) {
-        auto spr = cocos2d::CCSprite::createWithSpriteFrameName(frameName);
+        auto frame = cocos2d::CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(frameName);
+        if (!frame || frame->isUsingFallback()) return nullptr;
+        auto spr = cocos2d::CCSprite::createWithSpriteFrame(frame);
+        if (!isValidSprite(spr)) return nullptr;
+        return spr;
+    }
+
+    // Wrapper seguro de create(file) que trata el fallback integrado de Geode
+    // como un fallo real para poder encadenar fallbacks propios.
+    static cocos2d::CCSprite* safeCreate(const char* file) {
+        auto spr = cocos2d::CCSprite::create(file);
         if (!isValidSprite(spr)) return nullptr;
         return spr;
     }
@@ -54,6 +63,14 @@ struct SpriteHelper {
         auto* tex = cocos2d::CCTextureCache::sharedTextureCache()->addImage(file, false);
         if (!tex) return nullptr;
         return cocos2d::extension::CCScale9Sprite::create(file);
+    }
+
+    // Variante segura para sprite frames, evitando que el fallback de Geode 5.4
+    // corte cadenas de fallback del mod.
+    static cocos2d::extension::CCScale9Sprite* safeCreateScale9WithFrameName(const char* frameName) {
+        auto frame = cocos2d::CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(frameName);
+        if (!frame || frame->isUsingFallback()) return nullptr;
+        return cocos2d::extension::CCScale9Sprite::createWithSpriteFrame(frame);
     }
 };
 

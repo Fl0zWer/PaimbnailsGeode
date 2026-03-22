@@ -3,6 +3,7 @@
 #include "../../visuals/ui/ExtraEffectsPopup.hpp"
 #include "LocalThumbnailViewPopup.hpp"
 #include "../../../utils/InfoButton.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
 using namespace cocos2d;
@@ -109,12 +110,15 @@ bool ThumbnailSettingsPopup::init() {
     // ── Extra Effects gear button ──
     y -= 30.f;
 
-    auto gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-    gearSpr->setScale(0.4f);
-    auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(ThumbnailSettingsPopup::onOpenExtraEffects));
-    gearBtn->setID("extra-effects-btn"_spr);
-    gearBtn->setPosition({cx + 80.f, y});
-    navMenu->addChild(gearBtn);
+    auto gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
+    if (!gearSpr) gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
+    if (gearSpr) {
+        gearSpr->setScale(0.4f);
+        auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(ThumbnailSettingsPopup::onOpenExtraEffects));
+        gearBtn->setID("extra-effects-btn"_spr);
+        gearBtn->setPosition({cx + 80.f, y});
+        navMenu->addChild(gearBtn);
+    }
 
     auto extraLabel = CCLabelBMFont::create("Extra Effects", "bigFont.fnt");
     extraLabel->setScale(0.4f);
@@ -231,9 +235,9 @@ bool ThumbnailSettingsPopup::init() {
             m_peekMenu->setID("paimon-peek-menu"_spr);
             handler->addChild(m_peekMenu);
 
-            auto eyeSpr = CCSprite::createWithSpriteFrameName("GJ_sMagicIcon_001.png");
-            if (!eyeSpr) eyeSpr = CCSprite::createWithSpriteFrameName("GJ_viewProfileTxt_001.png");
-            if (!eyeSpr) eyeSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
+            auto eyeSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_sMagicIcon_001.png");
+            if (!eyeSpr) eyeSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_viewProfileTxt_001.png");
+            if (!eyeSpr) eyeSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
             if (eyeSpr) {
                 eyeSpr->setScale(1.0f);
                 auto eyeBtn = CCMenuItemSpriteExtra::create(eyeSpr, handler,

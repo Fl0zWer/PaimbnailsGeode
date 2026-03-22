@@ -6,6 +6,7 @@
 
 #include <Geode/Geode.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
+#include "../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
 
@@ -35,9 +36,9 @@ public:
         cocos2d::SEL_MenuHandler callback,
         float scale = 1.0f
     ) {
-        auto spr = cocos2d::CCSprite::createWithSpriteFrameName(spriteName);
+        auto spr = paimon::SpriteHelper::safeCreateWithFrameName(spriteName);
         if (!spr) {
-            spr = cocos2d::CCSprite::create(spriteName);
+            spr = paimon::SpriteHelper::safeCreate(spriteName);
         }
         if (!spr) return nullptr;
 

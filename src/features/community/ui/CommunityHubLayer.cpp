@@ -6,6 +6,7 @@
 #include "../../thumbnails/services/ThumbnailLoader.hpp"
 #include "../../transitions/services/TransitionManager.hpp"
 #include "../../backgrounds/services/LayerBackgroundManager.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
@@ -556,8 +557,8 @@ void CommunityHubLayer::buildCreatorsList() {
         content->addChild(cell);
 
         // alternating background
-        auto cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-        if (!cellBg) cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+        auto cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
+        if (!cellBg) cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
         if (cellBg) {
             cellBg->setColor(i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32});
             cellBg->setOpacity(200);
@@ -688,8 +689,8 @@ void CommunityHubLayer::buildThumbnailsList() {
         content->addChild(cell);
 
         // alternating background
-        auto cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
-        if (!cellBg) cellBg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+        auto cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
+        if (!cellBg) cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
         if (cellBg) {
             cellBg->setColor(i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32});
             cellBg->setOpacity(200);

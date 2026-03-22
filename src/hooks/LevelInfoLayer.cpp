@@ -8,6 +8,7 @@
 #include <Geode/ui/BasedButtonSprite.hpp>
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../utils/PaimonNotification.hpp"
+#include "../utils/SpriteHelper.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -483,9 +484,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         // evitar duplicados
         if (this->getChildByIDRecursive("set-daily-weekly-button"_spr)) return;
 
-        CCSprite* iconSpr = CCSprite::createWithSpriteFrameName("GJ_timeIcon_001.png");
+        CCSprite* iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_timeIcon_001.png");
         if (!iconSpr) {
-            iconSpr = CCSprite::createWithSpriteFrameName("GJ_starBtn_001.png");
+            iconSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png");
         }
         if (!iconSpr) return;
 
@@ -610,9 +611,9 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             m_fields->m_extraMenu = static_cast<CCMenu*>(leftMenu);
             
             // sprite icono btn (con fallbacks)
-            CCSprite* iconSprite = CCSprite::create("paim_BotonMostrarThumbnails.png"_spr);
-            if (!iconSprite) iconSprite = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-            if (!iconSprite) iconSprite = CCSprite::createWithSpriteFrameName("GJ_plusBtn_001.png");
+            CCSprite* iconSprite = paimon::SpriteHelper::safeCreate("paim_BotonMostrarThumbnails.png"_spr);
+            if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png");
+            if (!iconSprite) iconSprite = paimon::SpriteHelper::safeCreateWithFrameName("GJ_plusBtn_001.png");
             if (!iconSprite) return true;
 
             // rotar 90
@@ -943,7 +944,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         float arrowY = 30.f;
 
         // flecha izquierda (prev)
-        auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+        auto prevSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
         if (prevSpr) {
             prevSpr->setScale(0.65f);
             auto prevBtn = CCMenuItemSpriteExtra::create(
@@ -956,7 +957,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
 
         // flecha derecha (next)
-        auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png");
+        auto nextSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png");
         if (nextSpr) {
             nextSpr->setFlipX(true);
             nextSpr->setScale(0.65f);

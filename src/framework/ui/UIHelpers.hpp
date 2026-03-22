@@ -5,6 +5,7 @@
 
 #include <Geode/Geode.hpp>
 #include <cocos2d.h>
+#include "../../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
 
@@ -38,8 +39,8 @@ inline CCMenuItemSpriteExtra* makeCircleIconButton(
     cocos2d::SEL_MenuHandler callback,
     float scale = 1.0f
 ) {
-    auto spr = cocos2d::CCSprite::createWithSpriteFrameName(spriteName);
-    if (!spr) spr = cocos2d::CCSprite::create(spriteName);
+    auto spr = paimon::SpriteHelper::safeCreateWithFrameName(spriteName);
+    if (!spr) spr = paimon::SpriteHelper::safeCreate(spriteName);
     if (!spr) return nullptr;
 
     spr->setScale(scale);

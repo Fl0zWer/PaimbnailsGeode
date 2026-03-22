@@ -2,6 +2,7 @@
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/Localization.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/binding/FLAlertLayer.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -107,8 +108,8 @@ void ProfileMusicPopup::createWaveformDisplay() {
     m_waveformContainer->addChild(m_selectionOverlay, 1);
 
     // Start handle
-    m_startHandle = CCSprite::createWithSpriteFrameName("edit_rightBtn_001.png");
-    if (!m_startHandle) m_startHandle = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+    m_startHandle = paimon::SpriteHelper::safeCreateWithFrameName("edit_rightBtn_001.png");
+    if (!m_startHandle) m_startHandle = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png");
     if (m_startHandle) {
         m_startHandle->setScale(0.7f);
         m_startHandle->setColor({0, 255, 100}); 
@@ -118,8 +119,8 @@ void ProfileMusicPopup::createWaveformDisplay() {
     }
 
     // End handle
-    m_endHandle = CCSprite::createWithSpriteFrameName("edit_leftBtn_001.png");
-    if (!m_endHandle) m_endHandle = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+    m_endHandle = paimon::SpriteHelper::safeCreateWithFrameName("edit_leftBtn_001.png");
+    if (!m_endHandle) m_endHandle = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_02_001.png");
     if (m_endHandle) {
         m_endHandle->setScale(0.7f);
         m_endHandle->setColor({255, 50, 100}); 
@@ -158,8 +159,8 @@ void ProfileMusicPopup::createControlButtons() {
     float row1Y = 80.f;
 
     // Play preview
-    auto playSpr = CCSprite::createWithSpriteFrameName("GJ_playBtn2_001.png");
-    if (!playSpr) playSpr = CCSprite::createWithSpriteFrameName("GJ_playMusicBtn_001.png");
+    auto playSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playBtn2_001.png");
+    if (!playSpr) playSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_playMusicBtn_001.png");
     if (!playSpr) playSpr = CCSprite::create();
     playSpr->setScale(0.5f);
     auto playBtn = CCMenuItemSpriteExtra::create(playSpr, this, menu_selector(ProfileMusicPopup::onPlayPreview));
@@ -167,8 +168,8 @@ void ProfileMusicPopup::createControlButtons() {
     m_mainMenu->addChild(playBtn);
 
     // Stop preview
-    auto stopSpr = CCSprite::createWithSpriteFrameName("GJ_stopMusicBtn_001.png");
-    if (!stopSpr) stopSpr = CCSprite::createWithSpriteFrameName("GJ_deleteBtn_001.png");
+    auto stopSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_stopMusicBtn_001.png");
+    if (!stopSpr) stopSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteBtn_001.png");
     if (!stopSpr) stopSpr = CCSprite::create();
     stopSpr->setScale(0.5f);
     auto stopBtn = CCMenuItemSpriteExtra::create(stopSpr, this, menu_selector(ProfileMusicPopup::onStopPreview));
@@ -176,8 +177,8 @@ void ProfileMusicPopup::createControlButtons() {
     m_mainMenu->addChild(stopBtn);
 
     // Download song button
-    auto downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png");
-    if (!downloadSpr) downloadSpr = CCSprite::createWithSpriteFrameName("GJ_downloadsIcon_001.png");
+    auto downloadSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png");
+    if (!downloadSpr) downloadSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadsIcon_001.png");
     if (!downloadSpr) downloadSpr = CCSprite::create();
     downloadSpr->setScale(0.55f);
     auto downloadBtn = CCMenuItemSpriteExtra::create(downloadSpr, this, menu_selector(ProfileMusicPopup::onDownloadSong));
@@ -336,8 +337,8 @@ void ProfileMusicPopup::renderWaveform() {
     m_waveformBars.clear();
 
     // En lugar del waveform, crear una barra de progreso simple
-    auto progressBar = CCSprite::create("square.png");
-    if (!progressBar) progressBar = CCSprite::createWithSpriteFrameName("whiteSquare60_001.png");
+    auto progressBar = paimon::SpriteHelper::safeCreate("square.png");
+    if (!progressBar) progressBar = paimon::SpriteHelper::safeCreateWithFrameName("whiteSquare60_001.png");
     if (!progressBar) {
         progressBar = CCSprite::create();
         progressBar->setTextureRect({0, 0, 1, 1});

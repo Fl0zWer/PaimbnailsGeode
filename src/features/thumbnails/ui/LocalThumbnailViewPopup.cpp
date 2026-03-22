@@ -295,10 +295,10 @@ void LocalThumbnailViewPopup::setupRating() {
         CCSpriteFrameCache::sharedSpriteFrameCache()->addSpriteFramesWithFile("GJ_GameSheet03.plist");
     }
 
-    auto bg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02_001.png");
+    auto bg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
 
     if (!bg) {
-         bg = cocos2d::extension::CCScale9Sprite::createWithSpriteFrameName("square02b_001.png");
+         bg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
     }
 
     if (bg) {
@@ -314,11 +314,13 @@ void LocalThumbnailViewPopup::setupRating() {
          ratingContainer->addChild(fallback, -1);
     }
 
-    auto starSpr = CCSprite::createWithSpriteFrameName("GJ_starsIcon_001.png");
-    if (!starSpr) starSpr = CCSprite::createWithSpriteFrameName("star_small01_001.png");
-    starSpr->setScale(0.34f);
-    starSpr->setPosition({-20.f, 0.f});
-    ratingContainer->addChild(starSpr);
+    auto starSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
+    if (!starSpr) starSpr = paimon::SpriteHelper::safeCreateWithFrameName("star_small01_001.png");
+    if (starSpr) {
+        starSpr->setScale(0.34f);
+        starSpr->setPosition({-20.f, 0.f});
+        ratingContainer->addChild(starSpr);
+    }
 
     m_ratingLabel = CCLabelBMFont::create("...", "goldFont.fnt");
     m_ratingLabel->setScale(0.28f);
@@ -438,14 +440,15 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
          float leftX = (content.width - maxWidth) / 2;
          m_closeBtn->setPosition({leftX - 3.f, topY + 3.f});
 
-         auto infoSpr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-         infoSpr->setScale(0.9f);
-         auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(LocalThumbnailViewPopup::onInfo));
+         if (auto infoSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_infoIcon_001.png")) {
+             infoSpr->setScale(0.9f);
+             auto infoBtn = CCMenuItemSpriteExtra::create(infoSpr, this, menu_selector(LocalThumbnailViewPopup::onInfo));
 
-         infoBtn->setPosition({380.000f, 246.000f});
+             infoBtn->setPosition({380.000f, 246.000f});
 
-         if (auto menu = m_closeBtn->getParent()) {
-             menu->addChild(infoBtn);
+             if (auto menu = m_closeBtn->getParent()) {
+                 menu->addChild(infoBtn);
+             }
          }
     }
 
@@ -488,20 +491,22 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     menu->setPosition({0, 0});
     this->m_mainLayer->addChild(menu, 10);
 
-    auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-    prevSpr->setScale(0.75f);
-    m_leftArrow = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(LocalThumbnailViewPopup::onPrev));
-    m_leftArrow->setPosition({15.f, content.height / 2 + 5.f});
-    m_leftArrow->setVisible(false);
-    menu->addChild(m_leftArrow);
+    if (auto prevSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
+        prevSpr->setScale(0.75f);
+        m_leftArrow = CCMenuItemSpriteExtra::create(prevSpr, this, menu_selector(LocalThumbnailViewPopup::onPrev));
+        m_leftArrow->setPosition({15.f, content.height / 2 + 5.f});
+        m_leftArrow->setVisible(false);
+        menu->addChild(m_leftArrow);
+    }
 
-    auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-    nextSpr->setFlipX(true);
-    nextSpr->setScale(0.75f);
-    m_rightArrow = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(LocalThumbnailViewPopup::onNext));
-    m_rightArrow->setPosition({content.width - 15.f, content.height / 2 + 5.f});
-    m_rightArrow->setVisible(false);
-    menu->addChild(m_rightArrow);
+    if (auto nextSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
+        nextSpr->setFlipX(true);
+        nextSpr->setScale(0.75f);
+        m_rightArrow = CCMenuItemSpriteExtra::create(nextSpr, this, menu_selector(LocalThumbnailViewPopup::onNext));
+        m_rightArrow->setPosition({content.width - 15.f, content.height / 2 + 5.f});
+        m_rightArrow->setVisible(false);
+        menu->addChild(m_rightArrow);
+    }
 
     m_counterLabel = CCLabelBMFont::create("1/1", "bigFont.fnt");
     m_counterLabel->setScale(0.4f);
@@ -836,26 +841,28 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         menu->setPosition({0, 0});
         this->m_mainLayer->addChild(menu, 20);
 
-        auto leftSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-        leftSpr->setScale(0.75f);
-        m_leftArrow = CCMenuItemSpriteExtra::create(leftSpr, this, menu_selector(LocalThumbnailViewPopup::onPrevSuggestion));
-        m_leftArrow->setPosition({centerX - maxWidth/2 - 30.f, centerY});
-        menu->addChild(m_leftArrow);
+        if (auto leftSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
+            leftSpr->setScale(0.75f);
+            m_leftArrow = CCMenuItemSpriteExtra::create(leftSpr, this, menu_selector(LocalThumbnailViewPopup::onPrevSuggestion));
+            m_leftArrow->setPosition({centerX - maxWidth/2 - 30.f, centerY});
+            menu->addChild(m_leftArrow);
+        }
 
-        auto rightSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
-        rightSpr->setFlipX(true);
-        rightSpr->setScale(0.75f);
-        m_rightArrow = CCMenuItemSpriteExtra::create(rightSpr, this, menu_selector(LocalThumbnailViewPopup::onNextSuggestion));
-        m_rightArrow->setPosition({centerX + maxWidth/2 + 30.f, centerY});
-        menu->addChild(m_rightArrow);
+        if (auto rightSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png")) {
+            rightSpr->setFlipX(true);
+            rightSpr->setScale(0.75f);
+            m_rightArrow = CCMenuItemSpriteExtra::create(rightSpr, this, menu_selector(LocalThumbnailViewPopup::onNextSuggestion));
+            m_rightArrow->setPosition({centerX + maxWidth/2 + 30.f, centerY});
+            menu->addChild(m_rightArrow);
+        }
 
         m_counterLabel = CCLabelBMFont::create(fmt::format("{}/{}", m_currentIndex + 1, m_suggestions.size()).c_str(), "bigFont.fnt");
         m_counterLabel->setScale(0.5f);
         m_counterLabel->setPosition({centerX, centerY - maxHeight/2 - 15.f});
         this->m_mainLayer->addChild(m_counterLabel, 20);
 
-        m_leftArrow->setVisible(m_suggestions.size() > 1);
-        m_rightArrow->setVisible(m_suggestions.size() > 1);
+        if (m_leftArrow) m_leftArrow->setVisible(m_suggestions.size() > 1);
+        if (m_rightArrow) m_rightArrow->setVisible(m_suggestions.size() > 1);
     }
 
     // menu botones
@@ -866,9 +873,9 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         "popup-download",
         "frame:GJ_downloadBtn_001.png",
         [](){
-            if (auto spr = CCSprite::createWithSpriteFrameName("GJ_downloadBtn_001.png")) return spr;
-            if (auto spr = CCSprite::createWithSpriteFrameName("GJ_arrow_03_001.png")) return spr;
-            return CCSprite::createWithSpriteFrameName("GJ_button_01.png");
+            if (auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_downloadBtn_001.png")) return spr;
+            if (auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_03_001.png")) return spr;
+            return paimon::SpriteHelper::safeCreateWithFrameName("GJ_button_01.png");
         }
     );
     downloadSprite->setScale(0.7f);
@@ -900,10 +907,11 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     if (acceptBtn) buttonMenu->addChild(acceptBtn);
     if (centerBtn) buttonMenu->addChild(centerBtn);
 
-    auto rateSpr = CCSprite::createWithSpriteFrameName("GJ_starBtn_001.png");
-    rateSpr->setScale(0.7f);
-    auto rateBtn = CCMenuItemSpriteExtra::create(rateSpr, this, menu_selector(LocalThumbnailViewPopup::onRate));
-    buttonMenu->addChild(rateBtn);
+    if (auto rateSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starBtn_001.png")) {
+        rateSpr->setScale(0.7f);
+        auto rateBtn = CCMenuItemSpriteExtra::create(rateSpr, this, menu_selector(LocalThumbnailViewPopup::onRate));
+        buttonMenu->addChild(rateBtn);
+    }
 
     buttonMenu->addChild(downloadBtn);
 
@@ -920,8 +928,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
             if (!popup) return;
 
             if (isMod || isAdmin) {
-                auto spr = CCSprite::createWithSpriteFrameName("GJ_deleteBtn_001.png");
-                if (!spr) spr = CCSprite::createWithSpriteFrameName("GJ_trashBtn_001.png");
+                auto spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_deleteBtn_001.png");
+                if (!spr) spr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_trashBtn_001.png");
 
                 if (spr) {
                     spr->setScale(0.6f);
@@ -961,8 +969,8 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     settingsMenu->setPosition({0, 0});
     this->m_mainLayer->addChild(settingsMenu, 15);
 
-    auto gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn_001.png");
-    if (!gearSpr) gearSpr = CCSprite::createWithSpriteFrameName("GJ_optionsBtn02_001.png");
+    auto gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn_001.png");
+    if (!gearSpr) gearSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_optionsBtn02_001.png");
     if (gearSpr) {
         gearSpr->setScale(0.45f);
         auto gearBtn = CCMenuItemSpriteExtra::create(gearSpr, this, menu_selector(LocalThumbnailViewPopup::onSettings));

@@ -8,6 +8,7 @@
 #include <Geode/ui/Notification.hpp>
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <filesystem>
 #include <fstream>
@@ -565,9 +566,9 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
     for (int i = startIdx; i < static_cast<int>(decos.size()) && i < startIdx + maxPerPage; i++) {
         auto& [spriteName, label] = decos[i];
 
-        CCNode* sprNode = CCSprite::create(spriteName.c_str());
+        CCNode* sprNode = paimon::SpriteHelper::safeCreate(spriteName.c_str());
         if (!sprNode) {
-            sprNode = CCSprite::createWithSpriteFrameName(spriteName.c_str());
+            sprNode = paimon::SpriteHelper::safeCreateWithFrameName(spriteName.c_str());
         }
         if (!sprNode) continue;
 
@@ -590,7 +591,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
     // Paging
     float pageY = gridStartY - 5 * (cellSize + gap) - 15;
     if (m_decoPage > 0) {
-        auto prevSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_02_001.png");
+        auto prevSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_02_001.png");
         if (prevSpr) prevSpr->setScale(0.4f);
         auto prevBtn = CCMenuItemSpriteExtra::create(
             prevSpr ? prevSpr : ButtonSprite::create("<"), this, menu_selector(ProfilePicEditorPopup::onDecoPage));
@@ -599,7 +600,7 @@ CCNode* ProfilePicEditorPopup::createDecoTab() {
         menu->addChild(prevBtn);
     }
     if (startIdx + maxPerPage < static_cast<int>(decos.size())) {
-        auto nextSpr = CCSprite::createWithSpriteFrameName("GJ_arrow_01_001.png");
+        auto nextSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_arrow_01_001.png");
         if (nextSpr) nextSpr->setScale(0.4f);
         auto nextBtn = CCMenuItemSpriteExtra::create(
             nextSpr ? nextSpr : ButtonSprite::create(">"), this, menu_selector(ProfilePicEditorPopup::onDecoPage));
@@ -839,8 +840,8 @@ void ProfilePicEditorPopup::rebuildPreview() {
 
     // Decoraciones
     for (const auto& deco : m_editConfig.decorations) {
-        CCSprite* decoSpr = CCSprite::create(deco.spriteName.c_str());
-        if (!decoSpr) decoSpr = CCSprite::createWithSpriteFrameName(deco.spriteName.c_str());
+        CCSprite* decoSpr = paimon::SpriteHelper::safeCreate(deco.spriteName.c_str());
+        if (!decoSpr) decoSpr = paimon::SpriteHelper::safeCreateWithFrameName(deco.spriteName.c_str());
         if (!decoSpr) continue;
 
         decoSpr->setScale(deco.scale);
