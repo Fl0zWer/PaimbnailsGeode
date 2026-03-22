@@ -7,8 +7,8 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/Localization.hpp"
+#include "../utils/MainThreadDelay.hpp"
 #include <thread>
-#include <chrono>
 #include <filesystem>
 
 using namespace geode::prelude;
@@ -79,10 +79,9 @@ void PaimonOnModLoaded() {
     log::info("[PaimonThumbnails][Init] Scheduling color extraction thread");
     // hilo de I/O de disco + procesamiento CPU — no migrable a WebTask (no es peticion web).
     // el delay y la extraccion se ejecutan en background para no bloquear el main thread.
-    geode::Loader::get()->queueInMainThread([]() {
+    paimon::scheduleMainThreadDelay(0.5f, []() {
         std::thread([]() {
             geode::utils::thread::setName("PaimonThumbnails ColorExtract");
-            std::this_thread::sleep_for(std::chrono::milliseconds(500));
             LevelColors::get().extractColorsFromCache();
             geode::Loader::get()->queueInMainThread([]() {
                 log::info("[PaimonThumbnails][Init] Color extraction finished");

@@ -1,12 +1,14 @@
 #include "ProfileMusicManager.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/MainThreadDelay.hpp"
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/SongInfoObject.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/string.hpp>
 #include <fstream>
+#include <memory>
 #include <cmath>
 #include <thread>
 #include <chrono>
@@ -645,19 +647,14 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
-    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
 
-    Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, restoreAfter, stepMs]() {
-        std::thread([this, next, totalSteps, volFrom, volTo, restoreAfter, stepMs]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, restoreAfter]() {
-                if (!m_isFadingOut) return;
-                auto engine = FMODAudioEngine::sharedEngine();
-                if (!engine || !engine->m_backgroundMusicChannel) return;
-                executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreAfter);
-            });
-        }).detach();
+    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo, restoreAfter]() {
+        if (!m_isFadingOut) return;
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (!engine || !engine->m_backgroundMusicChannel) return;
+        executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreAfter);
     });
 }
 
@@ -682,19 +679,14 @@ void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
-    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
 
-    Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo, stepMs]() {
-        std::thread([this, next, totalSteps, volFrom, volTo, stepMs]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([this, next, totalSteps, volFrom, volTo]() {
-                if (!m_isFadingIn) return;
-                auto engine = FMODAudioEngine::sharedEngine();
-                if (!engine || !engine->m_backgroundMusicChannel) return;
-                executeDipFadeIn(next, totalSteps, volFrom, volTo);
-            });
-        }).detach();
+    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo]() {
+        if (!m_isFadingIn) return;
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (!engine || !engine->m_backgroundMusicChannel) return;
+        executeDipFadeIn(next, totalSteps, volFrom, volTo);
     });
 }
 
@@ -816,25 +808,39 @@ void ProfileMusicManager::getSongInfo(int songID, SongInfoCallback callback) {
     // Request song info from GD servers
     mdm->getSongInfo(songID, true);
 
-    // Use a delayed callback via Loader
-    Loader::get()->queueInMainThread([songID, callback]() {
-        // Wait a bit and then check again
-        std::thread([songID, callback]() {
-            std::this_thread::sleep_for(std::chrono::seconds(2));
+    auto attempts = std::make_shared<int>(0);
+    auto poll = std::make_shared<geode::CopyableFunction<void()>>();
+    *poll = [songID, callback, attempts, poll]() {
+        auto mdm = MusicDownloadManager::sharedState();
+        if (!mdm) {
+            *poll = {};
+            callback(false, "", "", 0);
+            return;
+        }
 
-            Loader::get()->queueInMainThread([songID, callback]() {
-                auto mdm = MusicDownloadManager::sharedState();
-                auto songInfo = mdm->getSongInfoObject(songID);
-                if (songInfo) {
-                    std::string name = songInfo->m_songName;
-                    std::string artist = songInfo->m_artistName;
-                    callback(true, name, artist, 0);
-                } else {
-                    callback(false, "", "", 0);
-                }
-            });
-        }).detach();
-    });
+        auto songInfo = mdm->getSongInfoObject(songID);
+        if (songInfo) {
+            *poll = {};
+            std::string name = songInfo->m_songName;
+            std::string artist = songInfo->m_artistName;
+            callback(true, name, artist, 0);
+            return;
+        }
+
+        if (++(*attempts) >= 20) {
+            *poll = {};
+            callback(false, "", "", 0);
+            return;
+        }
+
+        // MusicDownloadManager resuelve esto de forma async y no expone callback de finalizacion.
+        paimon::scheduleMainThreadDelay(0.5f, [poll]() {
+            if (*poll) {
+                (*poll)();
+            }
+        });
+    };
+    (*poll)();
 }
 
 void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback callback) {
@@ -852,29 +858,35 @@ void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback ca
 
     mdm->downloadSong(songID);
 
-    // Use a thread to poll for download completion
-    std::thread([songID, callback]() {
+    auto attempts = std::make_shared<int>(0);
+    auto poll = std::make_shared<geode::CopyableFunction<void()>>();
+    *poll = [songID, callback, attempts, poll]() {
         auto mdm = MusicDownloadManager::sharedState();
-        int attempts = 0;
-        const int maxAttempts = 30; // 30 seconds max
-
-        while (attempts < maxAttempts) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-            attempts++;
-
-            if (mdm->isSongDownloaded(songID)) {
-                std::string path = mdm->pathForSong(songID);
-                Loader::get()->queueInMainThread([callback, path]() {
-                    callback(true, path);
-                });
-                return;
-            }
+        if (!mdm) {
+            *poll = {};
+            callback(false, "");
+            return;
         }
 
-        Loader::get()->queueInMainThread([callback]() {
+        if (mdm->isSongDownloaded(songID)) {
+            *poll = {};
+            callback(true, mdm->pathForSong(songID));
+            return;
+        }
+
+        if (++(*attempts) >= 30) {
+            *poll = {};
             callback(false, "");
+            return;
+        }
+
+        paimon::scheduleMainThreadDelay(1.0f, [poll]() {
+            if (*poll) {
+                (*poll)();
+            }
         });
-    }).detach();
+    };
+    (*poll)();
 }
 
 void ProfileMusicManager::getWaveformPeaks(int songID, WaveformCallback callback) {
@@ -1283,21 +1295,14 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     engine->m_backgroundMusicChannel->setVolume(std::max(0.0f, std::min(1.0f, vol)));
 
     int next = step + 1;
-    float stepMs = 400.0f / static_cast<float>(totalSteps); // 400ms total transition
+    float stepDelay = 400.0f / static_cast<float>(totalSteps) / 1000.f; // 400ms total transition
 
-    Loader::get()->queueInMainThread([this, next, totalSteps, cutoffFrom, cutoffTo,
-                                       freqFrom, freqTo, volFrom, volTo, applying, stepMs]() {
-        std::thread([this, next, totalSteps, cutoffFrom, cutoffTo,
-                     freqFrom, freqTo, volFrom, volTo, applying, stepMs]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([this, next, totalSteps, cutoffFrom, cutoffTo,
-                                               freqFrom, freqTo, volFrom, volTo, applying]() {
-                auto engine = FMODAudioEngine::sharedEngine();
-                if (!engine || !engine->m_backgroundMusicChannel) return;
-                executeCaveTransitionStep(next, totalSteps, cutoffFrom, cutoffTo,
-                    freqFrom, freqTo, volFrom, volTo, applying);
-            });
-        }).detach();
+    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, cutoffFrom, cutoffTo,
+                                                freqFrom, freqTo, volFrom, volTo, applying]() {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (!engine || !engine->m_backgroundMusicChannel) return;
+        executeCaveTransitionStep(next, totalSteps, cutoffFrom, cutoffTo,
+            freqFrom, freqTo, volFrom, volTo, applying);
     });
 }
 

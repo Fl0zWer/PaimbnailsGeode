@@ -12,6 +12,7 @@
 #include "../../thumbnails/services/LevelColors.hpp"
 #include "../../../utils/Localization.hpp"
 #include "../../../utils/HttpClient.hpp"
+#include "../../../utils/MainThreadDelay.hpp"
 #include <Geode/utils/web.hpp>
 #include <matjson.hpp>
 #include <Geode/binding/LevelInfoLayer.hpp>
@@ -20,8 +21,6 @@
 #include "../../../utils/Shaders.hpp"
 #include "../../../utils/SpriteHelper.hpp"
 #include <random>
-#include <thread>
-#include <chrono>
 #include <cmath>
 
 using namespace geode::prelude;
@@ -1313,22 +1312,18 @@ void LeaderboardLayer::executeCaveFade(int step, int totalSteps, float from, flo
         m_levelMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
-    float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
+    float stepDelay = (AUDIO_FADE_MS / static_cast<float>(totalSteps)) / 1000.f;
     int next = step + 1;
     int token = m_lifecycleToken;
 
-    // Ref<> en vez de retain/release manual pa seguridad de memoria
     Ref<LeaderboardLayer> safeRef = this;
-    std::thread([safeRef, next, totalSteps, from, to, fadeOut, stepMs, token]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, fadeOut, token]() {
-            if (!safeRef->getParent()) return;
-            if (safeRef->m_lifecycleToken != token) return;
-            if (fadeOut && !safeRef->m_isFadingCaveOut) return;
-            if (!fadeOut && !safeRef->m_isFadingCaveIn) return;
-            safeRef->executeCaveFade(next, totalSteps, from, to, fadeOut);
-        });
-    }).detach();
+    paimon::scheduleMainThreadDelay(stepDelay, [safeRef, next, totalSteps, from, to, fadeOut, token]() {
+        if (!safeRef->getParent()) return;
+        if (safeRef->m_lifecycleToken != token) return;
+        if (fadeOut && !safeRef->m_isFadingCaveOut) return;
+        if (!fadeOut && !safeRef->m_isFadingCaveIn) return;
+        safeRef->executeCaveFade(next, totalSteps, from, to, fadeOut);
+    });
 }
 
 void LeaderboardLayer::applyCaveEffect() {
@@ -1420,19 +1415,16 @@ void LeaderboardLayer::executeMenuFade(int step, int totalSteps, float from, flo
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
-    float stepMs = AUDIO_FADE_MS / static_cast<float>(totalSteps);
+    float stepDelay = (AUDIO_FADE_MS / static_cast<float>(totalSteps)) / 1000.f;
     int next = step + 1;
     int token = m_lifecycleToken;
 
     Ref<LeaderboardLayer> safeRef = this;
-    std::thread([safeRef, next, totalSteps, from, to, stepMs, token]() {
-        std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-        geode::Loader::get()->queueInMainThread([safeRef, next, totalSteps, from, to, token]() {
-            if (!safeRef->getParent()) return;
-            if (safeRef->m_lifecycleToken != token) return;
-            safeRef->executeMenuFade(next, totalSteps, from, to);
-        });
-    }).detach();
+    paimon::scheduleMainThreadDelay(stepDelay, [safeRef, next, totalSteps, from, to, token]() {
+        if (!safeRef->getParent()) return;
+        if (safeRef->m_lifecycleToken != token) return;
+        safeRef->executeMenuFade(next, totalSteps, from, to);
+    });
 }
 
 void LeaderboardLayer::ensureBgSilenced() {

@@ -144,7 +144,7 @@ void ModeratorsLayer::fetchModerators() {
 }
 
 void ModeratorsLayer::fetchGDBrowserProfile(std::string const& username) {
-    std::string url = "https://gdbrowser.com/api/profile/" + username;
+    std::string url = "https://gdbrowser.com/api/profile/" + HttpClient::encodeQueryParam(username);
     
     WeakRef<ModeratorsLayer> self = this;
 

@@ -1,11 +1,10 @@
 #include "DynamicSongManager.hpp"
+#include "../../../utils/MainThreadDelay.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/GameManager.hpp>
 #include <Geode/binding/LevelTools.hpp>
 #include <random>
-#include <thread>
-#include <chrono>
 #include <cmath>
 #include <sstream>
 #include <set>
@@ -410,21 +409,16 @@ void DynamicSongManager::executeDipFadeOut(int step, int totalSteps,
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
         
-    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
-    
-    Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, volTo, restoreMenu, stepMs]() {
-        std::thread([lifetimeToken, next, totalSteps, volFrom, volTo, restoreMenu, stepMs]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, volTo, restoreMenu]() {
-                if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
-                auto manager = DynamicSongManager::get();
-                if (!manager->m_isFadingOut) return;
-                manager->executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreMenu);
-            });
-        }).detach();
+    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, volTo, restoreMenu]() {
+        if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
+
+        auto manager = DynamicSongManager::get();
+        if (!manager->m_isFadingOut) return;
+        manager->executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreMenu);
     });
 }
 
@@ -450,21 +444,16 @@ void DynamicSongManager::executeDipFadeIn(int step, int totalSteps,
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
-    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
 
-    Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, volTo, stepMs]() {
-        std::thread([lifetimeToken, next, totalSteps, volFrom, volTo, stepMs]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, volTo]() {
-                if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
+    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, volTo]() {
+        if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
-                auto manager = DynamicSongManager::get();
-                if (!manager->m_isFadingIn) return;
-                manager->executeDipFadeIn(next, totalSteps, volFrom, volTo);
-            });
-        }).detach();
+        auto manager = DynamicSongManager::get();
+        if (!manager->m_isFadingIn) return;
+        manager->executeDipFadeIn(next, totalSteps, volFrom, volTo);
     });
 }
 
@@ -512,21 +501,16 @@ void DynamicSongManager::executeLevelStartFade(int step, int totalSteps, float v
         engine->m_backgroundMusicChannel->setVolume(std::max(0.f, std::min(1.f, vol)));
     }
 
-    float stepMs = getFadeDurationMs() / static_cast<float>(totalSteps);
+    float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
 
-    Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom, stepMs]() {
-        std::thread([lifetimeToken, next, totalSteps, volFrom, stepMs]() {
-            std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(stepMs)));
-            Loader::get()->queueInMainThread([lifetimeToken, next, totalSteps, volFrom]() {
-                if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
+    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom]() {
+        if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
-                auto manager = DynamicSongManager::get();
-                if (!manager->m_isFadingOut) return;
-                manager->executeLevelStartFade(next, totalSteps, volFrom);
-            });
-        }).detach();
+        auto manager = DynamicSongManager::get();
+        if (!manager->m_isFadingOut) return;
+        manager->executeLevelStartFade(next, totalSteps, volFrom);
     });
 }
 

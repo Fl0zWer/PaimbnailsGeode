@@ -60,7 +60,7 @@ void ButtonLayoutManager::save() {
                 + std::to_string(layout.scale) + "|" + std::to_string(layout.opacity) + "\n";
         }
     }
-    auto res = file::writeString(filePath, data);
+    auto res = file::writeStringSafe(filePath, data);
     if (!res) {
         log::error("[ButtonLayoutManager] no se pudo escribir archivo diseno: {}", res.unwrapErr());
         return;
@@ -90,7 +90,7 @@ void ButtonLayoutManager::saveDefaults() {
                 + std::to_string(layout.scale) + "|" + std::to_string(layout.opacity) + "\n";
         }
     }
-    auto res = file::writeString(filePath, data);
+    auto res = file::writeStringSafe(filePath, data);
     if (!res) {
         log::warn("[ButtonLayoutManager] no se pudo escribir defaults: {}", res.unwrapErr());
         return;

@@ -17,6 +17,15 @@ static float getContentScaleFactorSafe() {
     return 1.0f;
 }
 
+static size_t getSharedGIFDataSize(AnimatedGIFSprite::SharedGIFData const& data) {
+    size_t entrySize = 0;
+    for (auto* tex : data.textures) {
+        if (!tex) continue;
+        entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
+    }
+    return entrySize;
+}
+
 std::unordered_map<std::string, AnimatedGIFSprite::SharedGIFData> AnimatedGIFSprite::s_gifCache;
 std::list<std::string> AnimatedGIFSprite::s_lruList;
 std::unordered_map<std::string, std::list<std::string>::iterator> AnimatedGIFSprite::s_lruMap;
@@ -179,11 +188,7 @@ AnimatedGIFSprite* AnimatedGIFSprite::create(std::string const& filename) {
             s_gifCache[filename] = sharedData;
 
             // calculo tamano aproximado en RAM
-            size_t entrySize = 0;
-            for (auto* tex : sharedData.textures) {
-                entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
-            }
-            s_currentCacheSize += entrySize;
+            s_currentCacheSize += getSharedGIFDataSize(sharedData);
 
             if (!isPinned(filename)) {
                 s_lruList.push_back(filename);
@@ -271,12 +276,7 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
             s_gifCache[m_filename] = cacheEntry;
             
             // calculo tamano
-            size_t entrySize = 0;
-            for (auto* tex : cacheEntry.textures) {
-                // RGBA8888 = 4 bytes por pixel
-                entrySize += tex->getPixelsWide() * tex->getPixelsHigh() * 4;
-            }
-            s_currentCacheSize += entrySize;
+            s_currentCacheSize += getSharedGIFDataSize(cacheEntry);
 
             // actualizo lru O(1)
             if (!isPinned(m_filename)) {
@@ -605,10 +605,12 @@ void AnimatedGIFSprite::workerLoop() {
                     {
                         std::lock_guard<std::mutex> lock(s_cacheMutex);
                         s_gifCache[key] = cacheEntry;
+                        s_currentCacheSize += getSharedGIFDataSize(cacheEntry);
                         if (!isPinned(key)) {
                             s_lruList.push_back(key);
                             s_lruMap[key] = std::prev(s_lruList.end());
                         }
+                        evictIfNeeded();
                     }
 
                     log::info("[AnimatedGIFSprite] Cached complete GIF from data with key: {} ({} frames)", key, ret->m_frames.size());
@@ -777,6 +779,7 @@ void AnimatedGIFSprite::clearCache() {
     s_gifCache.clear();
     s_lruList.clear();
     s_lruMap.clear();
+    s_pinnedGIFs.clear();
     s_currentCacheSize = 0;
     PaimonDebug::log("[AnimatedGIFSprite] Cache cleared");
 }

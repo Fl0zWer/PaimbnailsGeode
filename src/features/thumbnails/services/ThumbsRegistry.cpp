@@ -1,8 +1,8 @@
 #include "ThumbsRegistry.hpp"
+#include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/utils/file.hpp>
 #include <filesystem>
-#include <fstream>
 #include <sstream>
 
 using namespace geode::prelude;
@@ -51,9 +51,10 @@ void ThumbsRegistry::save() const {
     auto p = path();
     std::error_code ec;
     std::filesystem::create_directories(p.parent_path(), ec);
-    std::ofstream out(p, std::ios::binary);
-    out << ss.str();
-    out.close();
+    auto res = file::writeStringSafe(p, ss.str());
+    if (!res) {
+        log::warn("[ThumbsRegistry] Failed to save registry: {}", res.unwrapErr());
+    }
 }
 
 void ThumbsRegistry::mark(ThumbKind kind, int id, bool verified) {
@@ -84,4 +85,3 @@ std::vector<ThumbRecord> ThumbsRegistry::list(ThumbKind kind, bool onlyUnverifie
     }
     return out;
 }
-

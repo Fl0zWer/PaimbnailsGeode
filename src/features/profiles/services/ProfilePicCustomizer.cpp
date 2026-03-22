@@ -86,13 +86,9 @@ void ProfilePicCustomizer::save() {
     }
     root["decorations"] = decoArray;
 
-    auto jsonStr = root.dump();
-    std::ofstream out(savePath);
-    if (out) {
-        out << jsonStr;
-        out.close();
-    } else {
-        log::error("[ProfilePicCustomizer] Failed to open file for saving");
+    auto res = file::writeStringSafe(savePath, root.dump());
+    if (!res) {
+        log::error("[ProfilePicCustomizer] Failed to save config: {}", res.unwrapErr());
         return;
     }
 

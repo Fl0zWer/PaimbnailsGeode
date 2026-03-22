@@ -215,7 +215,8 @@ std::vector<std::string> PetManager::getGalleryImages() const {
     std::error_code ec;
     if (!std::filesystem::exists(dir, ec) || ec) return result;
 
-    for (auto& entry : std::filesystem::directory_iterator(dir)) {
+    for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (ec) break;
         if (!entry.is_regular_file()) continue;
         auto ext = geode::utils::string::pathToString(entry.path().extension());
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);

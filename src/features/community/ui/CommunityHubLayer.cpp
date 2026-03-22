@@ -340,7 +340,7 @@ void CommunityHubLayer::loadModerators() {
 }
 
 void CommunityHubLayer::fetchGDBrowserProfile(std::string const& username, std::string const& role) {
-    std::string url = "https://gdbrowser.com/api/profile/" + username;
+    std::string url = "https://gdbrowser.com/api/profile/" + HttpClient::encodeQueryParam(username);
 
     WeakRef<CommunityHubLayer> self = this;
     auto req = web::WebRequest();
