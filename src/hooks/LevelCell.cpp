@@ -171,6 +171,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         PaimonBgType m_cachedBgType = PaimonBgType::Gradient;
         PaimonGalleryTransition m_cachedGalleryTransition = PaimonGalleryTransition::Crossfade;
         float m_cachedTransitionDuration = 0.6f;
+        bool m_isGalleryTransitioning = false; // guard: true while a gallery transition is animating
 
         // version de invalidacion: si cambia, recargar miniatura
         int m_loadedInvalidationVersion = 0;
@@ -1225,6 +1226,22 @@ class $modify(PaimonLevelCell, LevelCell) {
         applyGalleryTransition(sprite, nullptr, type, dur, clipSize);
     }
 
+    // Marca fin de transicion de galeria (permite que hover animation retome control)
+    void endGalleryTransition(float /*dt*/) {
+        auto fields = m_fields.self();
+        if (fields) fields->m_isGalleryTransitioning = false;
+    }
+
+    // Activa el guard de transicion y programa su fin tras la duracion dada
+    void beginGalleryTransitionGuard(float dur) {
+        auto fields = m_fields.self();
+        if (!fields) return;
+        fields->m_isGalleryTransitioning = true;
+        // cancelar callback anterior si habia una transicion previa aun pendiente
+        this->unschedule(schedule_selector(PaimonLevelCell::endGalleryTransition));
+        this->scheduleOnce(schedule_selector(PaimonLevelCell::endGalleryTransition), dur + 0.1f);
+    }
+
     void crossfadeToThumb(CCTexture2D* texture) {
         if (!texture) return;
         auto fields = m_fields.self();
@@ -1247,15 +1264,23 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
         newSprite->setID("paimon-thumbnail"_spr);
 
-        // copy visual properties from old sprite
-        newSprite->setScaleX(oldSprite->getScaleX());
-        newSprite->setScaleY(oldSprite->getScaleY());
-        newSprite->setPosition(oldSprite->getPosition());
+        // use BASE visual properties (not hover-modified) so transitions
+        // animate from/to the correct resting state
+        newSprite->setScaleX(fields->m_thumbBaseScaleX);
+        newSprite->setScaleY(fields->m_thumbBaseScaleY);
+        newSprite->setPosition(fields->m_thumbBasePos);
         newSprite->setAnchorPoint(oldSprite->getAnchorPoint());
         newSprite->setSkewX(oldSprite->getSkewX());
         newSprite->setSkewY(oldSprite->getSkewY());
         newSprite->setZOrder(oldSprite->getZOrder());
         newSprite->setColor(oldSprite->getColor());
+
+        // reset old sprite to base state before animating it out
+        oldSprite->setPosition(fields->m_thumbBasePos);
+        oldSprite->setScaleX(fields->m_thumbBaseScaleX);
+        oldSprite->setScaleY(fields->m_thumbBaseScaleY);
+        oldSprite->setRotation(0.0f);
+        oldSprite->setOpacity(255);
 
         // apply same shader if thumbnail bg type
         std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
@@ -1277,6 +1302,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         CCSize clipSize = fields->m_clippingNode->getContentSize();
 
         fields->m_clippingNode->addChild(newSprite);
+        beginGalleryTransitionGuard(dur);
         applyGalleryTransition(newSprite, oldSprite, transType, dur, clipSize);
 
         fields->m_thumbSprite = newSprite;
@@ -1381,6 +1407,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                 auto transType = fields->m_cachedGalleryTransition;
                 float dur = fields->m_cachedTransitionDuration;
                 CCSize clipSize = fields->m_clippingNode->getContentSize();
+                beginGalleryTransitionGuard(dur);
                 applyEntryTransition(fields->m_thumbSprite, transType, dur, clipSize);
             }
 
@@ -1751,7 +1778,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_separator->setRotation(rotation);
         }
 
-        if (fields->m_thumbSprite) {
+        if (fields->m_thumbSprite && !fields->m_isGalleryTransitioning) {
             fields->m_thumbSprite->setScale(fields->m_thumbBaseScaleX * zoomFactor);
             fields->m_thumbSprite->setRotation(spriteRotation);
             fields->m_thumbSprite->setPosition(fields->m_thumbBasePos + CCPoint(spriteOffsetX, 0.0f));
