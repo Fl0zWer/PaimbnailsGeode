@@ -456,15 +456,11 @@ void LeaderboardHistoryLayer::createList() {
         content->addChild(cell);
 
         // fondo de celda alternado
-        auto cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-        if (!cellBg) cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-        if (cellBg) {
-            cellBg->setColor(p % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32});
-            cellBg->setOpacity(200);
-            cellBg->setContentSize(cell->getContentSize());
-            cellBg->setPosition(cell->getContentSize() / 2);
-            cell->addChild(cellBg, 0);
-        }
+        auto cellBg = paimon::SpriteHelper::createColorPanel(
+            listW, cellH - 2.f,
+            p % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
+        cellBg->setPosition({0, 0});
+        cell->addChild(cellBg, 0);
 
         // miniatura
         float thumbSize = cellH - 8.f;

@@ -142,7 +142,7 @@ private:
     static void shutdownWorker();
 
 public:
-    void play() { m_isPlaying = true; }
+    void play() { m_isPlaying = true; this->scheduleUpdate(); }
     void pause() { m_isPlaying = false; }
     void stop() { 
         m_isPlaying = false; 

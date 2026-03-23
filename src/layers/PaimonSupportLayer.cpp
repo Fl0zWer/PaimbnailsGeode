@@ -282,11 +282,8 @@ void PaimonSupportLayer::createBadgePanel() {
     float panelY = winSize.height * 0.52f;
 
     // fondo panel badge
-    auto panelBg = CCScale9Sprite::create("square02_001.png");
-    panelBg->setColor({40, 20, 70});
-    panelBg->setOpacity(180);
-    panelBg->setContentSize({panelW, panelH});
-    panelBg->setPosition({panelX, panelY});
+    auto panelBg = paimon::SpriteHelper::createColorPanel(panelW, panelH, {40, 20, 70}, 180);
+    panelBg->setPosition({panelX - panelW / 2, panelY - panelH / 2});
     this->addChild(panelBg, 1);
 
     // borde dorado
@@ -365,11 +362,8 @@ void PaimonSupportLayer::createBenefitsPanel() {
     float panelY = winSize.height * 0.52f;
 
     // fondo panel beneficios
-    auto panelBg = CCScale9Sprite::create("square02_001.png");
-    panelBg->setColor({20, 15, 50});
-    panelBg->setOpacity(180);
-    panelBg->setContentSize({panelW, panelH});
-    panelBg->setPosition({panelX, panelY});
+    auto panelBg = paimon::SpriteHelper::createColorPanel(panelW, panelH, {20, 15, 50}, 180);
+    panelBg->setPosition({panelX - panelW / 2, panelY - panelH / 2});
     this->addChild(panelBg, 1);
 
     // borde

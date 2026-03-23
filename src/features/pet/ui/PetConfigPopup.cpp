@@ -1,5 +1,6 @@
 #include "PetConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "PaimonShopPopup.hpp"
 #include "../services/PetManager.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -134,10 +135,8 @@ void PetConfigPopup::buildGalleryTab() {
     }
 
     // preview area
-    auto previewBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    previewBg->setContentSize({80, 80});
-    previewBg->setOpacity(80);
-    previewBg->setPosition({cx, content.height - 95.f});
+    auto previewBg = paimon::SpriteHelper::createDarkPanel(80, 80, 80);
+    previewBg->setPosition({cx - 40, content.height - 95.f - 40});
     m_galleryTab->addChild(previewBg);
 
     m_selectedLabel = CCLabelBMFont::create("No pet selected", "bigFont.fnt");
@@ -216,12 +215,12 @@ void PetConfigPopup::refreshGallery() {
         float y = startY - row * (cellSize + padding);
 
         // background
-        auto bg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-        bg->setContentSize({cellSize, cellSize});
-        bg->setPosition({x, y});
         bool isSelected = (images[i] == pet.config().selectedImage);
-        bg->setColor(isSelected ? ccc3(0, 200, 0) : ccc3(50, 50, 50));
-        bg->setOpacity(isSelected ? 180 : 100);
+        auto bg = paimon::SpriteHelper::createColorPanel(
+            cellSize, cellSize,
+            isSelected ? ccc3(0, 200, 0) : ccc3(50, 50, 50),
+            isSelected ? 180 : 100);
+        bg->setPosition({x - cellSize / 2, y - cellSize / 2});
         m_galleryContainer->addChild(bg);
 
         // thumbnail

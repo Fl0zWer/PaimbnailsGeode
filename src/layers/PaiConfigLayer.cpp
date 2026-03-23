@@ -208,11 +208,8 @@ void PaiConfigLayer::buildBackgroundTab() {
     float sidebarX = sidebarW / 2 + 8;
 
     // Sidebar dark panel
-    auto sidePanel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    sidePanel->setContentSize({sidebarW, contentH});
-    sidePanel->setColor({0, 0, 0});
-    sidePanel->setOpacity(70);
-    sidePanel->setPosition({sidebarX, contentBot + contentH / 2});
+    auto sidePanel = paimon::SpriteHelper::createDarkPanel(sidebarW, contentH, 70);
+    sidePanel->setPosition({sidebarX - sidebarW / 2, contentBot});
     m_bgTab->addChild(sidePanel, 0);
 
     auto& layers = LayerBackgroundManager::LAYER_OPTIONS;
@@ -247,11 +244,8 @@ void PaiConfigLayer::buildBackgroundTab() {
     float ctrlPanelH = 80;
     float ctrlPanelY = contentTop - ctrlPanelH / 2 - 2;
 
-    auto ctrlPanel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    ctrlPanel->setContentSize({rightW, ctrlPanelH});
-    ctrlPanel->setColor({0, 0, 0});
-    ctrlPanel->setOpacity(55);
-    ctrlPanel->setPosition({rightCx, ctrlPanelY});
+    auto ctrlPanel = paimon::SpriteHelper::createDarkPanel(rightW, ctrlPanelH, 55);
+    ctrlPanel->setPosition({rightCx - rightW / 2, ctrlPanelY - ctrlPanelH / 2});
     m_bgTab->addChild(ctrlPanel, 0);
 
     // Title + info
@@ -290,10 +284,8 @@ void PaiConfigLayer::buildBackgroundTab() {
     // Row 2: ID + Dark + Intensity
     float row2 = row1 - 22;
 
-    auto inputBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    inputBg->setContentSize({65, 20});
-    inputBg->setOpacity(80);
-    inputBg->setPosition({rightX + 42, row2});
+    auto inputBg = paimon::SpriteHelper::createDarkPanel(65, 20, 80);
+    inputBg->setPosition({rightX + 42 - 32.5f, row2 - 10.f});
     m_bgTab->addChild(inputBg, 1);
 
     m_bgIdInput = TextInput::create(58, tr("pai.config.background.level_id", "Level ID").c_str());
@@ -363,11 +355,8 @@ void PaiConfigLayer::buildBackgroundTab() {
     float previewH = contentH - ctrlPanelH - 12;
     float previewY = contentBot + previewH / 2 + 2;
 
-    auto previewPanel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    previewPanel->setContentSize({rightW, previewH});
-    previewPanel->setColor({0, 0, 0});
-    previewPanel->setOpacity(55);
-    previewPanel->setPosition({rightCx, previewY});
+    auto previewPanel = paimon::SpriteHelper::createDarkPanel(rightW, previewH, 55);
+    previewPanel->setPosition({rightCx - rightW / 2, previewY - previewH / 2});
     m_bgTab->addChild(previewPanel, 0);
 
     auto prevTitle = CCLabelBMFont::create(tr("pai.config.preview", "Preview").c_str(), "goldFont.fnt");
@@ -421,11 +410,8 @@ void PaiConfigLayer::buildProfileTab() {
     // ── Dark panel ──
     float panelW = 420;
     float panelH = 150;
-    auto panel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    panel->setContentSize({panelW, panelH});
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(60);
-    panel->setPosition({cx, contentMid});
+    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 60);
+    panel->setPosition({cx - panelW / 2, contentMid - panelH / 2});
     m_profileTab->addChild(panel, 0);
 
     // Title
@@ -490,11 +476,8 @@ void PaiConfigLayer::buildProfileTab() {
     m_profileTab->addChild(m_profilePreview, 5);
 
     // Dark circle background for preview
-    auto previewBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    previewBg->setContentSize({90, 90});
-    previewBg->setColor({0, 0, 0});
-    previewBg->setOpacity(80);
-    previewBg->setPosition({previewX, previewY});
+    auto previewBg = paimon::SpriteHelper::createDarkPanel(90, 90, 80);
+    previewBg->setPosition({previewX - 45, previewY - 45});
     m_profileTab->addChild(previewBg, -1);
 
     rebuildProfilePreview();
@@ -512,11 +495,8 @@ void PaiConfigLayer::buildExtrasTab() {
     // ── Dark panel ──
     float panelW = 320;
     float panelH = 160;
-    auto panel = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    panel->setContentSize({panelW, panelH});
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(60);
-    panel->setPosition({cx, contentMid});
+    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 60);
+    panel->setPosition({cx - panelW / 2, contentMid - panelH / 2});
     m_extrasTab->addChild(panel, 0);
 
     auto extTitle = CCLabelBMFont::create(tr("pai.config.extras.title", "Extras").c_str(), "goldFont.fnt");

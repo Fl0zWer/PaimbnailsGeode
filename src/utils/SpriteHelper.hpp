@@ -72,6 +72,72 @@ struct SpriteHelper {
         if (!frame || frame->isUsingFallback()) return nullptr;
         return cocos2d::extension::CCScale9Sprite::createWithSpriteFrame(frame);
     }
+
+    // Crea un rectangulo redondeado con CCDrawNode (geometria pura).
+    // No depende de texturas del juego ni de CCScale9Sprite.
+    // Inmune a HappyTextures y actualizaciones de GD.
+    static cocos2d::CCDrawNode* createRoundedRect(
+        float width, float height,
+        float radius,
+        cocos2d::ccColor4F fillColor
+    ) {
+        auto node = cocos2d::CCDrawNode::create();
+        if (!node) return nullptr;
+
+        // clampear radio pa que no exceda la mitad del lado mas corto
+        float maxR = std::min(width, height) * 0.5f;
+        if (radius > maxR) radius = maxR;
+        if (radius < 0.f) radius = 0.f;
+
+        constexpr int kSegments = 8; // puntos por esquina
+        std::vector<cocos2d::CCPoint> pts;
+        pts.reserve(4 * kSegments);
+
+        auto addArc = [&](float cx, float cy, float startAngle) {
+            for (int i = 0; i <= kSegments; ++i) {
+                float angle = startAngle + (static_cast<float>(M_PI) * 0.5f) *
+                    (static_cast<float>(i) / static_cast<float>(kSegments));
+                pts.push_back(ccp(cx + cosf(angle) * radius, cy + sinf(angle) * radius));
+            }
+        };
+
+        // esquinas: bottom-left, bottom-right, top-right, top-left
+        addArc(radius, radius, static_cast<float>(M_PI));                    // BL (180..270)
+        addArc(width - radius, radius, static_cast<float>(M_PI) * 1.5f);    // BR (270..360)
+        addArc(width - radius, height - radius, 0.f);                        // TR (0..90)
+        addArc(radius, height - radius, static_cast<float>(M_PI) * 0.5f);   // TL (90..180)
+
+        cocos2d::ccColor4F borderColor = {0, 0, 0, 0};
+        node->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()),
+                          fillColor, 0.f, borderColor);
+
+        node->setContentSize(cocos2d::CCSize(width, height));
+        return node;
+    }
+
+    // Shortcut: panel oscuro con opacidad (reemplazo directo de
+    // CCScale9Sprite::create("square02_001.png") + setColor({0,0,0}) + setOpacity).
+    static cocos2d::CCDrawNode* createDarkPanel(
+        float width, float height,
+        GLubyte opacity,
+        float radius = 4.f
+    ) {
+        cocos2d::ccColor4F fill = {0.f, 0.f, 0.f, opacity / 255.f};
+        return createRoundedRect(width, height, radius, fill);
+    }
+
+    // Panel con color y opacidad customizados.
+    static cocos2d::CCDrawNode* createColorPanel(
+        float width, float height,
+        cocos2d::ccColor3B color,
+        GLubyte opacity,
+        float radius = 4.f
+    ) {
+        cocos2d::ccColor4F fill = {
+            color.r / 255.f, color.g / 255.f, color.b / 255.f, opacity / 255.f
+        };
+        return createRoundedRect(width, height, radius, fill);
+    }
 };
 
 } // namespace paimon

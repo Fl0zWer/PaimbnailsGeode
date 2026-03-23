@@ -1,5 +1,6 @@
 #include "VerificationCenterLayer.hpp"
 #include "../../../framework/state/SessionState.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonButtonHighlighter.hpp"
@@ -158,11 +159,7 @@ bool VerificationCenterLayer::init() {
     float listY = 35.f;
 
     // fondo lista
-    auto listBg = CCScale9Sprite::create("square02_001.png");
-    listBg->setColor({0, 0, 0});
-    listBg->setOpacity(80);
-    listBg->setContentSize({listW, listH});
-    listBg->setAnchorPoint({0, 0});
+    auto listBg = paimon::SpriteHelper::createDarkPanel(listW, listH, 80);
     listBg->setPosition({listX, listY});
     this->addChild(listBg, 0);
 
@@ -189,11 +186,7 @@ bool VerificationCenterLayer::init() {
     float previewH = listH;
     float previewY = listY;
 
-    auto previewBg = CCScale9Sprite::create("square02_001.png");
-    previewBg->setColor({0, 0, 0});
-    previewBg->setOpacity(60);
-    previewBg->setContentSize({previewW, previewH});
-    previewBg->setAnchorPoint({0, 0});
+    auto previewBg = paimon::SpriteHelper::createDarkPanel(previewW, previewH, 60);
     previewBg->setPosition({previewX, previewY});
     this->addChild(previewBg, 0);
 
@@ -418,12 +411,10 @@ CCNode* VerificationCenterLayer::createRowForItem(const PendingItem& item, float
     row->setAnchorPoint({0, 0});
 
     // fondo alterno
-    auto rowBg = CCScale9Sprite::create("square02_001.png");
-    rowBg->setColor(index % 2 == 0 ? ccColor3B{30, 30, 50} : ccColor3B{20, 20, 35});
-    rowBg->setOpacity(100);
-    rowBg->setContentSize({width - 4.f, 40.f});
-    rowBg->setAnchorPoint({0, 0.5f});
-    rowBg->setPosition({2.f, 21.f});
+    auto rowBg = paimon::SpriteHelper::createColorPanel(
+        width - 4.f, 40.f,
+        index % 2 == 0 ? ccColor3B{30, 30, 50} : ccColor3B{20, 20, 35}, 100);
+    rowBg->setPosition({2.f, 21.f - 20.f});
     rowBg->setTag(1000 + index); // pa highlight
     row->addChild(rowBg, -1);
 

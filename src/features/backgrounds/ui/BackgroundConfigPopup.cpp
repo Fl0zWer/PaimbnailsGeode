@@ -1,5 +1,6 @@
 #include "BackgroundConfigPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../../pet/ui/PetConfigPopup.hpp"
 #include "SameAsPickerPopup.hpp"
 #include "../../../utils/PaimonNotification.hpp"
@@ -133,11 +134,8 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
     float centerX = size.width / 2;
 
     // seccion fuente
-    auto bgSection = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    bgSection->setContentSize({380, 110});
-    bgSection->setColor({0, 0, 0});
-    bgSection->setOpacity(60);
-    bgSection->setPosition({centerX, centerY + 20});
+    auto bgSection = paimon::SpriteHelper::createDarkPanel(380, 110, 60);
+    bgSection->setPosition({centerX - 190, centerY + 20 - 55});
     node->addChild(bgSection);
 
     auto btnMenu = CCMenu::create();
@@ -162,10 +160,8 @@ CCNode* BackgroundConfigPopup::createMenuTab() {
 
 
     // entrada id
-    auto inputBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    inputBg->setContentSize({100, 30});
-    inputBg->setOpacity(100);
-    inputBg->setPosition({centerX - 40, centerY - 10});
+    auto inputBg = paimon::SpriteHelper::createDarkPanel(100, 30, 100);
+    inputBg->setPosition({centerX - 40 - 50, centerY - 10 - 15});
     node->addChild(inputBg);
 
     m_idInput = TextInput::create(90, "Level ID");
@@ -286,57 +282,6 @@ void BackgroundConfigPopup::onAdaptiveColors(CCObject* sender) {
     if (!toggle) return;
     Mod::get()->setSavedValue("bg-adaptive-colors", !toggle->isToggled());
     (void)Mod::get()->saveData();
-}
-
-CCNode* BackgroundConfigPopup::createProfileTab() {
-    auto node = CCNode::create();
-    auto size = m_mainLayer->getContentSize();
-    float centerX = size.width / 2;
-    float centerY = size.height / 2;
-
-    auto btnMenu = CCMenu::create();
-    btnMenu->setPosition({0, 0});
-    node->addChild(btnMenu);
-
-    // info
-    auto info = CCLabelBMFont::create("Set a custom background for your Profile.\nSupports Images and GIFs.", "chatFont.fnt");
-    info->setAlignment(kCCTextAlignmentCenter);
-    info->setScale(0.7f);
-    info->setColor({200, 200, 200});
-    info->setPosition({centerX, centerY + 50});
-    node->addChild(info);
-
-    // btns
-    createBtn("Select Image / GIF", {centerX, centerY}, menu_selector(BackgroundConfigPopup::onProfileCustomImage), btnMenu);
-
-    {
-        auto iBtn = PaimonInfo::createInfoBtn("Profile Background",
-            "Select a <cy>PNG, JPG, or GIF</c> as your profile page background.\n\n"
-            "GIF images will be <cg>animated</c> behind your profile!\n"
-            "Use <cy>Clear Background</c> to remove it.\n"
-            "Use <cy>Customize Photo</c> to edit your profile picture shape, border, and effects.", this, 0.3f);
-        if (iBtn) {
-            iBtn->setPosition({centerX + 110.f, centerY});
-            btnMenu->addChild(iBtn);
-        }
-    }
-
-    auto clearSpr = ButtonSprite::create("Clear Background", "goldFont.fnt", "GJ_button_05.png", .8f); // rojo
-    clearSpr->setScale(0.6f);
-    auto clearBtn = CCMenuItemSpriteExtra::create(clearSpr, this, menu_selector(BackgroundConfigPopup::onProfileClear));
-    clearBtn->setID("clear-profile-bg-btn"_spr);
-    clearBtn->setPosition({centerX, centerY - 50});
-    btnMenu->addChild(clearBtn);
-
-    // boton de personalizar foto de perfil
-    auto customizeSpr = ButtonSprite::create("Customize Photo", "goldFont.fnt", "GJ_button_03.png", .8f);
-    customizeSpr->setScale(0.6f);
-    auto customizeBtn = CCMenuItemSpriteExtra::create(customizeSpr, this, menu_selector(BackgroundConfigPopup::onCustomizePhoto));
-    customizeBtn->setID("customize-photo-btn"_spr);
-    customizeBtn->setPosition({centerX, centerY - 95});
-    btnMenu->addChild(customizeBtn);
-
-    return node;
 }
 
 CCMenuItemSpriteExtra* BackgroundConfigPopup::createBtn(char const* text, CCPoint pos, SEL_MenuHandler handler, CCNode* parent) {
@@ -582,10 +527,8 @@ CCNode* BackgroundConfigPopup::createLayerBgTab() {
 
     // ── Level ID input ──
     float idY = actionY - 40;
-    auto inputBg = cocos2d::extension::CCScale9Sprite::create("square02_001.png");
-    inputBg->setContentSize({100, 30});
-    inputBg->setOpacity(100);
-    inputBg->setPosition({cx - 40, idY});
+    auto inputBg = paimon::SpriteHelper::createDarkPanel(100, 30, 100);
+    inputBg->setPosition({cx - 40 - 50, idY - 15});
     node->addChild(inputBg);
 
     m_layerIdInput = TextInput::create(90, "Level ID");

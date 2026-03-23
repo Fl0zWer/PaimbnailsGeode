@@ -54,14 +54,8 @@ bool ProfilePicEditorPopup::init() {
     m_mainLayer->addChild(m_previewContainer, 10);
 
     // Fondo del preview
-    auto previewBg = safeCreateScale9("square02_001.png");
-    if (!previewBg) previewBg = safeCreateScale9("GJ_square01.png");
-    if (!previewBg) return false;
-    previewBg->setContentSize({150, 150});
-    previewBg->setColor({0, 0, 0});
-    previewBg->setOpacity(80);
-    previewBg->setAnchorPoint({0.5f, 0.5f});
-    previewBg->setPosition({85, winSize.height / 2});
+    auto previewBg = paimon::SpriteHelper::createDarkPanel(150, 150, 80);
+    previewBg->setPosition({85 - 75, winSize.height / 2 - 75});
     m_mainLayer->addChild(previewBg, 5);
 
     auto previewLabel = CCLabelBMFont::create("Preview", "goldFont.fnt");
@@ -74,14 +68,8 @@ bool ProfilePicEditorPopup::init() {
     float panelW = 300;
 
     // Fondo del panel
-    auto panelBg = safeCreateScale9("square02_001.png");
-    if (!panelBg) panelBg = safeCreateScale9("GJ_square01.png");
-    if (!panelBg) return false;
-    panelBg->setContentSize({panelW, 230});
-    panelBg->setColor({0, 0, 0});
-    panelBg->setOpacity(50);
-    panelBg->setAnchorPoint({0.5f, 0.5f});
-    panelBg->setPosition({panelX, winSize.height / 2 + 5});
+    auto panelBg = paimon::SpriteHelper::createDarkPanel(panelW, 230, 50);
+    panelBg->setPosition({panelX - panelW / 2, winSize.height / 2 + 5 - 115});
     m_mainLayer->addChild(panelBg, 5);
 
     // === Tabs ===

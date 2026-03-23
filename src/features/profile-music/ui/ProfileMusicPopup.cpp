@@ -87,11 +87,10 @@ void ProfileMusicPopup::createWaveformDisplay() {
     m_waveformY = winSize.height - 140.f;
 
     // Fondo estilo GD
-    auto waveformBg = CCScale9Sprite::create("square02b_001.png", {0, 0, 80, 80});
-    waveformBg->setContentSize({m_waveformWidth + 10.f, m_waveformHeight + 10.f});
-    waveformBg->setColor({0, 0, 0});
-    waveformBg->setOpacity(180);
-    waveformBg->setPosition({winSize.width / 2, m_waveformY + m_waveformHeight / 2});
+    float wfBgW = m_waveformWidth + 10.f;
+    float wfBgH = m_waveformHeight + 10.f;
+    auto waveformBg = paimon::SpriteHelper::createDarkPanel(wfBgW, wfBgH, 180);
+    waveformBg->setPosition({winSize.width / 2 - wfBgW / 2, m_waveformY + m_waveformHeight / 2 - wfBgH / 2});
     m_mainLayer->addChild(waveformBg);
 
     // Waveform container

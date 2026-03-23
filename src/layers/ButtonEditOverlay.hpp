@@ -31,8 +31,8 @@ protected:
     bool m_isClosing = false;
     
     cocos2d::CCLayerColor* m_darkBG = nullptr;
-    cocos2d::extension::CCScale9Sprite* m_selectionHighlight = nullptr;
-    std::unordered_map<std::string, cocos2d::extension::CCScale9Sprite*> m_buttonHighlights;
+    cocos2d::CCDrawNode* m_selectionHighlight = nullptr;
+    std::unordered_map<std::string, cocos2d::CCDrawNode*> m_buttonHighlights;
     
     cocos2d::CCMenu* m_controlsMenu = nullptr;
     Slider* m_scaleSlider = nullptr;

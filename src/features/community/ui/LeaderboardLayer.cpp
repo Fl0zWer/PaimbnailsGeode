@@ -500,44 +500,28 @@ void LeaderboardLayer::createList(std::string type) {
     card->runAction(CCEaseBackOut::create(CCScaleTo::create(0.4f, 1.0f)));
 
     // ── fondo de la tarjeta ──────────────────────────────
-    auto cardBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-    if (!cardBg) cardBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-    if (cardBg) {
-        cardBg->setColor({14, 14, 22});
-        cardBg->setOpacity(230);
-        cardBg->setContentSize({cardW, cardH});
-        cardBg->setPosition(CCSize{cardW, cardH} / 2);
-        card->addChild(cardBg, 0);
-    }
+    auto cardBg = paimon::SpriteHelper::createColorPanel(cardW, cardH, {14, 14, 22}, 230);
+    cardBg->setPosition({0, 0});
+    card->addChild(cardBg, 0);
 
     // ── borde sutil ──────────────────────────────────────
-    auto border = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-    if (!border) border = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-    if (border) {
-        border->setColor({60, 60, 80});
-        border->setOpacity(100);
-        border->setContentSize({cardW + 4, cardH + 4});
-        border->setPosition(CCSize{cardW, cardH} / 2);
-        card->addChild(border, -1);
-    }
+    auto border = paimon::SpriteHelper::createColorPanel(cardW + 4, cardH + 4, {60, 60, 80}, 100);
+    border->setPosition({-2, -2});
+    card->addChild(border, -1);
 
     // ── badge DAILY / WEEKLY ─────────────────────────────
     bool isDaily = (type == "daily");
-    auto badgeBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-    if (!badgeBg) badgeBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-    if (badgeBg) {
-        badgeBg->setContentSize({80, 22});
-        badgeBg->setColor(isDaily ? ccColor3B{200, 150, 30} : ccColor3B{100, 80, 200});
-        badgeBg->setOpacity(220);
-        badgeBg->setPosition({cardW - 50, cardH - 5});
-        card->addChild(badgeBg, 10);
+    auto badgeBg = paimon::SpriteHelper::createColorPanel(
+        80, 22,
+        isDaily ? ccColor3B{200, 150, 30} : ccColor3B{100, 80, 200}, 220);
+    badgeBg->setPosition({cardW - 50 - 40, cardH - 5 - 11});
+    card->addChild(badgeBg, 10);
 
-        auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "goldFont.fnt");
-        badgeLbl->setScale(0.35f);
-        badgeLbl->setPosition(badgeBg->getContentSize() / 2);
-        badgeBg->addChild(badgeLbl);
-        badgeLbl->setTag(TAG_BADGE_LABEL);
-    }
+    auto badgeLbl = CCLabelBMFont::create(isDaily ? "DAILY" : "WEEKLY", "goldFont.fnt");
+    badgeLbl->setScale(0.35f);
+    badgeLbl->setPosition({40, 11});
+    badgeBg->addChild(badgeLbl);
+    badgeLbl->setTag(TAG_BADGE_LABEL);
 
     // ── thumbnail (lado izquierdo ~55%) ──────────────────
     float thumbW = cardW * 0.52f;

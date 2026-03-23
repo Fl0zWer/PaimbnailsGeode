@@ -291,28 +291,9 @@ void LocalThumbnailViewPopup::setupRating() {
     ratingContainer->setPosition({contentSize.width / 2.f, 237.f});
     m_mainLayer->addChild(ratingContainer, 100);
 
-    if (!CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName("square02_001.png")) {
-        CCSpriteFrameCache::sharedSpriteFrameCache()->addSpriteFramesWithFile("GJ_GameSheet03.plist");
-    }
-
-    auto bg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-
-    if (!bg) {
-         bg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-    }
-
-    if (bg) {
-        bg->setContentSize({74.f, 16.f});
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(125);
-        bg->setPosition({0.f, 0.f});
-        ratingContainer->addChild(bg, -1);
-    } else {
-         auto fallback = CCLayerColor::create({0, 0, 0, 125});
-         fallback->setContentSize({74.f, 16.f});
-         fallback->setPosition({-37.f, -8.f});
-         ratingContainer->addChild(fallback, -1);
-    }
+    auto bg = paimon::SpriteHelper::createDarkPanel(74.f, 16.f, 125);
+    bg->setPosition({-37.f, -8.f});
+    ratingContainer->addChild(bg, -1);
 
     auto starSpr = paimon::SpriteHelper::safeCreateWithFrameName("GJ_starsIcon_001.png");
     if (!starSpr) starSpr = paimon::SpriteHelper::safeCreateWithFrameName("star_small01_001.png");

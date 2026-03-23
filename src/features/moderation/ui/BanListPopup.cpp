@@ -1,5 +1,6 @@
 #include "BanListPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
 
@@ -35,11 +36,8 @@ bool BanListPopup::init() {
     float panelH = content.height - 60.f;
     float panelY = content.height / 2.f - 10.f;
 
-    auto panel = CCScale9Sprite::create("square02_001.png");
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(70);
-    panel->setContentSize({panelW, panelH});
-    panel->setPosition({cx, panelY});
+    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 70);
+    panel->setPosition({cx - panelW / 2, panelY - panelH / 2});
     panel->setID("list-panel"_spr);
     this->m_mainLayer->addChild(panel);
 
@@ -153,12 +151,8 @@ void BanListPopup::rebuildList(std::vector<std::string> const& users) {
         cell->setPosition({viewW / 2.f, yPos});
         cell->setID("user-cell"_spr);
 
-        auto bg = CCScale9Sprite::create("square02_001.png");
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(55);
-        bg->setContentSize(cell->getContentSize());
-        bg->setAnchorPoint({0.5f, 0.5f});
-        bg->setPosition(cell->getContentSize() / 2.f);
+        auto bg = paimon::SpriteHelper::createDarkPanel(cellW, cellH, 55);
+        bg->setPosition({0, 0});
         cell->addChild(bg);
 
         auto name = CCLabelBMFont::create(user.c_str(), "chatFont.fnt");

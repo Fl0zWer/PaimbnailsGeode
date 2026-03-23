@@ -1,5 +1,6 @@
 #include "ButtonEditOverlay.hpp"
 #include "../utils/PaimonButtonHighlighter.hpp"
+#include "../utils/SpriteHelper.hpp"
 #include "../managers/ButtonLayoutManager.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include "../utils/Localization.hpp"
@@ -60,10 +61,7 @@ bool ButtonEditOverlay::init(std::string const& sceneKey, CCMenu* menu,
         disableOtherMenus(scene);
     }
     
-    m_selectionHighlight = CCScale9Sprite::create("square02b_001.png");
-    // ccscale9sprite siempre implementa ccrgbaprotocol, no necesita cast
-    m_selectionHighlight->setColor(ccColor3B{100, 255, 100});
-    m_selectionHighlight->setOpacity(150);
+    m_selectionHighlight = paimon::SpriteHelper::createColorPanel(10, 10, ccColor3B{100, 255, 100}, 150, 3.f);
     m_selectionHighlight->setVisible(false);
     m_selectionHighlight->setZOrder(999);
     
@@ -176,11 +174,8 @@ void ButtonEditOverlay::createControls() {
     const float centerX = winSize.width / 2.f;
 
     // fondo panel
-    auto panelBg = CCScale9Sprite::create("square02b_001.png");
-    panelBg->setContentSize({winSize.width - 20.f, panelHeight});
-    panelBg->setPosition({centerX, panelY});
-    panelBg->setColor({0, 0, 0});
-    panelBg->setOpacity(200);
+    auto panelBg = paimon::SpriteHelper::createDarkPanel(winSize.width - 20.f, panelHeight, 200);
+    panelBg->setPosition({centerX - (winSize.width - 20.f) / 2.f, panelY - panelHeight / 2.f});
     this->addChild(panelBg, -1);
 
     // titulo panel
@@ -322,14 +317,30 @@ void ButtonEditOverlay::updateSelectionHighlight() {
     auto item = m_selectedButton->item;
     auto contentSize = item->getContentSize();
     float scale = item->getScale();
-    
-    m_selectionHighlight->setContentSize({
-        contentSize.width * scale + 10.f,
-        contentSize.height * scale + 10.f
-    });
+    float w = contentSize.width * scale + 10.f;
+    float h = contentSize.height * scale + 10.f;
+
+    // redibujar geometria del CCDrawNode
+    m_selectionHighlight->clear();
+    ccColor4F fill = {100/255.f, 255/255.f, 100/255.f, 150/255.f};
+    ccColor4F none = {0,0,0,0};
+    constexpr int seg = 8;
+    float r = 3.f;
+    std::vector<CCPoint> pts;
+    pts.reserve(4 * (seg + 1));
+    auto addArc = [&](float cx, float cy, float sa) {
+        for (int i = 0; i <= seg; ++i) {
+            float a = sa + (M_PI * 0.5f) * (float(i) / float(seg));
+            pts.push_back(ccp(cx + cosf(a)*r, cy + sinf(a)*r));
+        }
+    };
+    addArc(r, r, M_PI); addArc(w-r, r, M_PI*1.5f);
+    addArc(w-r, h-r, 0); addArc(r, h-r, M_PI*0.5f);
+    m_selectionHighlight->drawPolygon(pts.data(), (unsigned)pts.size(), fill, 0, none);
+    m_selectionHighlight->setContentSize({w, h});
     
     auto worldPos = item->getParent()->convertToWorldSpace(item->getPosition());
-    m_selectionHighlight->setPosition(worldPos);
+    m_selectionHighlight->setPosition({worldPos.x - w/2, worldPos.y - h/2});
     m_selectionHighlight->setVisible(true);
 }
 
@@ -553,12 +564,9 @@ void ButtonEditOverlay::createAllHighlights() {
 
     for (auto& btn : m_editableButtons) {
         if (!btn.item || btn.buttonID.empty()) continue;
-        auto spr = CCScale9Sprite::create("square02b_001.png");
+        auto spr = paimon::SpriteHelper::createColorPanel(10, 10, ccColor3B{80, 180, 255}, 120, 3.f);
         if (!spr) continue;
 
-        // ccscale9sprite siempre implementa ccrgbaprotocol
-        spr->setColor(ccColor3B{80, 180, 255});
-        spr->setOpacity(120);
         spr->setZOrder(998);
         parent->addChild(spr, 998);
         m_buttonHighlights[btn.buttonID] = spr;
@@ -577,11 +585,31 @@ void ButtonEditOverlay::updateAllHighlights() {
 
         auto contentSize = btn.item->getContentSize();
         float scale = btn.item->getScale();
-        node->setContentSize({ contentSize.width * scale + 10.f, contentSize.height * scale + 10.f });
+        float w = contentSize.width * scale + 10.f;
+        float h = contentSize.height * scale + 10.f;
+
+        // redibujar geometria del CCDrawNode
+        node->clear();
+        ccColor4F fill = {80/255.f, 180/255.f, 255/255.f, 120/255.f};
+        ccColor4F none = {0,0,0,0};
+        constexpr int seg = 8;
+        float r = 3.f;
+        std::vector<CCPoint> pts;
+        pts.reserve(4 * (seg + 1));
+        auto addArc = [&](float cx, float cy, float sa) {
+            for (int i = 0; i <= seg; ++i) {
+                float a = sa + (M_PI * 0.5f) * (float(i) / float(seg));
+                pts.push_back(ccp(cx + cosf(a)*r, cy + sinf(a)*r));
+            }
+        };
+        addArc(r, r, M_PI); addArc(w-r, r, M_PI*1.5f);
+        addArc(w-r, h-r, 0); addArc(r, h-r, M_PI*0.5f);
+        node->drawPolygon(pts.data(), (unsigned)pts.size(), fill, 0, none);
+        node->setContentSize({w, h});
 
         if (auto parent = btn.item->getParent()) {
             auto worldPos = parent->convertToWorldSpace(btn.item->getPosition());
-            node->setPosition(worldPos);
+            node->setPosition({worldPos.x - w/2, worldPos.y - h/2});
             node->setVisible(true);
         } else {
             node->setVisible(false);

@@ -70,7 +70,6 @@ class $modify(PaimonLevelPage, LevelPage) {
         LevelPage::updateDynamicPage(level);
         
         if (!level) return;
-        log::info("[LevelPage] updateDynamicPage: levelID={}", level->m_levelID.value());
         
         m_fields->m_levelID = level->m_levelID;
         m_fields->m_cycleTimer = 0.f;
@@ -140,7 +139,6 @@ class $modify(PaimonLevelPage, LevelPage) {
 
     void loadThumbnailAt(int index) {
         if (index < 0 || index >= static_cast<int>(m_fields->m_thumbnails.size())) return;
-        log::debug("[LevelPage] loadThumbnailAt: index={} levelID={}", index, m_fields->m_levelID);
         m_fields->m_currentThumbnailIndex = index;
         int capturedLevelID = m_fields->m_levelID;
         int token = ++m_fields->m_cycleToken;
@@ -163,7 +161,6 @@ class $modify(PaimonLevelPage, LevelPage) {
     
     void applyThumbnail(CCTexture2D* tex) {
         if (!tex || !m_levelDisplay) return;
-        log::debug("[LevelPage] applyThumbnail: levelID={}", m_fields->m_levelID);
         
         if (m_fields->m_thumbClipper) {
             m_fields->m_thumbClipper->removeFromParent();

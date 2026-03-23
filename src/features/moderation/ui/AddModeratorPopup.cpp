@@ -1,5 +1,6 @@
 #include "AddModeratorPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -40,11 +41,8 @@ bool AddModeratorPopup::init(geode::CopyableFunction<void(bool, std::string cons
     float panelH = 140.f;
     float panelY = content.height / 2.f + 30.f;
 
-    auto panel = CCScale9Sprite::create("square02_001.png");
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(70);
-    panel->setContentSize({panelW, panelH});
-    panel->setPosition({cx, panelY});
+    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 70);
+    panel->setPosition({cx - panelW / 2, panelY - panelH / 2});
     panel->setID("moderator-list-panel"_spr);
     m_mainLayer->addChild(panel);
 
@@ -179,12 +177,8 @@ void AddModeratorPopup::rebuildList() {
         cell->setID("mod-cell"_spr);
 
         // fondo
-        auto bg = CCScale9Sprite::create("square02_001.png");
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(55);
-        bg->setContentSize(cell->getContentSize());
-        bg->setAnchorPoint({0.5f, 0.5f});
-        bg->setPosition(cell->getContentSize() / 2.f);
+        auto bg = paimon::SpriteHelper::createDarkPanel(cellW, cellH, 55);
+        bg->setPosition({0, 0});
         cell->addChild(bg);
 
         // nombre

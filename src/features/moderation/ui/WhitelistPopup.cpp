@@ -1,5 +1,6 @@
 #include "WhitelistPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/PaimonLoadingOverlay.hpp"
@@ -52,11 +53,8 @@ bool WhitelistPopup::init() {
     float panelH = content.height - 90.f;
     float panelY = (content.height - 60.f) / 2.f - 5.f;
 
-    auto panel = CCScale9Sprite::create("square02_001.png");
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(70);
-    panel->setContentSize({panelW, panelH});
-    panel->setPosition({cx, panelY});
+    auto panel = paimon::SpriteHelper::createDarkPanel(panelW, panelH, 70);
+    panel->setPosition({cx - panelW / 2, panelY - panelH / 2});
     m_mainLayer->addChild(panel);
 
     m_scrollViewSize = CCSize{panelW, panelH};
@@ -144,12 +142,8 @@ void WhitelistPopup::rebuildList() {
         cell->setAnchorPoint({0.5f, 0.5f});
         cell->setPosition({viewW / 2.f, yPos});
 
-        auto bg = CCScale9Sprite::create("square02_001.png");
-        bg->setColor({0, 0, 0});
-        bg->setOpacity(55);
-        bg->setContentSize(cell->getContentSize());
-        bg->setAnchorPoint({0.5f, 0.5f});
-        bg->setPosition(cell->getContentSize() / 2.f);
+        auto bg = paimon::SpriteHelper::createDarkPanel(cellW, cellH, 55);
+        bg->setPosition({0, 0});
         cell->addChild(bg);
 
         auto name = CCLabelBMFont::create(user.c_str(), "chatFont.fnt");

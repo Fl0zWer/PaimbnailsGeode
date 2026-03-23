@@ -561,15 +561,11 @@ void CommunityHubLayer::buildCreatorsList() {
         content->addChild(cell);
 
         // alternating background
-        auto cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-        if (!cellBg) cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-        if (cellBg) {
-            cellBg->setColor(i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32});
-            cellBg->setOpacity(200);
-            cellBg->setContentSize(cell->getContentSize());
-            cellBg->setPosition(cell->getContentSize() / 2);
-            cell->addChild(cellBg, 0);
-        }
+        auto cellBg = paimon::SpriteHelper::createColorPanel(
+            listW, cellH - 2.f,
+            i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
+        cellBg->setPosition({0, 0});
+        cell->addChild(cellBg, 0);
 
         float textX = 10.f;
         float cellMidY = (cellH - 2.f) / 2;
@@ -693,15 +689,11 @@ void CommunityHubLayer::buildThumbnailsList() {
         content->addChild(cell);
 
         // alternating background
-        auto cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02b_001.png");
-        if (!cellBg) cellBg = paimon::SpriteHelper::safeCreateScale9WithFrameName("square02_001.png");
-        if (cellBg) {
-            cellBg->setColor(i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32});
-            cellBg->setOpacity(200);
-            cellBg->setContentSize(cell->getContentSize());
-            cellBg->setPosition(cell->getContentSize() / 2);
-            cell->addChild(cellBg, 0);
-        }
+        auto cellBg = paimon::SpriteHelper::createColorPanel(
+            listW, cellH - 2.f,
+            i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
+        cellBg->setPosition({0, 0});
+        cell->addChild(cellBg, 0);
 
         // thumbnail preview
         float thumbSize = cellH - 8.f;

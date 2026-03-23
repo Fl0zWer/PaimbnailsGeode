@@ -1,5 +1,6 @@
 #include "CaptureLayerEditorPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "CapturePreviewPopup.hpp"
 #include "CaptureEditPopup.hpp"
@@ -559,12 +560,7 @@ void CaptureLayerEditorPopup::buildList() {
     m_mainLayer->addChild(m_listRoot, 2);
 
     // Dark panel background
-    auto panel = CCScale9Sprite::create("square02_001.png");
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(80);
-    panel->setContentSize({listW, viewH});
-    panel->ignoreAnchorPointForPosition(false);
-    panel->setAnchorPoint({0.f, 0.f});
+    auto panel = paimon::SpriteHelper::createDarkPanel(listW, viewH, 80);
     panel->setPosition({viewX, listBot});
     m_listRoot->addChild(panel, 0);
 
@@ -826,12 +822,7 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
     m_filterDropdown = CCNode::create();
     m_filterDropdown->setID("filter-dropdown"_spr);
 
-    auto panel = CCScale9Sprite::create("square02_001.png");
-    panel->setColor({0, 0, 0});
-    panel->setOpacity(100);
-    panel->setContentSize({areaW, areaH});
-    panel->ignoreAnchorPointForPosition(false);
-    panel->setAnchorPoint({0.f, 0.f});
+    auto panel = paimon::SpriteHelper::createDarkPanel(areaW, areaH, 100);
     panel->setPosition({areaX, areaBot});
     m_filterDropdown->addChild(panel, 0);
 
@@ -887,9 +878,7 @@ void CaptureLayerEditorPopup::onFilterBtn(CCObject*) {
         rowMenu->setPosition({0.f, 0.f});
         rowMenu->setAnchorPoint({0.f, 0.f});
 
-        auto hitSpr = CCScale9Sprite::create("square02_001.png");
-        hitSpr->setContentSize({areaW - 4.f, optH - 2.f});
-        hitSpr->setOpacity(0);
+        auto hitSpr = paimon::SpriteHelper::createColorPanel(areaW - 4.f, optH - 2.f, {0,0,0}, 0);
         auto btn = CCMenuItemSpriteExtra::create(
             hitSpr, this,
             menu_selector(CaptureLayerEditorPopup::onFilterSelect)

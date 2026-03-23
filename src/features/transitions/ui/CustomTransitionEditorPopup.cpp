@@ -1,5 +1,6 @@
 #include "CustomTransitionEditorPopup.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
+#include "../../../utils/SpriteHelper.hpp"
 #include "CustomTransitionScene.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include "../../../utils/FileDialog.hpp"
@@ -111,11 +112,8 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     m_mainLayer->addChild(listTitle);
 
     // Dark panel behind list
-    auto listPanel = CCScale9Sprite::create("square02_001.png");
-    listPanel->setColor({0, 0, 0});
-    listPanel->setOpacity(80);
-    listPanel->setContentSize({listW, listH});
-    listPanel->setPosition({listX + listW / 2, listY + listH / 2});
+    auto listPanel = paimon::SpriteHelper::createDarkPanel(listW, listH, 80);
+    listPanel->setPosition({listX, listY});
     m_mainLayer->addChild(listPanel);
 
     m_scrollSize = CCSize(listW, listH);
@@ -168,11 +166,8 @@ bool CustomTransitionEditorPopup::init(TransitionConfig* config, bool isGlobal) 
     float editH = listH;
     float editY = listY;
 
-    auto editPanel = CCScale9Sprite::create("square02_001.png");
-    editPanel->setColor({0, 0, 0});
-    editPanel->setOpacity(60);
-    editPanel->setContentSize({editW, editH});
-    editPanel->setPosition({editX + editW / 2, editY + editH / 2});
+    auto editPanel = paimon::SpriteHelper::createDarkPanel(editW, editH, 60);
+    editPanel->setPosition({editX, editY});
     m_mainLayer->addChild(editPanel);
 
     auto editTitle = CCLabelBMFont::create("Command Editor", "goldFont.fnt");
@@ -507,11 +502,11 @@ void CustomTransitionEditorPopup::rebuildCommandList() {
         float y = contentH - (i + 0.5f) * cellH;
 
         // Cell background
-        auto bg = CCScale9Sprite::create("square02_001.png");
-        bg->setColor(i == m_selectedIdx ? ccColor3B{80, 120, 200} : ccColor3B{40, 40, 40});
-        bg->setOpacity(i == m_selectedIdx ? 180 : 100);
-        bg->setContentSize({m_scrollSize.width - 6.f, cellH - 2.f});
-        bg->setPosition({m_scrollSize.width / 2, y});
+        auto bg = paimon::SpriteHelper::createColorPanel(
+            m_scrollSize.width - 6.f, cellH - 2.f,
+            i == m_selectedIdx ? ccColor3B{80, 120, 200} : ccColor3B{40, 40, 40},
+            i == m_selectedIdx ? 180 : 100);
+        bg->setPosition({(m_scrollSize.width - 6.f) / 2.f + 3.f, y - (cellH - 2.f) / 2.f});
         m_commandListMenu->addChild(bg);
 
         // Command index + name

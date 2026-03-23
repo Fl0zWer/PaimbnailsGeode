@@ -20,7 +20,7 @@ class $modify(PaimonLevelListLayer, LevelListLayer) {
         // guardar id pa usarlo en LevelInfoLayer
         if (list) {
             paimon::SessionState::get().currentListID = list->m_listID;
-            log::info("[LevelListLayer] init: listID={}", list->m_listID);
+            log::debug("Entered List: {}", list->m_listID);
         } else {
             paimon::SessionState::get().currentListID = 0;
         }
@@ -40,7 +40,6 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         // limpiar contexto al entrar a busqueda normal
         paimon::SessionState::get().currentListID = 0;
         if (!LevelBrowserLayer::init(p0)) return false;
-        log::info("[LevelBrowserLayer] init");
 
         // fondo custom
         LayerBackgroundManager::get().applyBackground(this, "browser");
