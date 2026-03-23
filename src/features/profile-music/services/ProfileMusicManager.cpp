@@ -1,5 +1,6 @@
 #include "ProfileMusicManager.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
+#include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
 #include <Geode/binding/MusicDownloadManager.hpp>
@@ -480,7 +481,10 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
     forceRemoveCaveEffect();
 
     auto engine = FMODAudioEngine::sharedEngine();
-    if (!engine || !engine->m_system) return;
+    if (!engine || !engine->m_system) {
+        paimon::setProfileMusicInteropActive(false);
+        return;
+    }
 
     float gameVolume = engine->m_musicVolume;
     m_bgVolumeBeforeFade = gameVolume;
@@ -536,6 +540,8 @@ void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool
     if (engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(volume);
     }
+
+    paimon::setProfileMusicInteropActive(true);
 
     // Configurar loop points y posicion via Channel*
     auto* bgCh = getMainBgChannel(engine);
@@ -618,6 +624,7 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
             m_isPaused = false;
             m_currentProfileID = 0;
             m_currentAudioPath.clear();
+            paimon::setProfileMusicInteropActive(false);
 
             if (dsm->wasDynamicStoppedByProfile()) {
                 dsm->replayLastSong();
@@ -716,6 +723,7 @@ void ProfileMusicManager::stopCurrentAudio() {
 
     m_isPlaying = false;
     m_isPaused = false;
+    paimon::setProfileMusicInteropActive(false);
 
     auto* dsm = DynamicSongManager::get();
     if (dsm->wasDynamicStoppedByProfile()) {
@@ -751,6 +759,8 @@ void ProfileMusicManager::reloadBgMusic(float startVolume) {
             m_savedBgPosMs = 0;
         }
     }
+
+    paimon::setProfileMusicInteropActive(false);
 
     log::info("[ProfileMusic] BG music recargado (vol:{:.2f})", startVolume);
 }
@@ -1377,6 +1387,7 @@ void ProfileMusicManager::forceStop() {
     m_isPaused = false;
     m_currentProfileID = 0;
     m_currentAudioPath.clear();
+    paimon::setProfileMusicInteropActive(false);
 
     log::info("[ProfileMusic] forceStop complete, all state cleared");
 }

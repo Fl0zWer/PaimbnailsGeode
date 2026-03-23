@@ -86,10 +86,10 @@ static CCScene* createTransitionSafe(CCScene* realDest, TransitionConfig const& 
 
 class $modify(PaimonDirector, CCDirector) {
     static void onModify(auto& self) {
-        (void)self.setHookPriorityPre("cocos2d::CCDirector::replaceScene", geode::Priority::Last);
-        (void)self.setHookPriorityPre("cocos2d::CCDirector::pushScene", geode::Priority::Last);
-        (void)self.setHookPriorityPre("cocos2d::CCDirector::popSceneWithTransition", geode::Priority::Last);
-        (void)self.setHookPriorityPre("cocos2d::CCDirector::popScene", geode::Priority::Last);
+        (void)self.setHookPriorityPre("cocos2d::CCDirector::replaceScene", geode::Priority::VeryLate);
+        (void)self.setHookPriorityPre("cocos2d::CCDirector::pushScene", geode::Priority::VeryLate);
+        (void)self.setHookPriorityPre("cocos2d::CCDirector::popSceneWithTransition", geode::Priority::VeryLate);
+        (void)self.setHookPriorityPre("cocos2d::CCDirector::popScene", geode::Priority::VeryLate);
     }
 
     // â”€â”€ replaceScene â”€â”€

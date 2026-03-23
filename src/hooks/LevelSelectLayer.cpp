@@ -10,6 +10,7 @@
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../utils/AudioInterop.hpp"
 #include "../utils/Shaders.hpp"
 
 using namespace geode::prelude;
@@ -31,11 +32,11 @@ class $modify(PaimonGameManager, GameManager) {
         }
         auto* dsm = DynamicSongManager::get();
         // bloquear si dynamic song esta sonando en un layer valido
-        if (dsm->m_isDynamicSongActive && dsm->isInValidLayer()) {
+        if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
             return;
         }
         // tampoco si esta la musica de perfil
-        if (ProfileMusicManager::get().isPlaying()) {
+        if (paimon::isProfileMusicInteropActive()) {
             return;
         }
         GameManager::fadeInMenuMusic();
@@ -57,9 +58,29 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
             FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
             return;
         }
+        auto requestedPath = static_cast<std::string>(path);
+        auto menuTrack = GameManager::get() ? GameManager::get()->getMenuMusicFile() : std::string();
+        bool isMenuTrack = !menuTrack.empty() && requestedPath == menuTrack;
+
         if (!DynamicSongManager::s_selfPlayMusic) {
+            if (paimon::isProfileMusicInteropActive()) {
+                if (isMenuTrack) {
+                    return;
+                }
+
+                ProfileMusicManager::get().forceStop();
+                FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
+                return;
+            }
+
             auto* dsm = DynamicSongManager::get();
-            if (dsm->m_isDynamicSongActive && dsm->isInValidLayer()) {
+            if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
+                if (isMenuTrack) {
+                    return;
+                }
+
+                dsm->onPlaybackHijacked();
+                FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
                 return;
             }
         }

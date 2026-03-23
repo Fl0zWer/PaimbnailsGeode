@@ -1,5 +1,6 @@
 #include "DynamicSongManager.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
+#include "../../../utils/AudioInterop.hpp"
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/MusicDownloadManager.hpp>
 #include <Geode/binding/GameManager.hpp>
@@ -101,6 +102,7 @@ void DynamicSongManager::restoreBgChannel() {
     float targetVol = engine->m_musicVolume;
     loadMenuTrack(targetVol);
     m_expectedSongPath.clear();
+    paimon::setDynamicSongInteropActive(false);
     log::info("[DynamicSong] Menu restaurado con vol:{:.2f}", targetVol);
 }
 
@@ -250,6 +252,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         && levelId == m_currentPlayingLevelID) {
         // Misma cancion — verificar que sigue sonando correctamente
         if (verifyPlayback()) {
+            paimon::setDynamicSongInteropActive(true);
             return; // ya esta sonando, no hacer nada
         }
         // Verificacion fallo, pero si el canal principal tiene audio reproduciendose
@@ -280,6 +283,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     m_lastSongPath = songPath;
     m_expectedSongPath = songPath;
     m_currentPlayingLevelID = levelId;
+    paimon::setDynamicSongInteropActive(true);
 
     float gameVolume = engine->m_musicVolume;
 
@@ -345,6 +349,7 @@ void DynamicSongManager::stopSong() {
         m_isDynamicSongActive = false;
         m_currentPlayingLevelID = 0;
         m_expectedSongPath.clear();
+        paimon::setDynamicSongInteropActive(false);
     }
 }
 
@@ -393,11 +398,13 @@ void DynamicSongManager::executeDipFadeOut(int step, int totalSteps,
             m_isDynamicSongActive = false;
             m_currentPlayingLevelID = 0;
             m_expectedSongPath.clear();
+            paimon::setDynamicSongInteropActive(false);
         } else {
             // Cargar cancion pendiente
             if (!m_pendingSongPath.empty()) {
                 playOnMainChannel(m_pendingSongPath, 0.0f);
                 applyRandomSeek();
+                paimon::setDynamicSongInteropActive(true);
             }
         }
 
@@ -477,6 +484,7 @@ void DynamicSongManager::fadeOutForLevelStart() {
     m_isDynamicSongActive = false;
     m_currentLayer = DynSongLayer::None;
     m_expectedSongPath.clear();
+    paimon::setDynamicSongInteropActive(false);
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_backgroundMusicChannel) return;
@@ -542,6 +550,7 @@ void DynamicSongManager::forceKill() {
     m_stoppedByProfile = false;
     m_currentPlayingLevelID = 0;
     m_expectedSongPath.clear();
+    paimon::setDynamicSongInteropActive(false);
 
     // Restaurar volumen del canal principal — GD/PlayLayer cargaran su propia musica
     auto engine = FMODAudioEngine::sharedEngine();
@@ -572,6 +581,7 @@ void DynamicSongManager::stopDynamicForProfileMusic() {
     // El canal principal queda bajo control de ProfileMusic
     m_stoppedByProfile = true;
     // m_isDynamicSongActive se mantiene true para que sepamos que hay que recrear
+    paimon::setDynamicSongInteropActive(false);
 
     log::info("[DynamicSong] Detenido por ProfileMusic (lastSong: {}, pos: {}ms)", m_lastSongPath, m_savedDynamicPosMs);
 }
@@ -584,6 +594,7 @@ void DynamicSongManager::replayLastSong() {
     if (GameManager::get()->getGameVariable("0122")) {
         m_isDynamicSongActive = false;
         m_expectedSongPath.clear();
+        paimon::setDynamicSongInteropActive(false);
         return;
     }
 
@@ -592,12 +603,14 @@ void DynamicSongManager::replayLastSong() {
     if (engineChk && engineChk->m_musicVolume <= 0.0f) {
         m_isDynamicSongActive = false;
         m_expectedSongPath.clear();
+        paimon::setDynamicSongInteropActive(false);
         return;
     }
 
     if (m_lastSongPath.empty() || !m_isDynamicSongActive || !isInValidLayer()) {
         m_isDynamicSongActive = false;
         m_expectedSongPath.clear();
+        paimon::setDynamicSongInteropActive(false);
         restoreBgChannel();
         log::info("[DynamicSong] No hay cancion para replay, menu restaurado");
         return;
@@ -612,6 +625,7 @@ void DynamicSongManager::replayLastSong() {
     // Reproducir la cancion en el canal principal
     playOnMainChannel(m_lastSongPath, 0.0f);
     m_expectedSongPath = m_lastSongPath;
+    paimon::setDynamicSongInteropActive(true);
 
     // Restaurar posicion guardada; si no hay, seek aleatorio
     if (engine->m_backgroundMusicChannel) {
@@ -718,4 +732,5 @@ void DynamicSongManager::onPlaybackHijacked() {
     m_currentPlayingLevelID = 0;
     m_expectedSongPath.clear();
     m_currentLayer = DynSongLayer::None;
+    paimon::setDynamicSongInteropActive(false);
 }
