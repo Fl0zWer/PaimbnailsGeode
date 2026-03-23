@@ -1,6 +1,7 @@
 #include "LevelColors.hpp"
 #include "../../../utils/PaimonFormat.hpp"
 #include "../../../utils/DominantColors.hpp"
+#include "../../../core/QualityConfig.hpp"
 #include <Geode/loader/Mod.hpp>
 #include <Geode/loader/Log.hpp>
 #include <cocos2d.h>
@@ -235,7 +236,7 @@ void LevelColors::extractColorsFromCache() {
 
     // coherencia: escanear ambos orígenes de thumbnails
     scanDir(Mod::get()->getSaveDir() / "thumbnails");
-    scanDir(Mod::get()->getSaveDir() / "cache");
+    scanDir(paimon::quality::cacheDir());
     
     log::info("[LevelColors] listo: {} ok, {} saltado, {} procesado", 
               success, skipped, processed);

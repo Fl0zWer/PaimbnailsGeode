@@ -2,6 +2,7 @@
 #include "GIFDecoder.hpp"
 #include "DominantColors.hpp"
 #include "Debug.hpp"
+#include "../core/QualityConfig.hpp"
 #include <Geode/loader/Log.hpp>
 #include <fstream>
 #include <filesystem>
@@ -391,7 +392,7 @@ std::string AnimatedGIFSprite::getCachePath(std::string const& path) {
 }
 
 std::filesystem::path AnimatedGIFSprite::getDiskCacheDir() {
-    return Mod::get()->getSaveDir() / "gif_cache";
+    return paimon::quality::cacheDir() / "gifs";
 }
 
 void AnimatedGIFSprite::pruneDiskCache() {
@@ -427,12 +428,12 @@ void AnimatedGIFSprite::pruneDiskCache() {
         }
     }
 
-    if (totalBytes <= MAX_DISK_CACHE_BYTES) return;
+    if (totalBytes <= paimon::settings::quality::diskCacheBytes()) return;
     std::sort(entries.begin(), entries.end(), [](CacheEntry const& a, CacheEntry const& b) {
         return a.mtime < b.mtime;
     });
     for (auto const& e : entries) {
-        if (totalBytes <= MAX_DISK_CACHE_BYTES) break;
+        if (totalBytes <= paimon::settings::quality::diskCacheBytes()) break;
         std::filesystem::remove(e.path, ec);
         if (!ec) totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
     }

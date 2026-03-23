@@ -21,6 +21,7 @@
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../features/profiles/ui/RatePopup.hpp"
@@ -67,6 +68,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     struct Fields {
         Ref<CCMenuItemSpriteExtra> m_thumbnailButton = nullptr;
         Ref<CCNode> m_pixelBg = nullptr;
+        Ref<CCLayerColor> m_pixelOverlay = nullptr;
         std::vector<Ref<CCSprite>> m_extraBgSprites;
         float m_shaderTime = 0.0f;
         bool m_animatedShader = false;
@@ -98,6 +100,10 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     
     void applyThumbnailBackground(CCTexture2D* tex, int32_t levelID) {
         if (!tex) return;
+
+        constexpr int kBackgroundZOrder = -3;
+        constexpr int kEffectsZOrder = -2;
+        constexpr int kOverlayZOrder = -1;
         
         log::info("[LevelInfoLayer] Aplicando fondo del thumbnail");
         
@@ -259,7 +265,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 oldBg = this->getChildByID("paimon-levelinfo-pixel-bg"_spr);
             }
             
-            finalSprite->setZOrder(-1);
+            finalSprite->setZOrder(kBackgroundZOrder);
             finalSprite->setID("paimon-levelinfo-pixel-bg"_spr);
             this->addChild(finalSprite);
             m_fields->m_pixelBg = finalSprite;
@@ -333,7 +339,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     m_fields->m_animatedShader = true;
                 }
 
-                extraSpr->setZOrder(-1);
+                extraSpr->setZOrder(kEffectsZOrder);
                 this->addChild(extraSpr);
                 m_fields->m_extraBgSprites.push_back(extraSpr);
             }
@@ -356,7 +362,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                      CCSprite* spritePtr = anim;
                      applyEffects(spritePtr, true);
                      
-                     anim->setZOrder(-1);
+                     anim->setZOrder(kBackgroundZOrder);
                      anim->setID("paimon-levelinfo-pixel-bg"_spr);
                      anim->setOpacity(0);
                      layer->addChild(anim);
@@ -384,18 +390,23 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         darknessVal = std::max(0, std::min(50, darknessVal));
         GLubyte overlayAlpha = static_cast<GLubyte>((darknessVal / 50.0f) * 255.0f);
         
-        auto existingOverlay = typeinfo_cast<CCLayerColor*>(
-            static_cast<CCNode*>(this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)));
-        if (!existingOverlay || existingOverlay->getOpacity() != overlayAlpha) {
-            if (existingOverlay) existingOverlay->removeFromParent();
-            auto overlay = CCLayerColor::create({0,0,0,overlayAlpha});
-            overlay->setContentSize(win);
-            overlay->setAnchorPoint({0,0});
-            overlay->setPosition({0,0});
-            overlay->setZOrder(-1);
-            overlay->setID("paimon-levelinfo-pixel-overlay"_spr);
-            this->addChild(overlay);
+        auto existingOverlay = m_fields->m_pixelOverlay;
+        if (!existingOverlay || !existingOverlay->getParent()) {
+            existingOverlay = typeinfo_cast<CCLayerColor*>(
+                static_cast<CCNode*>(this->getChildByID("paimon-levelinfo-pixel-overlay"_spr)));
         }
+
+        if (!existingOverlay) {
+            existingOverlay = CCLayerColor::create({0, 0, 0, overlayAlpha});
+            existingOverlay->setAnchorPoint({0, 0});
+            existingOverlay->setPosition({0, 0});
+            existingOverlay->setID("paimon-levelinfo-pixel-overlay"_spr);
+            this->addChild(existingOverlay, kOverlayZOrder);
+        }
+        existingOverlay->setContentSize(win);
+        existingOverlay->setOpacity(overlayAlpha);
+        existingOverlay->setZOrder(kOverlayZOrder);
+        m_fields->m_pixelOverlay = existingOverlay;
         
         log::info("[LevelInfoLayer] Fondo aplicado exitosamente (estilo: {}, intensidad: {})", bgStyle, intensity);
     }
@@ -417,21 +428,11 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        // Re-registrar layer para dynamic song (forceKill/fadeOutForLevelStart
-        // lo limpia al entrar a PlayLayer, y onEnter necesita restaurarlo)
-        DynamicSongManager::get()->enterLayer(DynSongLayer::LevelInfo);
-
-        // Reproducir inmediatamente — el hook de fadeInMenuMusic en GameManager
-        // bloqueara la musica de menu de GD porque m_isDynamicSongActive sera true
-        if (Mod::get()->getSettingValue<bool>("dynamic-song") && m_level) {
-            DynamicSongManager::get()->playSong(m_level);
-        }
+        AudioContextCoordinator::get().activateLevelInfo(m_level, true);
     }
 
     void forcePlayDynamic(float dt) {
-        if (m_level) {
-            DynamicSongManager::get()->playSong(m_level);
-        }
+        AudioContextCoordinator::get().activateLevelInfo(m_level, true);
     }
 
     void updateShaderTime(float dt) {
@@ -478,6 +479,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         m_fields->m_galleryToken++;
         m_fields->m_bgRequestToken++;
         m_fields->m_pixelBg = nullptr;
+        m_fields->m_pixelOverlay = nullptr;
         m_fields->m_extraBgSprites.clear();
         LevelInfoLayer::onExit();
     }
@@ -534,19 +536,20 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         }
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
-        // thumbnailLoader::get().pauseQueue(); // removido para permitir carga en segundo plano
+
+        // ocultar fondo nativo de GD; lo reemplaza nuestro thumbnail bg
+        if (level && level->m_levelID.value() > 0 && level->m_levelType != GJLevelType::Main) {
+            if (auto bg = this->getChildByID("background")) {
+                bg->setVisible(false);
+            }
+        }
         
         if (!level || level->m_levelID <= 0) {
                 log::debug("[LevelInfoLayer] Level ID invalid, skipping thumbnail button");
                 return true;
             }
 
-            // Paimon: registrar layer y reproducir dynamic song
-            DynamicSongManager::get()->enterLayer(DynSongLayer::LevelInfo);
-            if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
-                // primer intento (puede ser sobreescrito por GD)
-                DynamicSongManager::get()->playSong(level);
-            }
+            AudioContextCoordinator::get().activateLevelInfo(level, true);
             // el retry con delay esta en onEnter()
 
             // consumir el flag "abierto desde lista de miniaturas"
@@ -878,16 +881,13 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     $override
     void onPlay(CCObject* sender) {
         log::info("[LevelInfoLayer] onPlay: levelID={}", m_level ? m_level->m_levelID.value() : 0);
-        // Fade-out de la dynamic song al entrar al nivel
-        DynamicSongManager::get()->fadeOutForLevelStart();
+        AudioContextCoordinator::get().beginGameplayTransition();
         LevelInfoLayer::onPlay(sender);
     }
 
     $override
     void onBack(CCObject* sender) {
         log::info("[LevelInfoLayer] onBack: levelID={} fromVerify={} fromLeaderboards={}", m_level ? m_level->m_levelID.value() : 0, m_fields->m_fromVerificationQueue, m_fields->m_fromLeaderboards);
-        auto* dsm = DynamicSongManager::get();
-        dsm->exitLayer(DynSongLayer::LevelInfo);
 
         // Verificar si volvemos a LevelSelectLayer
         bool returnsToLevelSelect = false;
@@ -901,13 +901,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
-        if (returnsToLevelSelect) {
-            // Pre-registrar LevelSelect AHORA para que fadeInMenuMusic de GD
-            // no se cuele entre exitLayer(LevelInfo) y LevelSelect::onEnter()
-            dsm->enterLayer(DynSongLayer::LevelSelect);
-        } else if (dsm->m_isDynamicSongActive) {
-            dsm->stopSong();
-        }
+        AudioContextCoordinator::get().deactivateLevelInfo(returnsToLevelSelect);
 
         if (m_fields->m_fromVerificationQueue) {
             // limpiar los flags
@@ -1061,12 +1055,14 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         auto& thumb = m_fields->m_thumbnails[index];
         int requestToken = ++m_fields->m_bgRequestToken;
         log::info("[LevelInfoLayer] loadThumbnail: index={}/{} thumbId={} token={}", index, m_fields->m_thumbnails.size(), thumb.id, requestToken);
+        // version URL con _pv=<thumbId> para invalidacion de CDN
         std::string url = thumb.url;
-        auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
-        url += fmt::format("{}_pv={}{}", sep, thumb.id, requestToken);
-        // load desde url â€” use Ref<> for safe prevent use-after-free
+        if (!thumb.id.empty()) {
+            auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
+            url += fmt::format("{}_pv={}", sep, thumb.id);
+        }
         Ref<LevelInfoLayer> safeRef = this;
-        ThumbnailAPI::get().downloadFromUrl(url, [safeRef, index, requestToken](bool success, CCTexture2D* tex) {
+        ThumbnailLoader::get().requestUrlLoad(url, [safeRef, index, requestToken](CCTexture2D* tex, bool success) {
             auto* self = static_cast<PaimonLevelInfoLayer*>(safeRef.data());
             if (!self->getParent()) return;
             if (self->m_fields->m_bgRequestToken != requestToken) return;
@@ -1112,6 +1108,7 @@ void LocalThumbnailViewPopup::onSettings(CCObject*) {
 
         // resetear la ref interna para evitar double-remove dentro de applyThumbnailBackground
         paimon->m_fields->m_pixelBg = nullptr;
+        paimon->m_fields->m_pixelOverlay = nullptr;
 
         // re-aplicar con las nuevas settings
         if (texRef) {

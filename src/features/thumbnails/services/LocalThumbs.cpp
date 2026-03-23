@@ -9,6 +9,7 @@
 #include <sstream>
 #include <unordered_set>
 #include <future>
+#include "../../../core/QualityConfig.hpp"
 
 using namespace geode::prelude;
 
@@ -120,9 +121,9 @@ std::optional<std::string> LocalThumbs::findAnyThumbnail(int32_t levelID) const 
     }
 
     // 3. buscar en carpeta cache (descargadas)
-    auto cacheDir = Mod::get()->getSaveDir() / "cache";
+    auto qualityCacheDir = paimon::quality::cacheDir();
     for (auto const& ext : exts) {
-        auto p = cacheDir / (std::to_string(levelID) + ext);
+        auto p = qualityCacheDir / (std::to_string(levelID) + ext);
         if (std::filesystem::exists(p, ecFind)) return geode::utils::string::pathToString(p);
     }
 
@@ -151,7 +152,7 @@ std::vector<int32_t> LocalThumbs::getAllLevelIDs() const {
     };
 
     scanDir(dir());
-    scanDir(Mod::get()->getSaveDir() / "cache");
+    scanDir(paimon::quality::cacheDir());
 
     ids.assign(uniqueIds.begin(), uniqueIds.end());
     return ids;
@@ -220,7 +221,7 @@ CCTexture2D* LocalThumbs::loadTexture(int32_t levelID) const {
     if (auto tex = tryLoadFromDir(dir())) return tex;
 
     // buscar en carpeta cache
-    if (auto tex = tryLoadFromDir(Mod::get()->getSaveDir() / "cache")) return tex;
+    if (auto tex = tryLoadFromDir(paimon::quality::cacheDir())) return tex;
     
     log::debug("[LocalThumbs] loadTexture: not found levelID={}", levelID);
     return nullptr;

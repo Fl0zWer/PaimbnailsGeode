@@ -17,6 +17,7 @@
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../core/QualityConfig.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
 #include <Geode/binding/ButtonSprite.hpp>
 
@@ -1355,10 +1356,10 @@ void PaiConfigLayer::onClearAllCache(CCObject*) {
             // 7) Cache de GIFs animados (RAM)
             AnimatedGIFSprite::clearCache();
 
-            // 8) Cache de GIFs en disco (carpeta "gif_cache/")
+            // 8) Cache de GIFs en disco (quality-aware)
             {
                 std::error_code ec;
-                auto gifCacheDir = Mod::get()->getSaveDir() / "gif_cache";
+                auto gifCacheDir = paimon::quality::cacheDir() / "gifs";
                 if (std::filesystem::exists(gifCacheDir, ec)) {
                     std::filesystem::remove_all(gifCacheDir, ec);
                 }

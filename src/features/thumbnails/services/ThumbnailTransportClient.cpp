@@ -115,6 +115,15 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
             }
         }
         log::info("[ThumbTransport] getThumbnails callback: levelId={} count={}", levelId, thumbnails.size());
+
+        // propagar revision remota al loader para invalidacion automatica
+        if (!thumbnails.empty()) {
+            auto const& first = thumbnails.front();
+            auto revToken = paimon::cache::DiskManifestEntry::makeRevisionToken(
+                first.id, first.date, first.format, first.url);
+            ThumbnailLoader::get().updateRemoteRevision(levelId, revToken);
+        }
+
         callback(true, thumbnails);
     });
 }

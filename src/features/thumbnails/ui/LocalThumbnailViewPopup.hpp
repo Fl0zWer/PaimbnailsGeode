@@ -120,6 +120,10 @@ protected:
     static float clamp(float value, float min, float max);
     void clampSpritePosition();
     void clampSpritePositionAnimated();
+    bool applyZoomAtWorldPoint(float targetScale, CCPoint worldPoint);
+    void syncZoomGestureState();
+    void resetZoomGestureState();
+    CCPoint getZoomFocusPoint() const;
 
     // touch zoom/pan
     bool ccTouchBegan(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;

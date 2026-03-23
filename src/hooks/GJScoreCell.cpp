@@ -39,6 +39,14 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
         (void)self.setHookPriorityPost("GJScoreCell::loadFromScore", geode::Priority::Late);
     }
 
+    void onExit() {
+        if (auto f = m_fields.self()) {
+            f->m_isBeingDestroyed = true;
+            hideLoadingSpinner();
+        }
+        GJScoreCell::onExit();
+    }
+
     struct Fields {
         Ref<CCClippingNode> m_profileClip = nullptr;
         Ref<CCLayerColor> m_profileSeparator = nullptr;
@@ -524,10 +532,11 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 if (cachedProfile && (cachedProfile->texture || !cachedProfile->gifKey.empty())) {
                     log::debug("[GJScoreCell] Found cached profile for account {}", accountID);
                     // cargo desde cache de forma asincrona
-                    Ref<GJScoreCell> safeThis = this;
+                    WeakRef<PaimonGJScoreCell> safeThis = this;
                     Loader::get()->queueInMainThread([safeThis, accountID]() {
-                        auto* self = static_cast<PaimonGJScoreCell*>(safeThis.data());
-                        if (!self->getParent()) return;
+                        auto selfRef = safeThis.lock();
+                        auto* self = static_cast<PaimonGJScoreCell*>(selfRef.data());
+                        if (!self || !self->getParent()) return;
 
                         auto cached = ProfileThumbs::get().getCachedProfile(accountID);
                         if (cached) {
@@ -554,13 +563,16 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     showLoadingSpinner();
                 }
                 
-                // Ref<> en vez de retain/release para seguridad de memoria
-                Ref<GJScoreCell> safeRef = this;
+                WeakRef<PaimonGJScoreCell> safeRef = this;
 
                 // uso queueLoad en vez de bajar directo
                 ProfileThumbs::get().queueLoad(accountID, username, [safeRef, accountID, enableSpinners](bool success, CCTexture2D* texture) {
+                    auto selfRef = safeRef.lock();
+                    auto* self = static_cast<PaimonGJScoreCell*>(selfRef.data());
+                    if (!self) return;
+
                     if (!success) {
-                        if (enableSpinners) static_cast<PaimonGJScoreCell*>(safeRef.data())->hideLoadingSpinner();
+                        if (enableSpinners) self->hideLoadingSpinner();
                         log::warn("[GJScoreCell] Failed to download profile for account {}", accountID);
                         return;
                     }
@@ -572,7 +584,7 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                         // Verificar si hay un GIF cacheado para este perfil
                         auto cachedEntry = ProfileThumbs::get().getCachedProfile(accountID);
                         if (!cachedEntry || cachedEntry->gifKey.empty()) {
-                            if (enableSpinners) static_cast<PaimonGJScoreCell*>(safeRef.data())->hideLoadingSpinner();
+                            if (enableSpinners) self->hideLoadingSpinner();
                             log::warn("[GJScoreCell] No texture and no GIF for account {}", accountID);
                             return;
                         }
@@ -584,7 +596,9 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
 
                     // descargar config
                     ThumbnailAPI::get().downloadProfileConfig(accountID, [safeRef, accountID, safeTex, enableSpinners](bool success2, ProfileConfig const& config) {
-                        auto* self = static_cast<PaimonGJScoreCell*>(safeRef.data());
+                        auto selfRef = safeRef.lock();
+                        auto* self = static_cast<PaimonGJScoreCell*>(selfRef.data());
+                        if (!self) return;
                         if (enableSpinners) self->hideLoadingSpinner();
 
                         // guardo en cache
@@ -671,9 +685,12 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
 
         // ModeratorsLayer: ocultar rank-label en celdas de la lista de moderadores (unificado aquí para evitar doble $modify sobre GJScoreCell)
         if (ModeratorsLayer::s_instance && ModeratorsLayer::s_instance->isScoreInList(score)) {
-            Ref<GJScoreCell> self = this;
+            WeakRef<PaimonGJScoreCell> self = this;
             Loader::get()->queueInMainThread([self]() {
-                if (auto rankLabel = self->getChildByID("rank-label")) {
+                auto cellRef = self.lock();
+                auto* cell = static_cast<PaimonGJScoreCell*>(cellRef.data());
+                if (!cell) return;
+                if (auto rankLabel = cell->getChildByID("rank-label")) {
                     rankLabel->setVisible(false);
                 }
             });

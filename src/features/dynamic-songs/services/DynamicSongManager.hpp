@@ -40,10 +40,10 @@ public:
     // Limpieza forzada desde PlayLayer::init
     void forceKill();
 
-    // Detener/recrear la cancion dinamica (para ProfileMusic u otros popups)
-    void stopDynamicForProfileMusic();
-    void replayLastSong();
-    bool wasDynamicStoppedByProfile() const { return m_stoppedByProfile; }
+    // Suspender/recrear la cancion dinamica cuando otro flujo toma el canal principal.
+    void suspendPlaybackForExternalAudio();
+    void resumeSuspendedPlayback();
+    bool hasSuspendedPlayback() const { return m_playbackSuspendedExternally; }
 
     // Acceso al volumen del canal principal para crossfade desde ProfileMusic
     float getDynamicVolume() const;
@@ -67,8 +67,8 @@ private:
     bool m_isFadingOut = false;
     uint32_t m_fadeGeneration = 0;
     float m_bgVolumeBeforeFade = 1.0f;
-    bool m_stoppedByProfile = false;
-    std::string m_lastSongPath;       // path del ultimo song para replay tras ProfileMusic
+    bool m_playbackSuspendedExternally = false;
+    std::string m_lastSongPath;       // path del ultimo song para restaurar tras una suspension externa
     std::string m_expectedSongPath;   // path esperado en el canal principal (para verificacion)
     int m_currentPlayingLevelID = 0;
     unsigned int m_savedDynamicPosMs = 0;

@@ -1,6 +1,7 @@
 #include "ProfileThumbs.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../core/QualityConfig.hpp"
 #include <Geode/utils/file.hpp>
 #include <Geode/utils/string.hpp>
 #include <filesystem>
@@ -29,7 +30,7 @@ ProfileThumbs& ProfileThumbs::get() {
     if (!initialized) {
         initialized = true;
         // limpieza selectiva por antiguedad en vez de borrar todo
-        auto dir = Mod::get()->getSaveDir() / "thumbnails" / "profiles";
+        auto dir = paimon::quality::cacheDir() / "profiles";
         std::error_code ec;
         if (std::filesystem::exists(dir, ec)) {
             int deleted = 0;
@@ -54,7 +55,7 @@ ProfileThumbs& ProfileThumbs::get() {
 }
 
 std::string ProfileThumbs::makePath(int accountID) const {
-    auto dir = Mod::get()->getSaveDir() / "thumbnails" / "profiles";
+    auto dir = paimon::quality::cacheDir() / "profiles";
     (void)file::createDirectoryAll(dir);
     return geode::utils::string::pathToString(dir / fmt::format("{}.rgb", accountID));
 }

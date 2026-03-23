@@ -8,6 +8,7 @@
 #include <Geode/binding/GJGroundLayer.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
+#include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/dynamic-songs/services/DynamicSongManager.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../utils/AudioInterop.hpp"
@@ -107,19 +108,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     bool init(int p0) {
         if (!LevelSelectLayer::init(p0)) return false;
 
-        DynamicSongManager::get()->enterLayer(DynSongLayer::LevelSelect);
-
         // pagina 0 = nivel 1 (Stereo Madness)
         int levelID = p0 + 1;
         m_fields->m_currentLevelID = levelID;
-        
-        // arrancar la cancion del nivel de entrada, saltando el default de GD
-        if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
-             auto level = GameLevelManager::sharedState()->getMainLevel(levelID, false);
-             if (level) {
-                 DynamicSongManager::get()->playSong(level);
-             }
-        }
+        AudioContextCoordinator::get().activateLevelSelect(levelID, true);
         
         // bg del nivel
         this->updateThumbnailBackground(levelID);
@@ -150,10 +142,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         LevelSelectLayer::onEnter();
         
         // re-registrar (PlayLayer lo borra con forceKill)
-        auto* dsm = DynamicSongManager::get();
-        dsm->enterLayer(DynSongLayer::LevelSelect);
+        AudioContextCoordinator::get().activateLevelSelect(m_fields->m_currentLevelID > 0 ? m_fields->m_currentLevelID : 1, false);
         
         if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
+            auto* dsm = DynamicSongManager::get();
             // si ya suena pa este nivel, no relanzar (evita corte al volver de info)
             if (dsm->m_isDynamicSongActive) {
                 return;
@@ -166,8 +158,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     $override
     void onExit() {
         // parar musica y desregistrar
-        DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
-        DynamicSongManager::get()->stopSong();
+        AudioContextCoordinator::get().deactivateLevelSelect(true);
         LevelSelectLayer::onExit();
     }
 
@@ -177,11 +168,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
          int levelID = m_fields->m_currentLevelID;
          if (levelID <= 0) levelID = 1;
          
-         auto level = GameLevelManager::sharedState()->getMainLevel(levelID, false);
-         if (level) {
-             // arrancar
-             DynamicSongManager::get()->playSong(level);
-         }
+         AudioContextCoordinator::get().activateLevelSelect(levelID, true);
     }
 
     void checkPageLoop(float dt) {
@@ -228,9 +215,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             // nueva cancion pa el nivel
             if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
                 if (levelID != -1) {
-                    if (auto level = GameLevelManager::sharedState()->getMainLevel(levelID, false)) {
-                        DynamicSongManager::get()->playSong(level);
-                    }
+                    AudioContextCoordinator::get().activateLevelSelect(levelID, true);
                 }
             }
 
@@ -242,7 +227,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             // asegurar registro
             auto* dsm = DynamicSongManager::get();
             if (!dsm->isInValidLayer()) {
-                dsm->enterLayer(DynSongLayer::LevelSelect);
+                AudioContextCoordinator::get().activateLevelSelect(m_fields->m_currentLevelID > 0 ? m_fields->m_currentLevelID : 1, false);
             }
 
             m_fields->m_verifyFrameCounter++;

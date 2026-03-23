@@ -1,4 +1,5 @@
 #include "ProfileImageService.hpp"
+#include "../../../core/Settings.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/GIFDecoder.hpp"
@@ -11,9 +12,64 @@
 
 using namespace geode::prelude;
 
+namespace {
+int getProfileVariantSlot(int accountID) {
+    int qualityIndex = 1;
+    switch (paimon::settings::quality::current()) {
+        case paimon::settings::Quality::Low:
+            qualityIndex = 0;
+            break;
+        case paimon::settings::Quality::High:
+            qualityIndex = 2;
+            break;
+        case paimon::settings::Quality::Medium:
+        default:
+            qualityIndex = 1;
+            break;
+    }
+    return accountID * 4 + qualityIndex;
+}
+
+std::string makeProfileGifKey(char const* prefix, int accountID) {
+    return fmt::format("{}_{}_{}", prefix, accountID, paimon::settings::quality::tag());
+}
+
+std::filesystem::path getProfileImgCachePath(int accountID) {
+    return Mod::get()->getSaveDir() / "profileimg_cache" /
+           fmt::format("{}_{}.dat", accountID, paimon::settings::quality::tag());
+}
+
+void pruneProfileImgCacheVariants(int accountID) {
+    auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec)) {
+        return;
+    }
+
+    auto activeName = getProfileImgCachePath(accountID).filename();
+    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
+        if (ec || !entry.is_regular_file()) {
+            continue;
+        }
+
+        auto stem = geode::utils::string::pathToString(entry.path().stem());
+        if (stem != std::to_string(accountID) && stem.rfind(std::to_string(accountID) + "_", 0) != 0) {
+            continue;
+        }
+
+        if (entry.path().filename() == activeName) {
+            continue;
+        }
+
+        std::error_code rmEc;
+        std::filesystem::remove(entry.path(), rmEc);
+    }
+}
+}
+
 std::string ProfileImageService::getProfileImgGifKey(int accountID) const {
     std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
-    auto it = m_profileImgGifKeys.find(accountID);
+    auto it = m_profileImgGifKeys.find(getProfileVariantSlot(accountID));
     if (it == m_profileImgGifKeys.end()) return "";
     return it->second;
 }
@@ -21,12 +77,12 @@ std::string ProfileImageService::getProfileImgGifKey(int accountID) const {
 void ProfileImageService::rememberProfileImgGifKey(int accountID, std::string const& gifKey) {
     if (gifKey.empty()) return;
     std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
-    m_profileImgGifKeys[accountID] = gifKey;
+    m_profileImgGifKeys[getProfileVariantSlot(accountID)] = gifKey;
 }
 
 void ProfileImageService::clearProfileImgGifKey(int accountID) {
     std::lock_guard<std::mutex> lock(m_profileImgGifMutex);
-    m_profileImgGifKeys.erase(accountID);
+    m_profileImgGifKeys.erase(getProfileVariantSlot(accountID));
 }
 
 // ── banner (profile background) uploads ─────────────────────────────
@@ -83,7 +139,7 @@ void ProfileImageService::downloadProfile(int accountID, std::string const& user
                 data[3]=='8' && (data[4]=='7' || data[4]=='9') && data[5]=='a';
 
             if (isGIF) {
-                std::string gifKey = fmt::format("profile_gif_{}", accountID);
+                std::string gifKey = makeProfileGifKey("profile_gif", accountID);
                 AnimatedGIFSprite::createAsync(data, gifKey,
                     [accountID, gifKey, callback](AnimatedGIFSprite* sprite) {
                         if (sprite) {
@@ -144,7 +200,8 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
                 auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
                 std::error_code ec;
                 std::filesystem::create_directories(cacheDir, ec);
-                auto cachePath = cacheDir / fmt::format("{}.dat", accountID);
+                pruneProfileImgCacheVariants(accountID);
+                auto cachePath = getProfileImgCachePath(accountID);
                 std::ofstream cacheFile(cachePath, std::ios::binary);
                 if (cacheFile) {
                     cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
@@ -153,7 +210,7 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
 
             bool isGIF = GIFDecoder::isGIF(data.data(), data.size());
             if (isGIF) {
-                std::string gifKey = fmt::format("profileimg_gif_{}", accountID);
+                std::string gifKey = makeProfileGifKey("profileimg_gif", accountID);
                 AnimatedGIFSprite::createAsync(data, gifKey, [this, accountID, gifKey, callback](AnimatedGIFSprite* sprite) {
                     if (!sprite || !sprite->getTexture()) {
                         queueInMainThread([this, accountID, callback]() {

@@ -30,10 +30,11 @@ class $modify(PaimonMapPackCell, MapPackCell) {
         }
 
         // delay pa que el layout ya este armado
-        Ref<MapPackCell> self = this;
+        WeakRef<PaimonMapPackCell> self = this;
         Loader::get()->queueInMainThread([self]() {
-            if (self->getParent()) {
-                static_cast<PaimonMapPackCell*>(self.data())->createCarousel();
+            auto cellRef = self.lock();
+            if (auto* cell = static_cast<PaimonMapPackCell*>(cellRef.data()); cell && cell->getParent()) {
+                cell->createCarousel();
             }
         });
     }

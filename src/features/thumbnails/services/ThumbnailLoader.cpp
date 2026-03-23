@@ -1,6 +1,8 @@
 #include "ThumbnailLoader.hpp"
+#include "ThumbnailTransportClient.hpp"
 #include "LocalThumbs.hpp"
 #include "LevelColors.hpp"
+#include "../../../core/QualityConfig.hpp"
 #include "../../../utils/Constants.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/DominantColors.hpp"
@@ -21,8 +23,16 @@
 #include <cmath>
 #include <algorithm>
 #include <tuple>
+#include <chrono>
 
 using namespace geode::prelude;
+
+// ── helpers ─────────────────────────────────────────────────────────
+
+size_t ThumbnailLoader::estimateTextureBytes(cocos2d::CCTexture2D* tex) {
+    if (!tex) return 0;
+    return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
+}
 
 ThumbnailLoader& ThumbnailLoader::get() {
     static ThumbnailLoader instance;
@@ -36,7 +46,8 @@ ThumbnailLoader::ThumbnailLoader() {
 #else
     m_maxConcurrentTasks = 20;
 #endif
-    log::info("[ThumbnailLoader] constructor: maxConcurrent={}", m_maxConcurrentTasks);
+    m_qualityTag = paimon::settings::quality::tag();
+    log::info("[ThumbnailLoader] constructor: maxConcurrent={} quality={}", m_maxConcurrentTasks, m_qualityTag);
     initDiskCache();
 }
 
@@ -46,6 +57,9 @@ ThumbnailLoader::~ThumbnailLoader() {
     m_shuttingDown = true;
     waitBackgroundWorkers();
 
+    // flush manifest antes de destruir
+    m_manifest.flush();
+
     // durante el cierre del proceso (destructores estaticos) el orden de destruccion
     // es indefinido: Cocos2d, el autorelease pool y otros singletons pueden ya estar muertos.
     // geode::Ref llama release() al destruirse. Usamos take() para sacar los punteros sin release().
@@ -54,81 +68,57 @@ ThumbnailLoader::~ThumbnailLoader() {
         (void)entry.texture.take();
     }
     m_textureCache.clear();
+    for (auto& [url, entry] : m_urlTextureCache) {
+        (void)entry.texture.take();
+    }
+    m_urlTextureCache.clear();
 }
 
 void ThumbnailLoader::initDiskCache() {
     // hilo de I/O de disco — no migrable a WebTask (no es peticion web)
     spawnBackground([this]() {
         geode::utils::thread::setName("ThumbnailLoader Cache Init");
-        std::lock_guard<std::mutex> lock(m_diskMutex);
-        auto path = Mod::get()->getSaveDir() / "cache";
+
+        // --- legacy migration: rename old "cache/" to quality dir if needed ---
+        paimon::quality::migrateLegacyCache();
+
+        auto path = paimon::quality::cacheDir();
         PaimonDebug::log("[ThumbnailLoader] iniciando cache de disco en: {}", geode::utils::string::pathToString(path));
         
         std::error_code ec;
         if (!std::filesystem::exists(path, ec)) {
             std::filesystem::create_directories(path, ec);
             PaimonDebug::log("[ThumbnailLoader] carpeta de cache creada");
+        }
+
+        // compruebo si estamos en shutdown
+        if (m_shuttingDown.load(std::memory_order_relaxed)) {
+            PaimonDebug::log("[ThumbnailLoader] shutdown durante init cache, abortando");
             return;
         }
-        
-        // limpieza al inicio: ya no se borra nada aqui
-        // si clear-cache-on-exit esta activo se borro al cerrar la sesion anterior
-        // si no, el cache se mantiene entre sesiones
-        const bool clearOnStart = false;
 
-        int deletedCount = 0;
-        int keptCount = 0;
-
-        std::error_code dirEc;
-        for (auto const& entry : std::filesystem::directory_iterator(path, dirEc)) {
-            if (dirEc) break;
-            // compruebo si estamos en shutdown antes de seguir
-            if (m_shuttingDown.load(std::memory_order_relaxed)) {
-                PaimonDebug::log("[ThumbnailLoader] shutdown durante init cache, abortando");
-                return;
-            }
-            if (entry.is_regular_file()) {
-                auto stem = geode::utils::string::pathToString(entry.path().stem());
-                auto ext = geode::utils::string::pathToString(entry.path().extension());
-                // saco el id desde el nombre del archivo
-                int id = 0;
-                bool isGif = (ext == ".gif");
-                // compatibilidad: archivos legacy con _anim en el nombre
-                if (stem.find("_anim") != std::string::npos) {
-                    std::string idStr = stem.substr(0, stem.find("_anim"));
-                    id = geode::utils::numFromString<int>(idStr).unwrapOr(0);
-                    isGif = true;
-                } else {
-                    id = geode::utils::numFromString<int>(stem).unwrapOr(0);
-                }
-
-                if (id == 0) {
-                    // si el nombre no es un id valido lo elimino
-                    std::error_code rmEc;
-                    std::filesystem::remove(entry.path(), rmEc);
-                    continue;
-                }
-
-                // miro si es main level
-                int realID = std::abs(id);
-                bool isMain = (realID >= 1 && realID <= 22);
-
-                // si es main level no lo borro ni por tiempo ni por sesion
-                if (!isMain) {
-                    if (clearOnStart) {
-                        std::error_code rmEc;
-                        std::filesystem::remove(entry.path(), rmEc);
-                        deletedCount++;
-                        continue;
-                    }
-                }
-
-                m_diskCache.insert(isGif ? -id : id);
-                keptCount++;
-            }
+        // --- cargar manifest persistente (o migrar desde directorio) ---
+        {
+            std::lock_guard<std::mutex> lock(m_manifest.mutex);
+            m_manifest.load(path);
         }
-        
-        PaimonDebug::log("[ThumbnailLoader] cache de disco lista. borrados: {}, guardados: {}", deletedCount, keptCount);
+
+        // --- hidratar el legacy disk index desde el manifest ---
+        std::unordered_set<int> legacyKeys;
+        {
+            std::lock_guard<std::mutex> ml(m_manifest.mutex);
+            legacyKeys = m_manifest.legacyKeySet();
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_diskMutex);
+            m_diskCache = std::move(legacyKeys);
+        }
+
+        // flush si el manifest se creo por migracion
+        m_manifest.flush();
+
+        PaimonDebug::log("[ThumbnailLoader] cache de disco lista. entradas en manifest: {}",
+            m_manifest.entryCount());
     });
 }
 
@@ -148,82 +138,27 @@ void ThumbnailLoader::pruneFailedCacheLocked(std::chrono::steady_clock::time_poi
 }
 
 void ThumbnailLoader::pruneDiskCache() {
-    auto cacheDir = Mod::get()->getSaveDir() / "cache";
-    std::error_code ec;
-    if (!std::filesystem::exists(cacheDir, ec)) {
-        return;
-    }
+    size_t maxDiskBytes = paimon::settings::quality::diskCacheBytes();
 
-    struct DiskEntry {
-        std::filesystem::path path;
-        std::filesystem::file_time_type mtime;
-        size_t bytes;
-        int key;
-    };
+    std::lock_guard<std::mutex> ml(m_manifest.mutex);
+    size_t currentBytes = m_manifest.totalBytes();
+    if (currentBytes <= maxDiskBytes) return;
 
-    auto now = std::filesystem::file_time_type::clock::now();
-    std::vector<DiskEntry> entries;
-    size_t totalBytes = 0;
+    auto pruneResult = m_manifest.computePrune(maxDiskBytes, MAX_DISK_CACHE_AGE);
+    if (pruneResult.filesToDelete.empty()) return;
 
-    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
-        if (ec || !entry.is_regular_file()) continue;
+    m_manifest.applyPrune(pruneResult);
+    m_stats.diskEvictions.fetch_add(pruneResult.filesToDelete.size(), std::memory_order_relaxed);
 
-        auto ext = geode::utils::string::toLower(geode::utils::string::pathToString(entry.path().extension()));
-        if (ext != ".png" && ext != ".gif") continue;
-
-        auto stem = geode::utils::string::pathToString(entry.path().stem());
-        int id = geode::utils::numFromString<int>(stem).unwrapOr(0);
-        if (id <= 0) continue;
-
-        size_t bytes = static_cast<size_t>(entry.file_size(ec));
-        if (ec) continue;
-        auto mtime = std::filesystem::last_write_time(entry.path(), ec);
-        if (ec) continue;
-
-        int key = (ext == ".gif") ? -id : id;
-        entries.push_back({entry.path(), mtime, bytes, key});
-        totalBytes += bytes;
-    }
-
-    // borrar viejos primero
-    bool removed = false;
-    for (auto const& e : entries) {
-        auto age = std::chrono::duration_cast<std::chrono::hours>(now - e.mtime);
-        if (age > MAX_DISK_CACHE_AGE) {
-            std::filesystem::remove(e.path, ec);
-            if (!ec) {
-                totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
-                std::lock_guard<std::mutex> lock(m_diskMutex);
-                m_diskCache.erase(e.key);
-                removed = true;
-            }
-        }
-    }
-
-    if (totalBytes <= MAX_DISK_CACHE_BYTES) {
-        if (removed) {
-            PaimonDebug::log("[ThumbnailLoader] poda cache disco por antiguedad aplicada");
-        }
-        return;
-    }
-
-    std::sort(entries.begin(), entries.end(), [](DiskEntry const& a, DiskEntry const& b) {
-        return a.mtime < b.mtime;
-    });
-
-    for (auto const& e : entries) {
-        if (totalBytes <= MAX_DISK_CACHE_BYTES) break;
-        std::filesystem::remove(e.path, ec);
-        if (ec) continue;
-        totalBytes = (totalBytes >= e.bytes) ? (totalBytes - e.bytes) : 0;
+    // re-sync legacy disk index
+    {
+        auto legacyKeys = m_manifest.legacyKeySet();
         std::lock_guard<std::mutex> lock(m_diskMutex);
-        m_diskCache.erase(e.key);
-        removed = true;
+        m_diskCache = std::move(legacyKeys);
     }
 
-    if (removed) {
-        PaimonDebug::log("[ThumbnailLoader] poda cache disco completada. bytes finales: {}", totalBytes);
-    }
+    PaimonDebug::log("[ThumbnailLoader] poda cache disco completada. archivos borrados: {}, bytes liberados: {}",
+        pruneResult.filesToDelete.size(), pruneResult.freedBytes);
 }
 
 void ThumbnailLoader::setMaxConcurrentTasks(int max) {
@@ -262,13 +197,13 @@ bool ThumbnailLoader::hasGIFData(int levelID) const {
 }
 
 std::filesystem::path ThumbnailLoader::getCachePath(int levelID, bool isGif) {
-    if (isGif) {
-        return Mod::get()->getSaveDir() / "cache" / fmt::format("{}.gif", levelID);
-    }
-    return Mod::get()->getSaveDir() / "cache" / fmt::format("{}.png", levelID);
+    return paimon::quality::thumbCachePath(levelID, isGif);
 }
 
 void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallback callback, int priority, bool isGif) {
+    // detect quality tier change lazily
+    detectQualityChange();
+
     int key = isGif ? -levelID : levelID;
     log::info("[ThumbnailLoader] requestLoad: levelID={} key={} priority={} isGif={}", levelID, key, priority, isGif);
     
@@ -285,9 +220,10 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
         int currentVer = getVersionForKeyLocked(key);
         if (cachedVer != currentVer) {
             log::info("[ThumbnailLoader] requestLoad: RAM cache stale for key={} cachedVer={} currentVer={}", key, cachedVer, currentVer);
+            m_stats.staleHits.fetch_add(1, std::memory_order_relaxed);
             // entrada stale: la version no coincide, evicto y sigo como cache miss
             if (it->second.texture) {
-                size_t bytes = static_cast<size_t>(it->second.texture->getPixelsWide()) * static_cast<size_t>(it->second.texture->getPixelsHigh()) * 4;
+                size_t bytes = estimateTextureBytes(it->second.texture);
                 if (m_textureCacheBytes >= bytes) m_textureCacheBytes -= bytes;
                 else m_textureCacheBytes = 0;
             }
@@ -298,6 +234,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
                 m_lruMap.erase(lruIt);
             }
         } else {
+            m_stats.ramHits.fetch_add(1, std::memory_order_relaxed);
             // actualizo la LRU en O(1)
             auto lruIt = m_lruMap.find(key);
             if (lruIt != m_lruMap.end()) {
@@ -305,6 +242,14 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
             }
             m_lruOrder.push_back(key);
             m_lruMap[key] = std::prev(m_lruOrder.end());
+
+            // touch en manifest
+            {
+                bool isGifKey = key < 0;
+                int realId = std::abs(key);
+                std::lock_guard<std::mutex> ml(m_manifest.mutex);
+                m_manifest.touchAccess(realId, isGifKey);
+            }
             
             // fuerzo callback asincrono para no trabar la UI
             log::debug("[ThumbnailLoader] requestLoad: RAM cache hit for key={}", key);
@@ -315,6 +260,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
             return;
         }
     }
+    m_stats.ramMisses.fetch_add(1, std::memory_order_relaxed);
 
     // 2. miro el cache de fallos (con TTL)
     auto failIt = m_failedCache.find(key);
@@ -599,78 +545,41 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     }
 
     if (success && !data.empty()) {
-        // optimizado: decodifico y proceso en un thread aparte
-        bool isNativeGif = GIFDecoder::isGIF(data.data(), data.size());
-        
-        if (isNativeGif) {
-            // procesamiento del GIF en main thread (por los cocos/sprites)
-            Loader::get()->queueInMainThread([this, task, data, realID]() {
-                if (task->cancelled) { finishTask(task, nullptr, false); return; }
-                
-                { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
-                auto gifData = GIFDecoder::decode(data.data(), data.size());
-                if (gifData.frames.empty() || gifData.width <= 0 || gifData.height <= 0) {
-                    workerDownload(task);
-                    return;
-                }
+        m_stats.diskHits.fetch_add(1, std::memory_order_relaxed);
 
-                auto const& frame = gifData.frames.front();
-                if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) {
-                    workerDownload(task);
-                    return;
-                }
+        // decodifico fuera del main thread usando el helper unificado
+        auto decoded = decodeImageData(data, realID);
+
+        if (decoded.success && !decoded.pixels.empty()) {
+            if (decoded.isGif) {
+                { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
+            }
+
+            auto pixelsCopy = std::move(decoded.pixels);
+            int dw = decoded.width;
+            int dh = decoded.height;
+            bool isDecodedGif = decoded.isGif;
+
+            Loader::get()->queueInMainThread([this, task, pixelsCopy, dw, dh, realID, isDecodedGif]() {
+                if (task->cancelled) { finishTask(task, nullptr, false); return; }
 
                 auto tex = new CCTexture2D();
-                if (tex->initWithData(
-                    frame.pixels.data(),
-                    kCCTexture2DPixelFormat_RGBA8888,
-                    frame.width,
-                    frame.height,
-                    CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
-                )) {
+                if (tex->initWithData(pixelsCopy.data(), kCCTexture2DPixelFormat_RGBA8888,
+                                      dw, dh, CCSize((float)dw, (float)dh))) {
                     tex->autorelease();
                     finishTask(task, tex, true);
                 } else {
                     tex->release();
-                    workerDownload(task);
-                }
-            });
-        } 
-        else {
-            // imagen estatica (png/jpg/webp)
-            // uso stb_image para decodificar fuera del main thread
-            int w = 0, h = 0, ch = 0;
-            unsigned char* pixels = stbi_load_from_memory(data.data(), (int)data.size(), &w, &h, &ch, 4); // fuerzo RGBA
-
-            if (pixels && w > 0 && h > 0 && w <= 16384 && h <= 16384) {
-                if (!LevelColors::get().getPair(realID)) {
-                    LevelColors::get().extractFromRawData(realID, pixels, w, h, true);
-                }
-                
-                // copio los pixeles a un vector para pasarlos al main sin sustos
-                std::vector<uint8_t> rawData(pixels, pixels + (w * h * 4));
-                stbi_image_free(pixels);
-                
-                Loader::get()->queueInMainThread([this, task, rawData, w, h, realID]() {
-                    if (task->cancelled) { finishTask(task, nullptr, false); return; }
-                    
-                    auto tex = new CCTexture2D();
-                    if (tex->initWithData(rawData.data(), kCCTexture2DPixelFormat_RGBA8888, w, h, CCSize((float)w, (float)h))) {
-                        tex->autorelease();
-                        finishTask(task, tex, true);
-                } else {
-                    tex->release();
-                    // si falla crear la textura casi siempre es por el formato, reintento por red
                     PaimonDebug::warn("[ThumbnailLoader] fallo crear textura pal nivel {}", realID);
                     workerDownload(task);
                 }
-                });
-            } else {
-                 PaimonDebug::warn("[ThumbnailLoader] fallo stb decode pal nivel {}", realID);
-                 workerDownload(task);
-            }
+            });
+        } else {
+            PaimonDebug::warn("[ThumbnailLoader] fallo decode pal nivel {}", realID);
+            workerDownload(task);
         }
     } else {
+        m_stats.diskMisses.fetch_add(1, std::memory_order_relaxed);
         // fallo lectura, intento descargar
         workerDownload(task);
     }
@@ -687,6 +596,7 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
     int realID = std::abs(task->levelID);
     bool isGif = task->levelID < 0;
     log::info("[ThumbnailLoader] workerDownload: levelID={} isGif={}", realID, isGif);
+    m_stats.downloads.fetch_add(1, std::memory_order_relaxed);
 
     Loader::get()->queueInMainThread([this, task, realID, isGif]() {
         HttpClient::get().downloadThumbnail(realID, isGif, 
@@ -697,19 +607,34 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                 }
 
                 if (success && !data.empty()) {
-                    // empiezo procesamiento en thread background
-                    // hilo de I/O disco + decodificacion stb_image — no migrable a WebTask
+                    // procesamiento en thread background
                     spawnBackground([this, task, data, realID]() {
                         geode::utils::thread::setName("ThumbnailLoader Download Worker");
                         // 1. guardo en disco con nombre segun formato real
-                        // asi no se duplica si el request estatico baja un GIF
+                        bool dataIsGif = GIFDecoder::isGIF(data.data(), data.size());
                         {
-                            bool dataIsGif = GIFDecoder::isGIF(data.data(), data.size());
                             auto path = getCachePath(realID, dataIsGif);
+                            std::error_code dirEc;
+                            std::filesystem::create_directories(path.parent_path(), dirEc);
                             std::ofstream file(path, std::ios::binary);
                             if (file) {
                                 file.write(reinterpret_cast<char const*>(data.data()), data.size());
                                 file.close();
+
+                                // actualizar manifest
+                                paimon::cache::DiskManifestEntry me;
+                                me.filename = paimon::quality::thumbFilename(realID, dataIsGif);
+                                me.levelID = realID;
+                                me.format = dataIsGif ? "gif" : "png";
+                                me.byteSize = data.size();
+                                me.isGif = dataIsGif;
+                                me.qualityTag = m_qualityTag;
+                                me.touchAccess();
+                                me.touchValidated();
+                                {
+                                    std::lock_guard<std::mutex> ml(m_manifest.mutex);
+                                    m_manifest.upsert(realID, dataIsGif, std::move(me));
+                                }
 
                                 std::lock_guard<std::mutex> lock(m_diskMutex);
                                 m_diskCache.insert(dataIsGif ? -realID : realID);
@@ -719,31 +644,32 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                         }
                         pruneDiskCache();
                         
-                        // 2. decodifico y extraco colores en background
-                        if (GIFDecoder::isGIF(data.data(), data.size())) {
-                            // logica gif (mando a main thread)
-                            Loader::get()->queueInMainThread([this, task, data, realID]() {
+                        // 2. decodifico fuera del main thread
+                        auto decoded = decodeImageData(data, realID);
+
+                        if (decoded.success && !decoded.pixels.empty()) {
+                            if (decoded.isGif) {
                                 { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
-                                auto gifData = GIFDecoder::decode(data.data(), data.size());
-                                if (gifData.frames.empty() || gifData.width <= 0 || gifData.height <= 0) {
-                                    finishTask(task, nullptr, false);
-                                    return;
+                            }
+                            // update manifest with decoded dimensions
+                            {
+                                std::lock_guard<std::mutex> ml(m_manifest.mutex);
+                                if (auto* entry = const_cast<paimon::cache::DiskManifestEntry*>(
+                                        m_manifest.getEntry(realID, decoded.isGif))) {
+                                    entry->width = decoded.width;
+                                    entry->height = decoded.height;
                                 }
+                            }
 
-                                auto const& frame = gifData.frames.front();
-                                if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) {
-                                    finishTask(task, nullptr, false);
-                                    return;
-                                }
-
+                            auto pixelsCopy = std::move(decoded.pixels);
+                            int dw = decoded.width;
+                            int dh = decoded.height;
+                            Loader::get()->queueInMainThread([this, task, pixelsCopy, dw, dh]() {
+                                if (task->cancelled) { finishTask(task, nullptr, false); return; }
+                                
                                 auto tex = new CCTexture2D();
-                                if (tex->initWithData(
-                                    frame.pixels.data(),
-                                    kCCTexture2DPixelFormat_RGBA8888,
-                                    frame.width,
-                                    frame.height,
-                                    CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
-                                )) {
+                                if (tex->initWithData(pixelsCopy.data(), kCCTexture2DPixelFormat_RGBA8888,
+                                                      dw, dh, CCSize((float)dw, (float)dh))) {
                                     tex->autorelease();
                                     finishTask(task, tex, true);
                                 } else {
@@ -752,39 +678,13 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                                 }
                             });
                         } else {
-                            // imagen estatica optimizada
-                            int sw = 0, sh = 0, ch = 0;
-                            unsigned char* pixels = stbi_load_from_memory(data.data(), (int)data.size(), &sw, &sh, &ch, 4);
-                             
-                            if (pixels && sw > 0 && sh > 0 && sw <= 16384 && sh <= 16384) {
-                                if (!LevelColors::get().getPair(realID)) {
-                                    LevelColors::get().extractFromRawData(realID, pixels, sw, sh, true);
-                                }
-                                
-                                std::vector<uint8_t> rawData(pixels, pixels + (sw * sh * 4));
-                                stbi_image_free(pixels);
-                                
-                                Loader::get()->queueInMainThread([this, task, rawData, sw, sh]() {
-                                    if (task->cancelled) { finishTask(task, nullptr, false); return; }
-                                    
-                                    auto tex = new CCTexture2D();
-                                    if (tex->initWithData(rawData.data(), kCCTexture2DPixelFormat_RGBA8888, sw, sh, CCSize((float)sw, (float)sh))) {
-                                        tex->autorelease();
-                                        finishTask(task, tex, true);
-                                    } else {
-                                        tex->release();
-                                        finishTask(task, nullptr, false);
-                                    }
-                                });
-                            } else {
-                                // si ni stb_image quiere, marco fallo y ya esta
-                                Loader::get()->queueInMainThread([this, task]() {
-                                     finishTask(task, nullptr, false);
-                                });
-                            }
+                            Loader::get()->queueInMainThread([this, task]() {
+                                finishTask(task, nullptr, false);
+                            });
                         }
                     });
                 } else {
+                    m_stats.downloadErrors.fetch_add(1, std::memory_order_relaxed);
                     finishTask(task, nullptr, false);
                 }
             }
@@ -793,7 +693,8 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 }
 
 void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2D* texture, bool success) {
-    log::info("[ThumbnailLoader] finishTask: key={} success={} cancelled={} hasTex={}", task->levelID, success, task->cancelled, texture != nullptr);
+    log::info("[ThumbnailLoader] finishTask: key={} url={} success={} cancelled={} hasTex={}",
+        task->levelID, task->url, success, task->cancelled, texture != nullptr);
     std::vector<LoadCallback> callbacks;
     bool shuttingDown = m_shuttingDown.load(std::memory_order_acquire);
     bool shouldNotify = !task->cancelled && !shuttingDown;
@@ -802,18 +703,26 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
     {
         std::lock_guard<std::mutex> lock(m_queueMutex);
 
-        if (!shuttingDown && success && texture) {
-            addToCache(task->levelID, texture);
-        } else if (!shuttingDown && !task->cancelled) {
-            m_failedCache[task->levelID] = std::chrono::steady_clock::now();
+        if (task->isUrlTask) {
+            // URL-based task (gallery shared cache)
+            if (!shuttingDown && success && texture) {
+                addToUrlCache(task->url, texture);
+            } else if (!shuttingDown && !task->cancelled) {
+                m_urlFailedCache[task->url] = std::chrono::steady_clock::now();
+            }
+            if (shouldNotify) callbacks = task->callbacks;
+            m_urlTasks.erase(task->url);
+        } else {
+            // level-based task
+            if (!shuttingDown && success && texture) {
+                addToCache(task->levelID, texture);
+            } else if (!shuttingDown && !task->cancelled) {
+                m_failedCache[task->levelID] = std::chrono::steady_clock::now();
+            }
+            if (shouldNotify) callbacks = task->callbacks;
+            m_tasks.erase(task->levelID);
         }
 
-        if (shouldNotify) {
-            callbacks = task->callbacks;
-        }
-
-        // limpieza
-        m_tasks.erase(task->levelID);
         m_activeTaskCount.fetch_sub(1, std::memory_order_relaxed);
 
         // proceso el siguiente solo si seguimos vivos
@@ -839,10 +748,6 @@ int ThumbnailLoader::getVersionForKeyLocked(int key) const {
 void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture, int version) {
     if (!texture) return;
 
-    auto estimateTextureBytes = [](CCTexture2D* tex) -> size_t {
-        if (!tex) return 0;
-        return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
-    };
     size_t incomingBytes = estimateTextureBytes(texture);
     if (auto oldIt = m_textureCache.find(levelID); oldIt != m_textureCache.end() && oldIt->second.texture) {
         size_t oldBytes = estimateTextureBytes(oldIt->second.texture);
@@ -851,7 +756,7 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture, int
     }
     
     int ver = (version >= 0) ? version : getVersionForKeyLocked(levelID);
-    m_textureCache[levelID] = CacheEntry{texture, ver};
+    m_textureCache[levelID] = CacheEntry{texture, ver, incomingBytes};
     m_textureCacheBytes += incomingBytes;
     
     // LRU O(1): quito el viejo iterador si existe, agrego al final
@@ -862,15 +767,17 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture, int
     m_lruOrder.push_back(levelID);
     m_lruMap[levelID] = std::prev(m_lruOrder.end());
     
-    // recorto cache si pasa del maximo
-    while ((m_lruOrder.size() > MAX_CACHE_SIZE || m_textureCacheBytes > MAX_CACHE_BYTES) && !m_lruOrder.empty()) {
+    // recorto cache si pasa del maximo (dynamic from quality tier)
+    size_t maxEntries = paimon::settings::quality::ramCacheEntries();
+    size_t maxBytes   = paimon::settings::quality::ramCacheBytes();
+    while ((m_lruOrder.size() > maxEntries || m_textureCacheBytes > maxBytes) && !m_lruOrder.empty()) {
         int removeID = m_lruOrder.front();
         m_lruOrder.pop_front();
         m_lruMap.erase(removeID);
-        if (auto removeIt = m_textureCache.find(removeID); removeIt != m_textureCache.end() && removeIt->second.texture) {
-            size_t removedBytes = estimateTextureBytes(removeIt->second.texture);
-            if (m_textureCacheBytes >= removedBytes) m_textureCacheBytes -= removedBytes;
+        if (auto removeIt = m_textureCache.find(removeID); removeIt != m_textureCache.end()) {
+            if (m_textureCacheBytes >= removeIt->second.byteSize) m_textureCacheBytes -= removeIt->second.byteSize;
             else m_textureCacheBytes = 0;
+            m_stats.ramEvictions.fetch_add(1, std::memory_order_relaxed);
         }
         m_textureCache.erase(removeID);
     }
@@ -883,7 +790,12 @@ void ThumbnailLoader::clearCache() {
     m_lruOrder.clear();
     m_lruMap.clear();
     m_textureCacheBytes = 0;
+    m_urlTextureCache.clear();
+    m_urlLruOrder.clear();
+    m_urlLruMap.clear();
+    m_urlCacheBytes = 0;
     m_failedCache.clear();
+    m_urlFailedCache.clear();
     m_gifLevels.clear();
 }
 
@@ -900,11 +812,8 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         // quito la entrada de la RAM
         auto it = m_textureCache.find(key);
         if (it != m_textureCache.end()) {
-            if (it->second.texture) {
-                size_t bytes = static_cast<size_t>(it->second.texture->getPixelsWide()) * static_cast<size_t>(it->second.texture->getPixelsHigh()) * 4;
-                if (m_textureCacheBytes >= bytes) m_textureCacheBytes -= bytes;
-                else m_textureCacheBytes = 0;
-            }
+            if (m_textureCacheBytes >= it->second.byteSize) m_textureCacheBytes -= it->second.byteSize;
+            else m_textureCacheBytes = 0;
             m_textureCache.erase(it);
             auto lruIt = m_lruMap.find(key);
             if (lruIt != m_lruMap.end()) {
@@ -944,9 +853,18 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         if (std::filesystem::exists(gifPath, ec)) {
             std::filesystem::remove(gifPath, ec);
         }
-        std::lock_guard<std::mutex> lock(m_diskMutex);
-        m_diskCache.erase(levelID);
-        m_diskCache.erase(-levelID);
+        // actualizar manifest
+        {
+            std::lock_guard<std::mutex> ml(m_manifest.mutex);
+            m_manifest.remove(levelID, false);
+            m_manifest.remove(levelID, true);
+        }
+        // actualizar legacy index
+        {
+            std::lock_guard<std::mutex> lock(m_diskMutex);
+            m_diskCache.erase(levelID);
+            m_diskCache.erase(-levelID);
+        }
     });
 }
 
@@ -976,12 +894,18 @@ void ThumbnailLoader::clearDiskCache() {
     spawnBackground([this]() {
         geode::utils::thread::setName("ThumbnailLoader Disk Clear");
         std::error_code ec;
-        std::filesystem::remove_all(Mod::get()->getSaveDir() / "cache", ec);
+        std::filesystem::remove_all(paimon::quality::cacheDir(), ec);
         if (ec) {
             log::error("[ThumbnailLoader] error limpiando cache de disco: {}", ec.message());
         }
-        std::lock_guard<std::mutex> lock(m_diskMutex);
-        m_diskCache.clear();
+        {
+            std::lock_guard<std::mutex> ml(m_manifest.mutex);
+            m_manifest.clear();
+        }
+        {
+            std::lock_guard<std::mutex> lock(m_diskMutex);
+            m_diskCache.clear();
+        }
         initDiskCache(); // vuelvo a crear la carpeta
     });
 }
@@ -1048,4 +972,279 @@ bool ThumbnailLoader::isTextureSane(cocos2d::CCTexture2D* tex) {
     auto sz = tex->getContentSize();
     if (std::isnan(sz.width) || std::isnan(sz.height)) return false;
     return sz.width > 0.f && sz.height > 0.f;
+}
+
+// ── Shared URL thumbnail cache (gallery) ────────────────────────────
+
+void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callback, int priority) {
+    if (url.empty()) {
+        if (callback) callback(nullptr, false);
+        return;
+    }
+
+    detectQualityChange();
+
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    auto now = std::chrono::steady_clock::now();
+
+    // 1. reviso cache RAM de URLs
+    auto it = m_urlTextureCache.find(url);
+    if (it != m_urlTextureCache.end()) {
+        m_stats.ramHits.fetch_add(1, std::memory_order_relaxed);
+        // LRU touch
+        auto lruIt = m_urlLruMap.find(url);
+        if (lruIt != m_urlLruMap.end()) {
+            m_urlLruOrder.erase(lruIt->second);
+        }
+        m_urlLruOrder.push_back(url);
+        m_urlLruMap[url] = std::prev(m_urlLruOrder.end());
+
+        auto tex = it->second.texture;
+        Loader::get()->queueInMainThread([callback, tex]() {
+            if (callback) callback(tex, true);
+        });
+        return;
+    }
+    m_stats.ramMisses.fetch_add(1, std::memory_order_relaxed);
+
+    // 2. cache de fallos
+    auto failIt = m_urlFailedCache.find(url);
+    if (failIt != m_urlFailedCache.end()) {
+        if (now - failIt->second < FAILED_CACHE_TTL) {
+            Loader::get()->queueInMainThread([callback]() {
+                if (callback) callback(nullptr, false);
+            });
+            return;
+        }
+        m_urlFailedCache.erase(failIt);
+    }
+
+    // 3. tarea existente
+    auto taskIt = m_urlTasks.find(url);
+    if (taskIt != m_urlTasks.end()) {
+        if (callback) taskIt->second->callbacks.push_back(callback);
+        return;
+    }
+
+    // 4. nueva tarea URL
+    auto task = std::make_shared<Task>();
+    task->levelID = 0;
+    task->url = url;
+    task->priority = priority;
+    task->isUrlTask = true;
+    if (callback) task->callbacks.push_back(callback);
+
+    m_urlTasks[url] = task;
+
+    // arranco directamente (no entra en la priority queue de levels)
+    if (m_activeTaskCount < m_maxConcurrentTasks) {
+        task->running = true;
+        m_activeTaskCount.fetch_add(1, std::memory_order_relaxed);
+        spawnBackground([this, task]() {
+            if (m_shuttingDown.load(std::memory_order_relaxed)) {
+                Loader::get()->queueInMainThread([this, task]() {
+                    finishTask(task, nullptr, false);
+                });
+                return;
+            }
+            geode::utils::thread::setName("ThumbnailLoader URL Worker");
+            workerUrlDownload(task);
+        });
+    }
+}
+
+bool ThumbnailLoader::isUrlLoaded(std::string const& url) const {
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    return m_urlTextureCache.find(url) != m_urlTextureCache.end();
+}
+
+void ThumbnailLoader::cancelUrlLoad(std::string const& url) {
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    auto it = m_urlTasks.find(url);
+    if (it != m_urlTasks.end()) {
+        it->second->cancelled = true;
+    }
+}
+
+void ThumbnailLoader::addToUrlCache(std::string const& url, cocos2d::CCTexture2D* texture) {
+    if (!texture || url.empty()) return;
+
+    size_t incomingBytes = estimateTextureBytes(texture);
+
+    // reemplazar existente
+    if (auto oldIt = m_urlTextureCache.find(url); oldIt != m_urlTextureCache.end()) {
+        if (m_urlCacheBytes >= oldIt->second.byteSize) m_urlCacheBytes -= oldIt->second.byteSize;
+        else m_urlCacheBytes = 0;
+    }
+
+    m_urlTextureCache[url] = CacheEntry{texture, 0, incomingBytes};
+    m_urlCacheBytes += incomingBytes;
+
+    // LRU
+    auto lruIt = m_urlLruMap.find(url);
+    if (lruIt != m_urlLruMap.end()) {
+        m_urlLruOrder.erase(lruIt->second);
+    }
+    m_urlLruOrder.push_back(url);
+    m_urlLruMap[url] = std::prev(m_urlLruOrder.end());
+
+    evictUrlCacheLocked();
+}
+
+void ThumbnailLoader::evictUrlCacheLocked() {
+    while ((m_urlLruOrder.size() > URL_CACHE_MAX_ENTRIES || m_urlCacheBytes > URL_CACHE_MAX_BYTES)
+           && !m_urlLruOrder.empty()) {
+        auto removeUrl = m_urlLruOrder.front();
+        m_urlLruOrder.pop_front();
+        m_urlLruMap.erase(removeUrl);
+        if (auto removeIt = m_urlTextureCache.find(removeUrl); removeIt != m_urlTextureCache.end()) {
+            if (m_urlCacheBytes >= removeIt->second.byteSize) m_urlCacheBytes -= removeIt->second.byteSize;
+            else m_urlCacheBytes = 0;
+            m_stats.ramEvictions.fetch_add(1, std::memory_order_relaxed);
+        }
+        m_urlTextureCache.erase(removeUrl);
+    }
+}
+
+void ThumbnailLoader::workerUrlDownload(std::shared_ptr<Task> task) {
+    if (task->cancelled) {
+        Loader::get()->queueInMainThread([this, task]() { finishTask(task, nullptr, false); });
+        return;
+    }
+
+    std::string url = task->url;
+    m_stats.downloads.fetch_add(1, std::memory_order_relaxed);
+
+    Loader::get()->queueInMainThread([this, task, url]() {
+        ThumbnailTransportClient::get().downloadFromUrl(url,
+            [this, task](bool success, cocos2d::CCTexture2D* tex) {
+                if (task->cancelled || !success || !tex) {
+                    if (!success) m_stats.downloadErrors.fetch_add(1, std::memory_order_relaxed);
+                    finishTask(task, nullptr, false);
+                    return;
+                }
+                finishTask(task, tex, true);
+            }
+        );
+    });
+}
+
+// ── Decode pipeline (off main thread) ───────────────────────────────
+
+ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8_t> const& data, int realID) {
+    DecodeResult result;
+    auto t0 = std::chrono::steady_clock::now();
+
+    bool isNativeGif = GIFDecoder::isGIF(data.data(), data.size());
+    result.isGif = isNativeGif;
+
+    if (isNativeGif) {
+        // GIF: decodifico primer frame fuera del main thread
+        auto gifData = GIFDecoder::decode(data.data(), data.size());
+        if (gifData.frames.empty() || gifData.width <= 0 || gifData.height <= 0) {
+            return result;
+        }
+        auto const& frame = gifData.frames.front();
+        if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) {
+            return result;
+        }
+
+        result.pixels.assign(frame.pixels.begin(), frame.pixels.end());
+        result.width = frame.width;
+        result.height = frame.height;
+
+        // aplico downscale si sale de la calidad
+        paimon::quality::downscaleRGBA(result.pixels, result.width, result.height);
+
+        // extraer colores dominantes
+        if (realID > 0 && !LevelColors::get().getPair(realID)) {
+            LevelColors::get().extractFromRawData(realID, result.pixels.data(),
+                result.width, result.height, true);
+        }
+
+        result.success = true;
+    } else {
+        // imagen estatica (png/jpg/webp)
+        int w = 0, h = 0, ch = 0;
+        unsigned char* pixels = stbi_load_from_memory(data.data(), (int)data.size(), &w, &h, &ch, 4);
+
+        if (pixels && w > 0 && h > 0 && w <= 16384 && h <= 16384) {
+            result.pixels.assign(pixels, pixels + (w * h * 4));
+            stbi_image_free(pixels);
+            result.width = w;
+            result.height = h;
+
+            // aplico downscale por calidad
+            paimon::quality::downscaleRGBA(result.pixels, result.width, result.height);
+
+            // extraer colores dominantes
+            if (realID > 0 && !LevelColors::get().getPair(realID)) {
+                LevelColors::get().extractFromRawData(realID, result.pixels.data(),
+                    result.width, result.height, true);
+            }
+
+            result.success = true;
+        } else {
+            if (pixels) stbi_image_free(pixels);
+        }
+    }
+
+    auto t1 = std::chrono::steady_clock::now();
+    result.decodeTimeUs = std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count();
+    m_stats.decodeTimeUsTotal.fetch_add(static_cast<uint64_t>(result.decodeTimeUs), std::memory_order_relaxed);
+
+    return result;
+}
+
+// ── Remote revision ─────────────────────────────────────────────────
+
+void ThumbnailLoader::updateRemoteRevision(int levelID, std::string const& revisionToken) {
+    if (levelID <= 0 || revisionToken.empty()) return;
+
+    std::lock_guard<std::mutex> lock(m_queueMutex);
+    auto it = m_remoteRevisions.find(levelID);
+    if (it != m_remoteRevisions.end() && it->second == revisionToken) {
+        return; // sin cambios
+    }
+
+    bool hadPrevious = (it != m_remoteRevisions.end());
+    m_remoteRevisions[levelID] = revisionToken;
+
+    // si habia una revision anterior y cambio, invalidar la cache
+    if (hadPrevious) {
+        log::info("[ThumbnailLoader] remote revision changed for level {}, invalidating", levelID);
+        // desbloqueo antes de llamar invalidateLevel (que toma el lock)
+        // pero como invalidateLevel necesita queueMutex, lo hago en main thread
+        Loader::get()->queueInMainThread([this, levelID]() {
+            invalidateLevel(levelID, false);
+            invalidateLevel(levelID, true);
+        });
+    }
+}
+
+// ── Manifest flush ──────────────────────────────────────────────────
+
+void ThumbnailLoader::flushManifest() {
+    spawnBackground([this]() {
+        geode::utils::thread::setName("ThumbnailLoader Manifest Flush");
+        m_manifest.flush();
+    });
+}
+
+// ── Quality change detection ────────────────────────────────────────
+
+bool ThumbnailLoader::detectQualityChange() {
+    std::string currentTag = paimon::settings::quality::tag();
+    if (currentTag == m_qualityTag) return false;
+
+    log::info("[ThumbnailLoader] quality changed: {} -> {}", m_qualityTag, currentTag);
+    m_qualityTag = currentTag;
+
+    // limpiar caches de RAM (las texturas son del tier anterior)
+    clearCache();
+
+    // re-init disk cache para el nuevo tier
+    initDiskCache();
+
+    return true;
 }

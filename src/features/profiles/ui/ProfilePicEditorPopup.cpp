@@ -1,4 +1,5 @@
 #include "ProfilePicEditorPopup.hpp"
+#include "../../../core/Settings.hpp"
 #include "../../../utils/DynamicPopupRegistry.hpp"
 #include "../../../utils/PaimonNotification.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
@@ -757,7 +758,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
     // 4) Cargar desde profileimg_cache en disco (datos descargados del servidor)
     if (!hasContent) {
         auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
-        auto cachePath = cacheDir / fmt::format("{}.dat", myAccountID);
+        auto cachePath = cacheDir / fmt::format("{}_{}.dat", myAccountID, paimon::settings::quality::tag());
         std::error_code ecProfCache;
         if (std::filesystem::exists(cachePath, ecProfCache)) {
             std::ifstream file(cachePath, std::ios::binary);

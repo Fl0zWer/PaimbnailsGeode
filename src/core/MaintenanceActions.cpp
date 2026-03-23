@@ -9,6 +9,7 @@
 #include "../features/profiles/services/ProfileThumbs.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
+#include "QualityConfig.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -139,15 +140,18 @@ MaintenanceStats runMaintenanceCleanup() {
     purgeDirectoryTree(saveDir / "gif_cache", stats);
     purgeDirectoryTree(saveDir / "thumbnails" / "profiles", stats);
 
-    sanitizeDirectory(saveDir / "cache", stats);
+    // also clean quality-aware dirs
+    sanitizeDirectory(paimon::quality::cacheDir(), stats);
+    sanitizeDirectory(paimon::quality::cacheDir() / "profiles", stats);
+    sanitizeDirectory(paimon::quality::cacheDir() / "gifs", stats);
     sanitizeDirectory(saveDir / "profileimg_cache", stats);
 
     std::array<std::filesystem::path, 5> requiredDirs = {
-        saveDir / "cache",
-        saveDir / "gif_cache",
+        paimon::quality::cacheDir(),
+        paimon::quality::cacheDir() / "gifs",
         saveDir / "profile_music",
         saveDir / "profileimg_cache",
-        saveDir / "thumbnails" / "profiles"
+        paimon::quality::cacheDir() / "profiles"
     };
 
     for (auto const& dir : requiredDirs) {
@@ -156,7 +160,7 @@ MaintenanceStats runMaintenanceCleanup() {
 
     {
         std::error_code ec;
-        auto probePath = saveDir / "cache" / ".maintenance_probe";
+        auto probePath = paimon::quality::cacheDir() / ".maintenance_probe";
         std::ofstream probeFile(probePath, std::ios::binary | std::ios::trunc);
         if (!probeFile) {
             stats.errors++;

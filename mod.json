@@ -43,6 +43,17 @@
         "english"
       ]
     },
+    "thumbnail-quality": {
+      "type": "string",
+      "name": "Thumbnail Quality",
+      "description": "Global quality for all images (thumbnails, profiles, GIFs, captures). Low = fast & light, Medium = balanced, High = full resolution.",
+      "default": "medium",
+      "one-of": [
+        "low",
+        "medium",
+        "high"
+      ]
+    },
     "dynamic-song": {
       "type": "bool",
       "name": "Dynamic Song",

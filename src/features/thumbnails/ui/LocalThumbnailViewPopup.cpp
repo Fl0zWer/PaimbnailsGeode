@@ -130,7 +130,7 @@ void LocalThumbnailViewPopup::onInfo(CCObject*) {
 void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
     if (index < 0 || index >= static_cast<int>(m_thumbnails.size())) return;
 
-    clearGalleryDisplay();
+    // Old thumbnail stays visible while downloading for smooth crossfade
 
     int requestToken = ++m_galleryRequestToken;
     auto& thumb = m_thumbnails[index];
@@ -248,6 +248,7 @@ void LocalThumbnailViewPopup::onExit() {
     log::info("[ThumbnailViewPopup] onExit() comenzando");
 
     m_touches.clear();
+    resetZoomGestureState();
 
     if (m_isExiting) {
         log::warn("[ThumbnailViewPopup] onExit() ya fue llamado, evitando re-entrada");
@@ -708,7 +709,17 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         return;
     }
 
-    clearGalleryDisplay();
+    // Save old sprite for crossfade (don't nuke clipping node)
+    CCNode* oldSprite = m_thumbnailSprite;
+    m_thumbnailSprite = nullptr;
+    m_thumbnailTexture = nullptr;
+
+    // Remove "no thumbnail" container if present
+    if (m_mainLayer) {
+        if (auto node = m_mainLayer->getChildByID("nothumb-container"_spr)) {
+            node->removeFromParent();
+        }
+    }
 
     if (!m_mainLayer) {
         log::error("[ThumbnailViewPopup] m_mainLayer es null!");
@@ -789,6 +800,7 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
     m_initialScale = scale;
     m_minScale = scale;
     m_maxScale = std::max(4.0f, scale * 6.0f);
+    m_savedScale = scale;
 
     float centerX = content.width * 0.5f;
     float centerY = content.height * 0.5f + 5.f;
@@ -806,9 +818,26 @@ void LocalThumbnailViewPopup::displayThumbnail(CCTexture2D* tex, float maxWidth,
         sprite->setPosition({centerX, centerY});
     }
     m_thumbnailSprite = sprite;
+    resetZoomGestureState();
 
     sprite->setVisible(true);
-    sprite->setOpacity(255);
+
+    // Crossfade: new sprite fades in, old sprite fades out
+    if (oldSprite && oldSprite->getParent()) {
+        sprite->setOpacity(0);
+        sprite->runAction(CCFadeTo::create(0.35f, 255));
+
+        auto* oldPtr = oldSprite;
+        oldPtr->runAction(CCSequence::create(
+            CCFadeTo::create(0.3f, 0),
+            CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
+            nullptr
+        ));
+    } else {
+        sprite->setOpacity(255);
+        // Clean up orphaned old sprite if it lost its parent
+        if (oldSprite) oldSprite->removeFromParent();
+    }
 
     log::info("[ThumbnailViewPopup] ✓ Thumbnail agregado a mainLayer");
     log::info("[ThumbnailViewPopup] Posicion: ({},{}), Scale: {}, Tamano final: {}x{}",
@@ -1407,6 +1436,7 @@ void LocalThumbnailViewPopup::onRecenter(CCObject*) {
     if (!m_thumbnailSprite) return;
 
     m_thumbnailSprite->stopAllActions();
+    resetZoomGestureState();
 
     auto content = this->m_mainLayer->getContentSize();
     float centerX = content.width * 0.5f;
@@ -1424,6 +1454,99 @@ void LocalThumbnailViewPopup::onRecenter(CCObject*) {
 
 float LocalThumbnailViewPopup::clamp(float value, float min, float max) {
     return std::max(min, std::min(value, max));
+}
+
+bool LocalThumbnailViewPopup::applyZoomAtWorldPoint(float targetScale, CCPoint worldPoint) {
+    if (!m_thumbnailSprite) return false;
+
+    auto* parent = m_thumbnailSprite->getParent();
+    if (!parent) return false;
+
+    float currentScale = m_thumbnailSprite->getScale();
+    float clampedScale = clamp(targetScale, m_minScale, m_maxScale);
+    if (std::abs(clampedScale - currentScale) < 0.001f) {
+        return false;
+    }
+
+    CCPoint focusInParent = parent->convertToNodeSpace(worldPoint);
+    CCPoint position = m_thumbnailSprite->getPosition();
+    CCPoint anchor = m_thumbnailSprite->getAnchorPoint();
+    CCSize contentSize = m_thumbnailSprite->getContentSize();
+    CCPoint anchorOffset = {
+        contentSize.width * anchor.x,
+        contentSize.height * anchor.y,
+    };
+
+    CCPoint localFocus = {
+        ((focusInParent.x - position.x) / currentScale) + anchorOffset.x,
+        ((focusInParent.y - position.y) / currentScale) + anchorOffset.y,
+    };
+
+    m_thumbnailSprite->setScale(clampedScale);
+    m_thumbnailSprite->setPosition({
+        focusInParent.x - (localFocus.x - anchorOffset.x) * clampedScale,
+        focusInParent.y - (localFocus.y - anchorOffset.y) * clampedScale,
+    });
+
+    clampSpritePosition();
+    return true;
+}
+
+void LocalThumbnailViewPopup::syncZoomGestureState() {
+    m_savedScale = m_thumbnailSprite ? m_thumbnailSprite->getScale() : m_initialScale;
+
+    if (m_touches.size() >= 2) {
+        auto it = m_touches.begin();
+        auto firstTouch = *it;
+        ++it;
+        auto secondTouch = *it;
+
+        auto firstLoc = firstTouch->getLocation();
+        auto secondLoc = secondTouch->getLocation();
+        m_touchMidPoint = (firstLoc + secondLoc) / 2.0f;
+        m_initialDistance = std::max(firstLoc.getDistance(secondLoc), 0.1f);
+        return;
+    }
+
+    if (m_touches.size() == 1) {
+        m_touchMidPoint = (*m_touches.begin())->getLocation();
+    } else {
+        m_touchMidPoint = getZoomFocusPoint();
+    }
+
+    m_initialDistance = 0.0f;
+}
+
+void LocalThumbnailViewPopup::resetZoomGestureState() {
+    m_initialDistance = 0.0f;
+    m_savedScale = m_thumbnailSprite ? m_thumbnailSprite->getScale() : m_initialScale;
+    m_touchMidPoint = getZoomFocusPoint();
+    m_wasZooming = false;
+}
+
+CCPoint LocalThumbnailViewPopup::getZoomFocusPoint() const {
+    if (m_touches.size() >= 2) {
+        auto it = m_touches.begin();
+        auto firstTouch = *it;
+        ++it;
+        auto secondTouch = *it;
+        return (firstTouch->getLocation() + secondTouch->getLocation()) / 2.0f;
+    }
+
+    if (m_touches.size() == 1) {
+        return (*m_touches.begin())->getLocation();
+    }
+
+    if (m_clippingNode) {
+        return m_clippingNode->convertToWorldSpace({m_viewWidth * 0.5f, m_viewHeight * 0.5f});
+    }
+
+    if (m_mainLayer) {
+        auto content = m_mainLayer->getContentSize();
+        return m_mainLayer->convertToWorldSpace({content.width * 0.5f, content.height * 0.5f});
+    }
+
+    return {0.f, 0.f};
 }
 
 void LocalThumbnailViewPopup::clampSpritePosition() {
@@ -1562,29 +1685,10 @@ bool LocalThumbnailViewPopup::ccTouchBegan(CCTouch* touch, CCEvent* event) {
     if (m_touches.size() == 1) {
         auto firstTouch = *m_touches.begin();
         if (firstTouch == touch) return true;
-
-        auto firstLoc = firstTouch->getLocation();
-        auto secondLoc = touch->getLocation();
-
-        m_touchMidPoint = (firstLoc + secondLoc) / 2.0f;
-        m_savedScale = m_thumbnailSprite ? m_thumbnailSprite->getScale() : m_initialScale;
-        m_initialDistance = firstLoc.getDistance(secondLoc);
-
-        if (m_thumbnailSprite) {
-            auto oldAnchor = m_thumbnailSprite->getAnchorPoint();
-            auto worldPos = m_thumbnailSprite->convertToWorldSpace({0, 0});
-            auto newAnchorX = (m_touchMidPoint.x - worldPos.x) / m_thumbnailSprite->getScaledContentWidth();
-            auto newAnchorY = (m_touchMidPoint.y - worldPos.y) / m_thumbnailSprite->getScaledContentHeight();
-
-            m_thumbnailSprite->setAnchorPoint({clamp(newAnchorX, 0, 1), clamp(newAnchorY, 0, 1)});
-            m_thumbnailSprite->setPosition({
-                m_thumbnailSprite->getPositionX() + m_thumbnailSprite->getScaledContentWidth() * -(oldAnchor.x - clamp(newAnchorX, 0, 1)),
-                m_thumbnailSprite->getPositionY() + m_thumbnailSprite->getScaledContentHeight() * -(oldAnchor.y - clamp(newAnchorY, 0, 1))
-            });
-        }
     }
 
     m_touches.insert(touch);
+    syncZoomGestureState();
     return true;
 }
 
@@ -1614,17 +1718,9 @@ void LocalThumbnailViewPopup::ccTouchMoved(CCTouch* touch, CCEvent* event) {
         if (m_initialDistance < 0.1f) m_initialDistance = 0.1f;
         if (distNow < 0.1f) distNow = 0.1f;
 
-        auto mult = m_initialDistance / distNow;
-        if (mult < 0.0001f) mult = 0.0001f;
-
-        auto zoom = clamp(m_savedScale / mult, m_minScale, m_maxScale);
-        m_thumbnailSprite->setScale(zoom);
-
-        auto centerDiff = m_touchMidPoint - center;
-        m_thumbnailSprite->setPosition(m_thumbnailSprite->getPosition() - centerDiff);
+        auto zoom = m_savedScale * (distNow / m_initialDistance);
+        applyZoomAtWorldPoint(zoom, center);
         m_touchMidPoint = center;
-
-        clampSpritePosition();
     }
 }
 
@@ -1648,6 +1744,8 @@ void LocalThumbnailViewPopup::ccTouchEnded(CCTouch* touch, CCEvent* event) {
 
         m_wasZooming = false;
     }
+
+    syncZoomGestureState();
 
     if (m_touches.empty()) {
         clampSpritePositionAnimated();
@@ -1680,14 +1778,14 @@ void LocalThumbnailViewPopup::scrollWheel(float x, float y) {
         return;
     }
 
-    m_thumbnailSprite->setScale(newScale);
-
-    clampSpritePosition();
+    m_wasZooming = true;
+    applyZoomAtWorldPoint(newScale, getZoomFocusPoint());
+    syncZoomGestureState();
 }
 
 void LocalThumbnailViewPopup::ccTouchCancelled(CCTouch* touch, CCEvent* event) {
     m_touches.erase(touch);
-    m_wasZooming = false;
+    resetZoomGestureState();
 }
 
 // ====================================================================

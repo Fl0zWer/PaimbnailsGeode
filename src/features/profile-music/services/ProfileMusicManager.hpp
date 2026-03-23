@@ -223,6 +223,7 @@ private:
     bool m_isPlaying = false;
     bool m_isPaused = false;
     int m_currentProfileID = 0;
+    uint32_t m_profileSessionToken = 0;
     std::string m_currentAudioPath;
 
     // Parametros pendientes para carga tras dip fade
@@ -276,7 +277,6 @@ private:
     void playAudioFile(std::string const& path, bool loop, int startMs = 0, int endMs = 0);
     void playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config);
     void stopCurrentAudio();
-    void reloadBgMusic(float startVolume);
 
     // Efecto cueva (lowpass + pitch)
     FMOD::DSP* m_lowpassDSP = nullptr;

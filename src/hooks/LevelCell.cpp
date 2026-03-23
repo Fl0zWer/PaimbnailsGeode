@@ -8,7 +8,6 @@
 #include <algorithm>
 #include <string_view>
 #include <random>
-#include <unordered_map>
 #include <unordered_set>
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
@@ -230,6 +229,15 @@ class $modify(PaimonLevelCell, LevelCell) {
         PaimonGalleryTransition m_cachedGalleryTransition = PaimonGalleryTransition::Crossfade;
         float m_cachedTransitionDuration = 0.6f;
         bool m_isGalleryTransitioning = false; // guard: true while a gallery transition is animating
+        float m_lastClipHoverOffsetX = 0.0f;
+        float m_lastClipHoverPosAdjustment = 0.0f;
+        float m_lastClipHoverScaleX = 1.0f;
+        float m_lastClipHoverRotation = 0.0f;
+        float m_lastSeparatorHoverOffsetX = 0.0f;
+        float m_lastSeparatorHoverRotation = 0.0f;
+        float m_lastSpriteHoverScale = 1.0f;
+        float m_lastSpriteHoverRotation = 0.0f;
+        float m_lastSpriteHoverOffsetX = 0.0f;
 
         // version de invalidacion: si cambia, recargar miniatura
         int m_loadedInvalidationVersion = 0;
@@ -241,7 +249,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool m_isDailyCell = false;
         bool m_isDailyCellCached = false;
         std::vector<ThumbnailAPI::ThumbnailInfo> m_galleryThumbnails;
-        std::unordered_map<std::string, Ref<CCTexture2D>> m_galleryTextureCache;
         std::unordered_set<std::string> m_galleryPendingUrls;
         int m_galleryIndex = -1;
         float m_galleryTimer = 0.f;
@@ -499,6 +506,15 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_thumbSprite = nullptr;
         fields->m_staticThumbLoad.reset();
         fields->m_loadingSpinner = nullptr; // spinner suele gestionarse con show/hide, limpiar aqui por seguridad
+        fields->m_lastClipHoverOffsetX = 0.0f;
+        fields->m_lastClipHoverPosAdjustment = 0.0f;
+        fields->m_lastClipHoverScaleX = 1.0f;
+        fields->m_lastClipHoverRotation = 0.0f;
+        fields->m_lastSeparatorHoverOffsetX = 0.0f;
+        fields->m_lastSeparatorHoverRotation = 0.0f;
+        fields->m_lastSpriteHoverScale = 1.0f;
+        fields->m_lastSpriteHoverRotation = 0.0f;
+        fields->m_lastSpriteHoverOffsetX = 0.0f;
 
         // limpiar restos con id "paimon" en bg y this
         auto cleanByID = [](CCNode* parent) {
@@ -674,6 +690,15 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_clipBasePos = clippingNode->getPosition();
         fields->m_thumbBaseScaleX = coverScale;
         fields->m_thumbBaseScaleY = coverScale;
+        fields->m_lastClipHoverOffsetX = 0.0f;
+        fields->m_lastClipHoverPosAdjustment = 0.0f;
+        fields->m_lastClipHoverScaleX = 1.0f;
+        fields->m_lastClipHoverRotation = 0.0f;
+        fields->m_lastSeparatorHoverOffsetX = 0.0f;
+        fields->m_lastSeparatorHoverRotation = 0.0f;
+        fields->m_lastSpriteHoverScale = 1.0f;
+        fields->m_lastSpriteHoverRotation = 0.0f;
+        fields->m_lastSpriteHoverOffsetX = 0.0f;
         log::info("[LevelCell] setupClippingAndSeparator: coverScale={:.4f} clipPos=({:.1f},{:.1f}) thumbPos=({:.1f},{:.1f})",
             coverScale, clippingNode->getPosition().x, clippingNode->getPosition().y, sprite->getPosition().x, sprite->getPosition().y);
         
@@ -1297,9 +1322,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto fields = m_fields.self();
         if (fields) {
             fields->m_isGalleryTransitioning = false;
-            // Reset hover lerp so the effect smoothly animates in from zero
-            // instead of snapping to full intensity after the transition
-            fields->m_centerLerp = 0.0f;
         }
     }
 
@@ -1399,6 +1421,13 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_clipBasePos = newClip->getPosition();
         fields->m_thumbBaseScaleX = newBaseScale;
         fields->m_thumbBaseScaleY = newBaseScale;
+        fields->m_lastClipHoverOffsetX = 0.0f;
+        fields->m_lastClipHoverPosAdjustment = 0.0f;
+        fields->m_lastClipHoverScaleX = 1.0f;
+        fields->m_lastClipHoverRotation = 0.0f;
+        fields->m_lastSpriteHoverScale = 1.0f;
+        fields->m_lastSpriteHoverRotation = 0.0f;
+        fields->m_lastSpriteHoverOffsetX = 0.0f;
 
         this->addChild(newClip);
         beginGalleryTransitionGuard(dur);
@@ -1449,10 +1478,14 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto const& thumb = fields->m_galleryThumbnails[index];
         if (thumb.url.empty()) return;
 
-        if (auto it = fields->m_galleryTextureCache.find(thumb.url); it != fields->m_galleryTextureCache.end() && it->second.data()) {
+        // check shared URL cache first
+        if (ThumbnailLoader::get().isUrlLoaded(thumb.url)) {
             if (fields->m_galleryIndex == index) {
-                log::info("[LevelCell] requestGalleryThumbnail: cache hit index={} url={}", index, thumb.url);
-                this->crossfadeToThumb(it->second.data());
+                log::info("[LevelCell] requestGalleryThumbnail: shared cache hit index={} url={}", index, thumb.url);
+                // re-request to get the texture via callback
+                ThumbnailLoader::get().requestUrlLoad(thumb.url, [this, index](CCTexture2D* tex, bool ok) {
+                    if (ok && tex) this->crossfadeToThumb(tex);
+                });
             }
             return;
         }
@@ -1466,7 +1499,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         const int levelID = m_level->m_levelID.value();
         const int galleryToken = fields->m_galleryToken;
         WeakRef<PaimonLevelCell> safeRef = this;
-        ThumbnailAPI::get().downloadFromUrl(thumb.url, [safeRef, levelID, galleryToken, index, url = thumb.url](bool success, CCTexture2D* tex) {
+        ThumbnailLoader::get().requestUrlLoad(thumb.url, [safeRef, levelID, galleryToken, index, url = thumb.url](CCTexture2D* tex, bool success) {
             auto cellRef = safeRef.lock();
             auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
             if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
@@ -1481,7 +1514,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             }
             log::info("[LevelCell] requestGalleryThumbnail callback: downloaded index={} success={}", index, success);
 
-            fields->m_galleryTextureCache[url] = tex;
             if (fields->m_galleryIndex == index) {
                 cell->crossfadeToThumb(tex);
             }
@@ -1642,7 +1674,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_thumbnailRequested = false;
             fields->m_staticThumbLoad.reset();
             fields->m_galleryThumbnails.clear();
-            fields->m_galleryTextureCache.clear();
             fields->m_galleryPendingUrls.clear();
             fields->m_galleryRequested = false;
             fields->m_galleryToken++;
@@ -1847,9 +1878,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (animType == PaimonAnimType::None) {
             fields->m_centerLerp = 0.0f;
         } else {
-            // During gallery transitions the hover transforms are not applied,
-            // so drive lerp toward 0 to avoid a snap when the guard lifts.
-            float target = (fields->m_wasInCenter && !fields->m_isGalleryTransitioning) ? 1.0f : 0.0f;
+            float target = fields->m_wasInCenter ? 1.0f : 0.0f;
             float speed = 6.0f * speedMult;
             fields->m_centerLerp += (target - fields->m_centerLerp) * std::min(1.0f, dt * speed);
         }
@@ -1907,28 +1936,58 @@ class $modify(PaimonLevelCell, LevelCell) {
             spriteRotation *= 0.55f;
         }
 
-        // Apply transforms to clipping node (skip during gallery transition to avoid
-        // fighting with the transition animation actions on the same node)
-        if (fields->m_clippingNode && !fields->m_isGalleryTransitioning) {
+        if (fields->m_clippingNode) {
             float posAdjustment = 0.0f;
             if (animType != PaimonAnimType::None && animType != PaimonAnimType::Slide) {
                 posAdjustment = (zoomFactor - 1.0f) * fields->m_clippingNode->getContentSize().width;
             }
-            fields->m_clippingNode->setPosition({fields->m_clipBasePos.x + offsetX + posAdjustment, fields->m_clipBasePos.y});
-            fields->m_clippingNode->setScaleX(zoomFactor);
-            fields->m_clippingNode->setRotation(rotation);
+
+            auto clipPos = fields->m_clippingNode->getPosition();
+            clipPos.x -= fields->m_lastClipHoverOffsetX + fields->m_lastClipHoverPosAdjustment;
+            fields->m_clippingNode->setPosition(clipPos);
+            fields->m_clippingNode->setScaleX(fields->m_clippingNode->getScaleX() / std::max(0.001f, fields->m_lastClipHoverScaleX));
+            fields->m_clippingNode->setRotation(fields->m_clippingNode->getRotation() - fields->m_lastClipHoverRotation);
+
+            clipPos = fields->m_clippingNode->getPosition();
+            clipPos.x += offsetX + posAdjustment;
+            fields->m_clippingNode->setPosition(clipPos);
+            fields->m_clippingNode->setScaleX(fields->m_clippingNode->getScaleX() * zoomFactor);
+            fields->m_clippingNode->setRotation(fields->m_clippingNode->getRotation() + rotation);
+
+            fields->m_lastClipHoverOffsetX = offsetX;
+            fields->m_lastClipHoverPosAdjustment = posAdjustment;
+            fields->m_lastClipHoverScaleX = zoomFactor;
+            fields->m_lastClipHoverRotation = rotation;
         }
 
-        if (fields->m_separator && !fields->m_isGalleryTransitioning) {
-            fields->m_separator->setPosition({fields->m_separatorBasePos.x + offsetX, fields->m_separatorBasePos.y});
-            fields->m_separator->setRotation(rotation);
+        if (fields->m_separator) {
+            auto separatorPos = fields->m_separator->getPosition();
+            separatorPos.x -= fields->m_lastSeparatorHoverOffsetX;
+            fields->m_separator->setPosition(separatorPos);
+            fields->m_separator->setRotation(fields->m_separator->getRotation() - fields->m_lastSeparatorHoverRotation);
+
+            separatorPos = fields->m_separator->getPosition();
+            separatorPos.x += offsetX;
+            fields->m_separator->setPosition(separatorPos);
+            fields->m_separator->setRotation(fields->m_separator->getRotation() + rotation);
+
+            fields->m_lastSeparatorHoverOffsetX = offsetX;
+            fields->m_lastSeparatorHoverRotation = rotation;
         }
 
-        if (fields->m_thumbSprite && !fields->m_isGalleryTransitioning) {
-            fields->m_thumbSprite->setScale(fields->m_thumbBaseScaleX * zoomFactor);
-            fields->m_thumbSprite->setRotation(spriteRotation);
-            fields->m_thumbSprite->setPosition(fields->m_thumbBasePos + CCPoint(spriteOffsetX, 0.0f));
+        if (fields->m_thumbSprite) {
+            fields->m_thumbSprite->setScale(fields->m_thumbSprite->getScale() / std::max(0.001f, fields->m_lastSpriteHoverScale));
+            fields->m_thumbSprite->setRotation(fields->m_thumbSprite->getRotation() - fields->m_lastSpriteHoverRotation);
+            fields->m_thumbSprite->setPosition(fields->m_thumbSprite->getPosition() - CCPoint(fields->m_lastSpriteHoverOffsetX, 0.0f));
+
+            fields->m_thumbSprite->setScale(fields->m_thumbSprite->getScale() * zoomFactor);
+            fields->m_thumbSprite->setRotation(fields->m_thumbSprite->getRotation() + spriteRotation);
+            fields->m_thumbSprite->setPosition(fields->m_thumbSprite->getPosition() + CCPoint(spriteOffsetX, 0.0f));
             fields->m_thumbSprite->setOpacity(255);
+
+            fields->m_lastSpriteHoverScale = zoomFactor;
+            fields->m_lastSpriteHoverRotation = spriteRotation;
+            fields->m_lastSpriteHoverOffsetX = spriteOffsetX;
         }
 
         // Build targets on stack (no heap allocation)
@@ -2201,7 +2260,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                     fields->m_thumbnailApplied = false;
                     fields->m_galleryRequested = false;
                     fields->m_galleryThumbnails.clear();
-                    fields->m_galleryTextureCache.clear();
                     fields->m_galleryPendingUrls.clear();
                     fields->m_galleryIndex = -1;
                     fields->m_galleryTimer = 0.f;
@@ -2223,7 +2281,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_loadedInvalidationVersion = 0;
                 fields->m_isDailyCellCached = false;
                 fields->m_galleryThumbnails.clear();
-                fields->m_galleryTextureCache.clear();
                 fields->m_galleryPendingUrls.clear();
                 fields->m_galleryIndex = -1;
                 fields->m_galleryTimer = 0.f;
@@ -2254,7 +2311,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                     if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
                     auto fields = cell->m_fields.self();
                     if (!fields || fields->m_galleryToken != galleryToken) return;
-                    fields->m_galleryTextureCache.clear();
                     fields->m_galleryPendingUrls.clear();
                     fields->m_galleryThumbnails = normalizeLevelCellGalleryThumbnails(
                         levelID,

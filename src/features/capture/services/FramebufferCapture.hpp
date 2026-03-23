@@ -24,7 +24,7 @@ struct CaptureQualitySettings {
  *
  * Works with shaders via direct back-buffer capture that already contains
  * the final composited frame with all effects applied.
- * Resolution is configurable via mod.json "capture-resolution".
+ * Output quality is derived from the global thumbnail-quality setting.
  */
 class FramebufferCapture {
 public:

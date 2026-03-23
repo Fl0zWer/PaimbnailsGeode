@@ -171,4 +171,63 @@ namespace general {
     }
 } // namespace general
 
+// ── Quality ─────────────────────────────────────────────────────────────
+
+enum class Quality { Low, Medium, High };
+
+namespace quality {
+    inline std::string raw() {
+        return geode::Mod::get()->getSettingValue<std::string>("thumbnail-quality");
+    }
+    inline Quality current() {
+        auto v = raw();
+        if (v == "low")  return Quality::Low;
+        if (v == "high") return Quality::High;
+        return Quality::Medium;
+    }
+    inline const char* tag() {
+        switch (current()) {
+            case Quality::Low:    return "low";
+            case Quality::High:   return "high";
+            default:              return "med";
+        }
+    }
+    // max texture dimension per quality tier (longest side)
+    inline int maxDimension() {
+        switch (current()) {
+            case Quality::Low:    return 480;
+            case Quality::High:   return 1920;
+            default:              return 960;
+        }
+    }
+    // RAM LRU entry limit
+    inline size_t ramCacheEntries() {
+        switch (current()) {
+            case Quality::Low:    return 80;
+            case Quality::High:   return 40;
+            default:              return 60;
+        }
+    }
+    // RAM LRU byte cap
+    inline size_t ramCacheBytes() {
+        switch (current()) {
+            case Quality::Low:    return 80ull * 1024 * 1024;
+            case Quality::High:   return 256ull * 1024 * 1024;
+            default:              return 160ull * 1024 * 1024;
+        }
+    }
+    // disk cache byte quota
+    inline size_t diskCacheBytes() {
+        switch (current()) {
+            case Quality::Low:    return 256ull * 1024 * 1024;
+            case Quality::High:   return 1024ull * 1024 * 1024;
+            default:              return 512ull * 1024 * 1024;
+        }
+    }
+    // cache subdirectory name so each quality tier is isolated
+    inline std::string cacheSubdir() {
+        return std::string("cache_") + tag();
+    }
+} // namespace quality
+
 } // namespace paimon::settings

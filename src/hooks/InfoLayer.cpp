@@ -8,7 +8,9 @@
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Shaders.hpp"
+#include "../utils/SpriteHelper.hpp"
 #include "../managers/ThumbnailAPI.hpp"
+#include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 
 using namespace geode::prelude;
@@ -30,36 +32,46 @@ class $modify(PaimonInfoLayer, InfoLayer) {
     bool init(GJGameLevel* level, GJUserScore* score, GJLevelList* list) {
         if (!InfoLayer::init(level, score, list)) return false;
 
-    // solo aplicar fondo si es un perfil de usuario
-        if (!score) return true;
+        if (score) {
+            // perfil de usuario: usar la imagen de perfil como fondo
+            int accountID = score->m_accountID;
+            if (accountID <= 0) return true;
 
-        int accountID = score->m_accountID;
-        if (accountID <= 0) return true;
+            CCTexture2D* tex = getProfileImgCachedTexture(accountID);
+            if (!tex) {
+                Ref<InfoLayer> safeRef = this;
+                ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef](bool success, CCTexture2D* texture) {
+                    if (success && texture) {
+                        Loader::get()->queueInMainThread([safeRef, texture]() {
+                            auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
+                            if (self->getParent()) {
+                                self->applyBlurredBackground(texture);
+                            }
+                        });
+                    }
+                }, false);
+                return true;
+            }
 
-        // Intentar del cache primero
-        CCTexture2D* tex = getProfileImgCachedTexture(accountID);
-        if (!tex) {
-            // no hay cache, bajar en background
+            applyBlurredBackground(tex);
+
+            if (ProfileMusicManager::get().isPlaying()) {
+                ProfileMusicManager::get().applyCaveEffect();
+                m_fields->m_hasCaveEffect = true;
+            }
+        } else if (level && level->m_levelID.value() > 0) {
+            // comentarios de nivel: usar el thumbnail del nivel como fondo
+            int levelID = level->m_levelID.value();
+            std::string fileName = fmt::format("{}.png", levelID);
             Ref<InfoLayer> safeRef = this;
-            ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef](bool success, CCTexture2D* texture) {
-                if (success && texture) {
-                    Loader::get()->queueInMainThread([safeRef, texture]() {
-                        auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
-                        if (self->getParent()) {
-                            self->applyBlurredBackground(texture);
-                        }
-                    });
-                }
-            }, false);
-            return true;
-        }
 
-        applyBlurredBackground(tex);
-
-        // Aplicar efecto cueva si hay musica de perfil sonando
-        if (ProfileMusicManager::get().isPlaying()) {
-            ProfileMusicManager::get().applyCaveEffect();
-            m_fields->m_hasCaveEffect = true;
+            ThumbnailLoader::get().requestLoad(levelID, fileName,
+                [safeRef](CCTexture2D* tex, bool success) {
+                    auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
+                    if (self->getParent() && tex) {
+                        self->applyBlurredBackground(tex);
+                    }
+                }, 3);
         }
 
         return true;
@@ -205,6 +217,17 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                             }
                         }
                     }
+
+                    if (!child->getChildByID("paimon-comment-bg"_spr)) {
+                        auto cellSize = child->getContentSize();
+                        auto bg = paimon::SpriteHelper::createDarkPanel(cellSize.width, cellSize.height, 90, 4.f);
+                        if (bg) {
+                            bg->setPosition({0, 0});
+                            bg->setZOrder(-10);
+                            bg->setID("paimon-comment-bg"_spr);
+                            child->addChild(bg);
+                        }
+                    }
                 }
 
                 self(self, child);
@@ -235,8 +258,12 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     void restoreMusicEffect() {
         if (m_fields->m_hasCaveEffect) {
-            // Forzar eliminacion inmediata para que el efecto no quede colgado al salir
-            ProfileMusicManager::get().forceRemoveCaveEffect();
+            auto& musicMgr = ProfileMusicManager::get();
+            if (musicMgr.isPlaying() || musicMgr.isPaused()) {
+                musicMgr.removeCaveEffect();
+            } else {
+                musicMgr.forceRemoveCaveEffect();
+            }
             m_fields->m_hasCaveEffect = false;
         }
     }

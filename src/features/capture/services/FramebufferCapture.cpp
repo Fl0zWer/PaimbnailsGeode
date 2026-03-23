@@ -1,4 +1,5 @@
 #include "FramebufferCapture.hpp"
+#include "../../../core/Settings.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/loader/Mod.hpp>
 #include <Geode/cocos/platform/CCGL.h>
@@ -109,21 +110,31 @@ FramebufferCapture::GLStateGuard::~GLStateGuard() {
 // ─────────────────────────────────────────────────────────────
 static CaptureQualitySettings getQualitySettings() {
     CaptureQualitySettings settings;
-    settings.targetWidth        = 1920;
+    settings.targetWidth        = paimon::settings::quality::maxDimension();
     settings.supersampleFactor  = 1;
     settings.useAntialiasing    = true;
     settings.highQualityFiltering = true;
 
-    std::string res = Mod::get()->getSettingValue<std::string>("capture-resolution");
-    if      (res == "720p")  settings.targetWidth = 1280;
-    else if (res == "1080p") settings.targetWidth = 1920;
-    else if (res == "1440p") settings.targetWidth = 2560;
-    else if (res == "4k")    settings.targetWidth = 3840;
-    else if (res == "8k")    settings.targetWidth = 7680;
-    else if (res == "ultra") { settings.targetWidth = 3840; settings.supersampleFactor = 2; }
-    else                     settings.targetWidth = 1920;
+    auto quality = paimon::settings::quality::current();
+    switch (quality) {
+        case paimon::settings::Quality::Low:
+            settings.useAntialiasing = false;
+            settings.highQualityFiltering = false;
+            break;
+        case paimon::settings::Quality::High:
+            settings.supersampleFactor = 2;
+            break;
+        case paimon::settings::Quality::Medium:
+        default:
+            break;
+    }
 
-    log::info("[FramebufferCapture] Resolution setting: '{}' -> Target Width: {}", res, settings.targetWidth);
+    log::info(
+        "[FramebufferCapture] Thumbnail quality '{}' -> Target Width: {} (SSAA x{})",
+        paimon::settings::quality::tag(),
+        settings.targetWidth,
+        settings.supersampleFactor
+    );
 
     return settings;
 }

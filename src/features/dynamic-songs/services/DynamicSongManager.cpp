@@ -93,6 +93,7 @@ void DynamicSongManager::loadMenuTrack(float startVolume) {
 
     if (m_savedMenuPos > 0) {
         engine->setMusicTimeMS(m_savedMenuPos, true, 0);
+        m_savedMenuPos = 0; // no reutilizar posicion obsoleta
     }
 }
 
@@ -194,7 +195,7 @@ std::string DynamicSongManager::getNextRotationSong(GJGameLevel* level) {
     auto it = m_songRotationCache.find(levelId);
     if (it == m_songRotationCache.end() || it->second.empty()) {
         if (m_songRotationCache.size() >= MAX_ROTATION_CACHE_LEVELS) {
-            m_songRotationCache.clear();
+            m_songRotationCache.erase(m_songRotationCache.begin());
         }
         m_songRotationCache[levelId] = allPaths;
         it = m_songRotationCache.find(levelId);
@@ -227,15 +228,17 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
     auto engineCheck = FMODAudioEngine::sharedEngine();
     if (!engineCheck || engineCheck->m_musicVolume <= 0.0f) return;
 
-    // Si ProfileMusic habia destruido el canal, limpiar el flag
-    if (m_stoppedByProfile) {
-        m_stoppedByProfile = false;
+    // Si otro flujo tomo temporalmente el canal, limpiar el flag de suspension.
+    if (m_playbackSuspendedExternally) {
+        m_playbackSuspendedExternally = false;
     }
 
     // Cancelar fades pendientes antes de iniciar uno nuevo
     if (m_isFadingIn || m_isFadingOut) {
         m_isFadingIn = false;
         m_isFadingOut = false;
+        m_pendingSongPath.clear();
+        m_pendingTargetVolume = 0.0f;
     }
 
     auto fadeGeneration = ++m_fadeGeneration;
@@ -349,6 +352,7 @@ void DynamicSongManager::stopSong() {
         m_isDynamicSongActive = false;
         m_currentPlayingLevelID = 0;
         m_expectedSongPath.clear();
+        m_lastSongPath.clear();
         paimon::setDynamicSongInteropActive(false);
     }
 }
@@ -398,6 +402,7 @@ void DynamicSongManager::executeDipFadeOut(int step, int totalSteps,
             m_isDynamicSongActive = false;
             m_currentPlayingLevelID = 0;
             m_expectedSongPath.clear();
+            m_lastSongPath.clear();
             paimon::setDynamicSongInteropActive(false);
         } else {
             // Cargar cancion pendiente
@@ -484,6 +489,10 @@ void DynamicSongManager::fadeOutForLevelStart() {
     m_isDynamicSongActive = false;
     m_currentLayer = DynSongLayer::None;
     m_expectedSongPath.clear();
+    m_lastSongPath.clear();
+    m_pendingSongPath.clear();
+    m_pendingTargetVolume = 0.0f;
+    m_currentPlayingLevelID = 0;
     paimon::setDynamicSongInteropActive(false);
 
     auto engine = FMODAudioEngine::sharedEngine();
@@ -547,9 +556,14 @@ void DynamicSongManager::forceKill() {
 
     m_isDynamicSongActive = false;
     m_currentLayer = DynSongLayer::None;
-    m_stoppedByProfile = false;
+    m_playbackSuspendedExternally = false;
     m_currentPlayingLevelID = 0;
     m_expectedSongPath.clear();
+    m_lastSongPath.clear();
+    m_pendingSongPath.clear();
+    m_pendingTargetVolume = 0.0f;
+    m_savedMenuPos = 0;
+    m_savedDynamicPosMs = 0;
     paimon::setDynamicSongInteropActive(false);
 
     // Restaurar volumen del canal principal — GD/PlayLayer cargaran su propia musica
@@ -559,8 +573,8 @@ void DynamicSongManager::forceKill() {
     }
 }
 
-// ─── Stop/Replay para ProfileMusic y otros sistemas ──────────────────
-void DynamicSongManager::stopDynamicForProfileMusic() {
+// ─── Suspension/reanudacion para sistemas que toman el canal principal ─
+void DynamicSongManager::suspendPlaybackForExternalAudio() {
     ++m_fadeGeneration;
 
     // Guardar posicion actual para restaurarla al salir del perfil
@@ -578,17 +592,17 @@ void DynamicSongManager::stopDynamicForProfileMusic() {
     m_isFadingIn = false;
     m_isFadingOut = false;
 
-    // El canal principal queda bajo control de ProfileMusic
-    m_stoppedByProfile = true;
+    // El canal principal queda bajo control de otro sistema.
+    m_playbackSuspendedExternally = true;
     // m_isDynamicSongActive se mantiene true para que sepamos que hay que recrear
     paimon::setDynamicSongInteropActive(false);
 
-    log::info("[DynamicSong] Detenido por ProfileMusic (lastSong: {}, pos: {}ms)", m_lastSongPath, m_savedDynamicPosMs);
+    log::info("[DynamicSong] Playback suspended externally (lastSong: {}, pos: {}ms)", m_lastSongPath, m_savedDynamicPosMs);
 }
 
-void DynamicSongManager::replayLastSong() {
+void DynamicSongManager::resumeSuspendedPlayback() {
     auto fadeGeneration = ++m_fadeGeneration;
-    m_stoppedByProfile = false;
+    m_playbackSuspendedExternally = false;
 
     // Respetar el toggle nativo de musica de menu de GD
     if (GameManager::get()->getGameVariable("0122")) {
@@ -612,7 +626,7 @@ void DynamicSongManager::replayLastSong() {
         m_expectedSongPath.clear();
         paimon::setDynamicSongInteropActive(false);
         restoreBgChannel();
-        log::info("[DynamicSong] No hay cancion para replay, menu restaurado");
+        log::info("[DynamicSong] No suspended playback to restore, menu restored");
         return;
     }
 
@@ -731,6 +745,10 @@ void DynamicSongManager::onPlaybackHijacked() {
     m_isFadingOut = false;
     m_currentPlayingLevelID = 0;
     m_expectedSongPath.clear();
+    m_lastSongPath.clear();
+    m_pendingSongPath.clear();
+    m_pendingTargetVolume = 0.0f;
     m_currentLayer = DynSongLayer::None;
+    m_playbackSuspendedExternally = false;
     paimon::setDynamicSongInteropActive(false);
 }

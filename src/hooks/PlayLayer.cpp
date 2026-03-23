@@ -24,6 +24,7 @@
 #include <Geode/binding/CCTextInputNode.hpp>
 #include "../utils/DominantColors.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
+#include "../features/audio/services/AudioContextCoordinator.hpp"
 #include <cstring>
 #include <memory>
 
@@ -246,7 +247,7 @@ class $modify(PaimonCapturePlayLayer, PlayLayer) {
     bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
         // DEFENSA FINAL: matar dynamic song al entrar al gameplay
         // No importa como llegamos aqui (LevelSelect, LevelInfo, etc.)
-        DynamicSongManager::get()->forceKill();
+        AudioContextCoordinator::get().notifyGameplayStarted();
 
         s_hideP1ForCapture = false;
         s_hideP2ForCapture = false;

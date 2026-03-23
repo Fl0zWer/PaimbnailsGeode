@@ -1,4 +1,5 @@
 #include "ProfileMusicManager.hpp"
+#include "../../audio/services/AudioContextCoordinator.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
@@ -470,6 +471,7 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
 
 void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int startMs, int endMs) {
     auto generation = ++m_fadeGeneration;
+    m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
 
     // Cancelar fades y limpiar estado
     m_isFadingIn = false;
@@ -494,13 +496,12 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
     m_pendingLoop = loop;
 
     bool useCrossfade = isCrossfadeEnabled();
-    auto* dsm = DynamicSongManager::get();
-    bool dynamicIsActive = dsm->m_isDynamicSongActive && !dsm->wasDynamicStoppedByProfile();
+    bool dynamicNeedsSuspension = AudioContextCoordinator::get().shouldSuspendDynamicForProfileMusic();
 
     // Guardar posicion de lo que sea que este sonando para restaurar luego
     m_savedBgPosMs = engine->getMusicTimeMS(0);
 
-    if (useCrossfade || dynamicIsActive) {
+    if (useCrossfade || dynamicNeedsSuspension) {
         // Dip fade: bajar volumen del main → a vol=0 cargar profile → subir
         float currentVol = 0.0f;
         if (engine->m_backgroundMusicChannel) {
@@ -513,7 +514,7 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
             executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false, generation);
         } else {
             // Ya estamos en silencio — notificar dynamic y cargar directo
-            if (dynamicIsActive) dsm->stopDynamicForProfileMusic();
+            AudioContextCoordinator::get().suspendDynamicForProfileMusicIfNeeded();
             loadProfileOnMainChannel(path, loop, startMs, endMs, 0.0f);
             m_isPlaying = true;
             m_isFadingIn = true;
@@ -616,8 +617,6 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
             engine->m_backgroundMusicChannel->setVolume(0.0f);
         }
 
-        auto* dsm = DynamicSongManager::get();
-
         if (restoreAfter) {
             // Saliendo de profile music: restaurar menu o dynamic
             m_isPlaying = false;
@@ -626,22 +625,12 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
             m_currentAudioPath.clear();
             paimon::setProfileMusicInteropActive(false);
 
-            if (dsm->wasDynamicStoppedByProfile()) {
-                dsm->replayLastSong();
-                m_isFadingOut = false;
-                log::info("[ProfileMusic] Fade-out complete, dynamic song replayed");
-            } else {
-                reloadBgMusic(0.0f);
-                m_isFadingOut = false;
-                m_isFadingIn = true;
-                executeDipFadeIn(0, totalSteps, 0.0f, m_bgVolumeBeforeFade, generation);
-                log::info("[ProfileMusic] Fade-out complete, menu reloaded, fading in");
-            }
+            m_isFadingOut = false;
+            AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, m_profileSessionToken);
+            log::info("[ProfileMusic] Fade-out complete, context restored by coordinator");
         } else {
             // Entrando a profile music: notificar dynamic y cargar profile
-            if (dsm->m_isDynamicSongActive && !dsm->wasDynamicStoppedByProfile()) {
-                dsm->stopDynamicForProfileMusic();
-            }
+            AudioContextCoordinator::get().suspendDynamicForProfileMusicIfNeeded();
             loadProfileOnMainChannel(m_currentAudioPath, m_pendingLoop,
                                      m_pendingStartMs, m_pendingEndMs, 0.0f);
             m_isPlaying = true;
@@ -724,45 +713,7 @@ void ProfileMusicManager::stopCurrentAudio() {
     m_isPlaying = false;
     m_isPaused = false;
     paimon::setProfileMusicInteropActive(false);
-
-    auto* dsm = DynamicSongManager::get();
-    if (dsm->wasDynamicStoppedByProfile()) {
-        // DynamicSong fue detenida por nosotros — recrearla en el main channel
-        dsm->replayLastSong();
-    } else {
-        // No hay dynamic song — recargar la musica de fondo en el main channel
-        auto engine = FMODAudioEngine::sharedEngine();
-        if (engine) {
-            reloadBgMusic(engine->m_musicVolume);
-        }
-    }
-}
-
-void ProfileMusicManager::reloadBgMusic(float startVolume) {
-    auto engine = FMODAudioEngine::sharedEngine();
-    auto gm = GameManager::get();
-    if (!engine || !gm) return;
-
-    // Respetar el toggle nativo de musica de menu de GD (variable 0122)
-    if (gm->getGameVariable("0122")) return;
-    if (engine->m_musicVolume <= 0.0f) return;
-
-    std::string menuTrack = gm->getMenuMusicFile();
-    DynamicSongManager::s_selfPlayMusic = true;
-    engine->playMusic(menuTrack, true, 0.0f, 0);
-    DynamicSongManager::s_selfPlayMusic = false;
-
-    if (engine->m_backgroundMusicChannel) {
-        engine->m_backgroundMusicChannel->setVolume(startVolume);
-        if (m_savedBgPosMs > 0) {
-            engine->setMusicTimeMS(m_savedBgPosMs, true, 0);
-            m_savedBgPosMs = 0;
-        }
-    }
-
-    paimon::setProfileMusicInteropActive(false);
-
-    log::info("[ProfileMusic] BG music recargado (vol:{:.2f})", startVolume);
+    AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, m_profileSessionToken);
 }
 
 void ProfileMusicManager::pauseProfileMusic() {
@@ -797,16 +748,7 @@ void ProfileMusicManager::stopProfileMusic() {
     if (m_isFadingOut) {
         log::info("[ProfileMusic] Fade-out in progress, forcing immediate stop");
         forceStop();
-        // Restaurar musica de fondo
-        auto* dsm = DynamicSongManager::get();
-        if (dsm->wasDynamicStoppedByProfile()) {
-            dsm->replayLastSong();
-        } else {
-            auto engine = FMODAudioEngine::sharedEngine();
-            if (engine) {
-                reloadBgMusic(engine->m_musicVolume);
-            }
-        }
+        AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, m_profileSessionToken);
         return;
     }
 
@@ -1042,6 +984,7 @@ std::vector<float> ProfileMusicManager::analyzeWaveform(std::string const& fileP
 
 void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, int endMs) {
     stopPreview();
+    m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;

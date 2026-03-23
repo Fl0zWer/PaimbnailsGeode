@@ -13,6 +13,7 @@
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/AnimatedGIFSprite.hpp"
+#include "QualityConfig.hpp"
 #include <filesystem>
 
 using namespace geode::prelude;
@@ -28,7 +29,7 @@ void cleanupDiskCache(char const* context) {
 
     log::info("[PaimonThumbnails] Cleaning thumbnail disk cache ({})...", context);
 
-    auto cachePath = Mod::get()->getSaveDir() / "cache";
+    auto cachePath = paimon::quality::cacheDir();
     std::error_code ec;
     if (!std::filesystem::exists(cachePath, ec)) return;
 
@@ -65,6 +66,10 @@ $on_game(Exiting) {
     // cancelar tareas pendientes de ThumbnailLoader ANTES de limpiar disco
     // para que los hilos de fondo no reescriban archivos que vamos a borrar
     ThumbnailLoader::get().cleanup();
+
+    // persistir manifest de disco antes de cerrar (sincrono, ya no hay workers)
+    ThumbnailLoader::get().diskManifest().flush();
+
     LocalThumbs::get().shutdown();
     ProfileThumbs::get().shutdown();
 
@@ -102,9 +107,9 @@ $on_game(Exiting) {
     // 4. thumbnails de disco (carpeta "cache/", preserva main levels 1-22)
     cleanupDiskCache("exit");
 
-    // 5. cache de disco de GIFs decodificados (carpeta "gif_cache/")
+    // 5. cache de disco de GIFs decodificados (quality-aware "gifs/" subdir)
     {
-        auto gifCacheDir = Mod::get()->getSaveDir() / "gif_cache";
+        auto gifCacheDir = paimon::quality::cacheDir() / "gifs";
         std::error_code ec;
         if (std::filesystem::exists(gifCacheDir, ec)) {
             std::filesystem::remove_all(gifCacheDir, ec);
@@ -129,9 +134,9 @@ $on_game(Exiting) {
         }
     }
 
-    // 8. cache de disco de perfiles RGB (thumbnails/profiles)
+    // 8. cache de disco de perfiles RGB (quality-aware profiles/ subdir)
     {
-        auto profileDir = Mod::get()->getSaveDir() / "thumbnails" / "profiles";
+        auto profileDir = paimon::quality::cacheDir() / "profiles";
         std::error_code ec;
         if (std::filesystem::exists(profileDir, ec)) {
             std::filesystem::remove_all(profileDir, ec);

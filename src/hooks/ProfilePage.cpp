@@ -28,7 +28,7 @@
 #include "../utils/ImageConverter.hpp"
 #include "../utils/HttpClient.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
-#include "../features/dynamic-songs/services/DynamicSongManager.hpp"
+#include "../features/audio/services/AudioContextCoordinator.hpp"
 #include "../features/transitions/services/TransitionManager.hpp"
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
 #include "../features/profiles/ui/RateProfilePopup.hpp"
@@ -1453,7 +1453,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         } else {
             // Si no esta sonando, intentar reproducir
-            musicManager.playProfileMusic(this->m_accountID);
+            AudioContextCoordinator::get().activateProfile(this->m_accountID);
             m_fields->m_musicPlaying = true;
             updatePauseButtonSprite(true);
         }
@@ -1498,7 +1498,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 m_fields->m_musicPauseBtn->setVisible(true);
                 if (auto* sm = getSocialsMenu()) sm->updateLayout();
             }
-            musicMgr.playProfileMusic(accountID, *cached);
+            AudioContextCoordinator::get().activateProfile(accountID, *cached);
             m_fields->m_musicPlaying = true;
             updatePauseButtonSprite(true);
         }
@@ -1547,7 +1547,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     }
                 }
 
-                ProfileMusicManager::get().playProfileMusic(accountID, config);
+                AudioContextCoordinator::get().activateProfile(accountID, config);
                 page->m_fields->m_musicPlaying = true;
                 page->updatePauseButtonSprite(true);
             });
@@ -1589,29 +1589,16 @@ class $modify(PaimonProfilePage, ProfilePage) {
         auto& musicMgr = ProfileMusicManager::get();
         if (m_fields->m_leaveForClose) {
             // Cierre definitivo: forzar parada inmediata del audio de perfil
-            // forceStop() ahora detiene el canal de audio, no solo los flags
-            bool wasPlaying = musicMgr.isPlaying() || musicMgr.isFadingOut();
-            musicMgr.forceStop();
-
-            // Restaurar musica de fondo (menu o dynamic song)
-            auto* dsm = DynamicSongManager::get();
-            if (dsm->wasDynamicStoppedByProfile()) {
-                dsm->replayLastSong();
-            } else if (wasPlaying) {
-                // Solo restaurar BG si realmente habiamos tomado el canal
-                auto engine = FMODAudioEngine::sharedEngine();
-                auto gm = GameManager::get();
-                if (engine && gm && !gm->getGameVariable("0122") && engine->m_musicVolume > 0.0f) {
-                    std::string menuTrack = gm->getMenuMusicFile();
-                    DynamicSongManager::s_selfPlayMusic = true;
-                    engine->playMusic(menuTrack, true, 0.0f, 0);
-                    DynamicSongManager::s_selfPlayMusic = false;
-                    if (engine->m_backgroundMusicChannel) {
-                        engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
-                    }
-                }
+            bool hadProfileAudio = musicMgr.isPlaying() || musicMgr.isPaused() || musicMgr.isFadingOut();
+            auto sessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+            if (hadProfileAudio) {
+                musicMgr.stopProfileMusic();
+                AudioContextCoordinator::get().clearProfileContext();
+            } else {
+                musicMgr.forceStop();
+                AudioContextCoordinator::get().handleProfileClosedAfterForceStop(false, sessionToken);
             }
-            resumeMenuMusicIfNeeded();
+            m_fields->m_menuMusicPaused = false;
             m_fields->m_pausedForTemporaryExit = false;
         } else {
             // Salida temporal (push de otra pantalla): pausar en vez de cortar audio.
@@ -1624,43 +1611,6 @@ class $modify(PaimonProfilePage, ProfilePage) {
             }
         }
         ProfilePage::onExit();
-    }
-
-    // Restaura la musica del menu principal con fade-in suave
-    // si no hubo musica de perfil (el ProfileMusicManager no toco el BG).
-    void resumeMenuMusicIfNeeded() {
-        if (!m_fields->m_menuMusicPaused) return;
-        m_fields->m_menuMusicPaused = false;
-
-        // Si DynamicSong esta activa, ella maneja su propio audio â€” no tocar BG
-        if (DynamicSongManager::get()->m_isDynamicSongActive) return;
-
-        // Si ProfileMusicManager esta haciendo fade-out, el restaurara el BG con crossfade
-        if (ProfileMusicManager::get().isFadingOut()) return;
-        // Si hay musica de perfil activa, stopProfileMusic ya inicio el crossfade
-        if (ProfileMusicManager::get().isPlaying()) return;
-
-        // No hubo musica de perfil â€” restaurar BG con fade-in suave
-        auto engine = FMODAudioEngine::sharedEngine();
-        if (!engine || !engine->m_backgroundMusicChannel) return;
-
-        bool isPaused = false;
-        engine->m_backgroundMusicChannel->getPaused(&isPaused);
-        if (isPaused) {
-            // Si estaba pausado (ej: crossfade previo lo pauso), despausar con volumen 0 y subir
-            engine->m_backgroundMusicChannel->setVolume(0.0f);
-            engine->m_backgroundMusicChannel->setPaused(false);
-        }
-
-        // Fade-in gradual del BG
-        float targetVol = engine->m_musicVolume;
-        float currentVol = 0.0f;
-        engine->m_backgroundMusicChannel->getVolume(&currentVol);
-        if (currentVol >= targetVol * 0.95f) return; // ya esta a volumen normal
-
-        // Ref<> mantiene vivo el objeto mientras el thread ejecuta
-        Ref<ProfilePage> fadeSafeRef = this;
-        fadeMenuMusicStep(fadeSafeRef, 0, 15, currentVol, targetVol);
     }
 
     void fadeMenuMusicStep(Ref<ProfilePage> safeRef, int step, int totalSteps, float fromVol, float toVol) {

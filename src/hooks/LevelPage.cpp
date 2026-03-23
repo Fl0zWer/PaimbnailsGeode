@@ -143,11 +143,13 @@ class $modify(PaimonLevelPage, LevelPage) {
         int capturedLevelID = m_fields->m_levelID;
         int token = ++m_fields->m_cycleToken;
         std::string url = m_fields->m_thumbnails[index].url;
-        auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
-        url += fmt::format("{}_pv={}{}", sep, m_fields->m_thumbnails[index].id, token);
+        if (!m_fields->m_thumbnails[index].id.empty()) {
+            auto sep = (url.find('?') == std::string::npos) ? "?" : "&";
+            url += fmt::format("{}_pv={}", sep, m_fields->m_thumbnails[index].id);
+        }
         int attemptIndex = index;
         Ref<LevelPage> safeRef = this;
-        ThumbnailAPI::get().downloadFromUrl(url, [safeRef, capturedLevelID, token, attemptIndex](bool success, CCTexture2D* tex) {
+        ThumbnailLoader::get().requestUrlLoad(url, [safeRef, capturedLevelID, token, attemptIndex](CCTexture2D* tex, bool success) {
             auto* self = static_cast<PaimonLevelPage*>(safeRef.data());
             if (!self->getParent() || self->m_fields->m_cycleToken != token || self->m_fields->m_levelID != capturedLevelID) return;
             if (success && tex) {

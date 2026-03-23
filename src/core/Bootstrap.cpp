@@ -8,6 +8,7 @@
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/MainThreadDelay.hpp"
+#include "QualityConfig.hpp"
 #include <thread>
 #include <filesystem>
 
@@ -61,7 +62,7 @@ void PaimonOnModLoaded() {
     log::info("[PaimonThumbnails][Init] Applying startup init");
 
     // borro el cache de perfiles al abrir el mod
-    auto profileDir = Mod::get()->getSaveDir() / "thumbnails" / "profiles";
+    auto profileDir = paimon::quality::cacheDir() / "profiles";
     
     std::error_code profileEc;
     if (std::filesystem::exists(profileDir, profileEc)) {

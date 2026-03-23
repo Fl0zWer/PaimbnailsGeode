@@ -6,6 +6,7 @@
 #include "../utils/Shaders.hpp"
 #include "../utils/PaimonShaderSprite.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../core/QualityConfig.hpp"
 #include <filesystem>
 #include <fstream>
 #include <thread>
@@ -89,7 +90,7 @@ void PaimonSupportLayer::createBackground() {
 
 void PaimonSupportLayer::loadShowcaseThumbnails() {
     // escanear el cache local de thumbnails en disco
-    auto cachePath = Mod::get()->getSaveDir() / "cache";
+    auto cachePath = paimon::quality::cacheDir();
     
     std::error_code ec;
     if (!std::filesystem::exists(cachePath, ec)) return;
