@@ -6,6 +6,7 @@
 class LevelCellSettingsPopup : public geode::Popup {
 protected:
     void onExit() override;
+    void scrollWheel(float x, float y) override;
 
     // -- Background section --
     cocos2d::CCLabelBMFont* m_bgTypeLabel = nullptr;

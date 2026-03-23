@@ -116,22 +116,11 @@ bool LeaderboardLayer::init() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
     // fondo base oscuro
-    auto bg = CCSprite::create("GJ_gradientBG.png");
-    if (bg) {
-        bg->setID("background"_spr);
-        bg->setPosition(winSize / 2);
-        bg->setScaleX(winSize.width / bg->getContentSize().width);
-        bg->setScaleY(winSize.height / bg->getContentSize().height);
-        bg->setColor({12, 10, 20});
-        bg->setZOrder(-10);
-        this->addChild(bg);
-    } else {
-        auto fallbackBg = CCLayerColor::create({12, 10, 20, 255});
-        fallbackBg->setID("background"_spr);
-        fallbackBg->setContentSize(winSize);
-        fallbackBg->setZOrder(-10);
-        this->addChild(fallbackBg);
-    }
+    auto bg = CCLayerColor::create(ccc4(12, 10, 20, 255));
+    bg->setID("background"_spr);
+    bg->setContentSize(winSize);
+    bg->setZOrder(-10);
+    this->addChild(bg);
 
     // fondo dinamico encima
     m_bgSprite = LeaderboardPaimonSprite::create(); 

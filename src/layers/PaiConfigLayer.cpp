@@ -82,15 +82,10 @@ bool PaiConfigLayer::init() {
     float cx = winSize.width / 2;
     float top = winSize.height;
 
-    // ── Background gradient ──
-    auto bg = CCSprite::create("GJ_gradientBG.png");
-    if (bg) {
-        bg->setScaleX(winSize.width / bg->getContentWidth());
-        bg->setScaleY(winSize.height / bg->getContentHeight());
-        bg->setAnchorPoint({0, 0});
-        bg->setColor({25, 25, 45});
-        this->addChild(bg, -2);
-    }
+    // ── Background opaco ──
+    auto bg = CCLayerColor::create(ccc4(25, 25, 45, 255));
+    bg->setContentSize(winSize);
+    this->addChild(bg, -2);
 
     // ── Main menu (for all buttons) ──
     m_mainMenu = CCMenu::create();

@@ -829,30 +829,6 @@ class $modify(PaimonLevelCell, LevelCell) {
                  bg->reorderChild(clipper, 10);
                  fields->m_gradientLayer = bgSprite;
 
-                 // Degradado suave: gradiente en el borde derecho del blur
-                 // que va desapareciendo hacia la miniatura. Se extiende un
-                 // poco mas alla del blur para crear una transicion natural.
-                 if (fields->m_clippingNode) {
-                     float thumbLeft = bg->getContentWidth() - fields->m_clippingNode->getContentSize().width;
-                     // gradiente que cubre desde ~40px antes del borde de la miniatura
-                     // hasta ~25px dentro de la miniatura (overlap)
-                     float fadeW = 65.f;
-                     float fadeH = bg->getContentHeight();
-                     float fadeX = thumbLeft - 40.f; // empieza antes del borde
-
-                     auto blurFade = CCLayerGradient::create(
-                         ccc4(0, 0, 0, 0),        // izquierda: transparente (blur visible)
-                         ccc4(0, 0, 0, opacity),   // derecha: oscuro (match dark overlay)
-                         ccp(1, 0)                  // direccion izq→der
-                     );
-                     blurFade->ignoreAnchorPointForPosition(false);
-                     blurFade->setAnchorPoint({0, 0});
-                     blurFade->setContentSize({fadeW, fadeH});
-                     blurFade->setPosition({std::max(0.f, fadeX), 0});
-                     blurFade->setID("paimon-blur-fade"_spr);
-                     clipper->addChild(blurFade, 2);
-                 }
-
                  return;
              }
         }

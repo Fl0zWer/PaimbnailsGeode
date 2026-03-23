@@ -39,11 +39,8 @@ bool LeaderboardHistoryLayer::init() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
     // fondo
-    auto bg = CCSprite::create("GJ_gradientBG.png");
-    bg->setPosition(winSize / 2);
-    bg->setScaleX(winSize.width / bg->getContentSize().width);
-    bg->setScaleY(winSize.height / bg->getContentSize().height);
-    bg->setColor({15, 12, 25});
+    auto bg = CCLayerColor::create(ccc4(15, 12, 25, 255));
+    bg->setContentSize(winSize);
     bg->setZOrder(-10);
     this->addChild(bg);
 

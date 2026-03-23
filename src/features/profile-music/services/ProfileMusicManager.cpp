@@ -468,6 +468,8 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
 }
 
 void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int startMs, int endMs) {
+    auto generation = ++m_fadeGeneration;
+
     // Cancelar fades y limpiar estado
     m_isFadingIn = false;
     m_isFadingOut = false;
@@ -504,14 +506,14 @@ void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int 
         if (currentVol > 0.001f) {
             m_isFadingOut = true;
             // restoreAfter=false → al llegar a 0, cargamos la musica de perfil
-            executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false);
+            executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false, generation);
         } else {
             // Ya estamos en silencio — notificar dynamic y cargar directo
             if (dynamicIsActive) dsm->stopDynamicForProfileMusic();
             loadProfileOnMainChannel(path, loop, startMs, endMs, 0.0f);
             m_isPlaying = true;
             m_isFadingIn = true;
-            executeDipFadeIn(0, FADE_STEPS, 0.0f, gameVolume);
+            executeDipFadeIn(0, FADE_STEPS, 0.0f, gameVolume, generation);
         }
     } else {
         // Sin crossfade, sin dynamic: parar BG y cargar directo
@@ -565,10 +567,12 @@ void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool
 }
 
 void ProfileMusicManager::fadeInProfileMusic(float targetVolume) {
-    executeDipFadeIn(0, FADE_STEPS, 0.0f, targetVolume);
+    auto generation = ++m_fadeGeneration;
+    executeDipFadeIn(0, FADE_STEPS, 0.0f, targetVolume, generation);
 }
 
 void ProfileMusicManager::fadeOutAndStop() {
+    auto generation = ++m_fadeGeneration;
     m_isFadingOut = true;
     m_isFadingIn = false;
 
@@ -588,13 +592,17 @@ void ProfileMusicManager::fadeOutAndStop() {
 
     // Dip fade: bajar main a 0 → cargar menu/dynamic → subir
     // restoreAfter=true: al llegar a 0 se restaura la musica anterior
-    executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, true);
+    executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, true, generation);
 }
 
 // ─── Dip Fade: fade-out del canal principal ──────────────────────────
 // Al llegar a volTo (0), carga la musica correspondiente y hace fade-in.
 void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
-    float volFrom, float volTo, bool restoreAfter) {
+    float volFrom, float volTo, bool restoreAfter, uint32_t generation) {
+    if (generation != m_fadeGeneration) {
+        return;
+    }
+
     if (step > totalSteps || !m_isFadingOut) {
         // Fade-out terminado
         auto engine = FMODAudioEngine::sharedEngine();
@@ -619,7 +627,7 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
                 reloadBgMusic(0.0f);
                 m_isFadingOut = false;
                 m_isFadingIn = true;
-                executeDipFadeIn(0, totalSteps, 0.0f, m_bgVolumeBeforeFade);
+                executeDipFadeIn(0, totalSteps, 0.0f, m_bgVolumeBeforeFade, generation);
                 log::info("[ProfileMusic] Fade-out complete, menu reloaded, fading in");
             }
         } else {
@@ -633,7 +641,7 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
             m_isFadingOut = false;
             m_isFadingIn = true;
             float gameVolume = engine ? engine->m_musicVolume : 1.0f;
-            executeDipFadeIn(0, totalSteps, 0.0f, gameVolume);
+            executeDipFadeIn(0, totalSteps, 0.0f, gameVolume, generation);
         }
         return;
     }
@@ -650,17 +658,21 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
     float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo, restoreAfter]() {
-        if (!m_isFadingOut) return;
+    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo, restoreAfter, generation]() {
+        if (generation != m_fadeGeneration || !m_isFadingOut) return;
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
-        executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreAfter);
+        executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreAfter, generation);
     });
 }
 
 // ─── Dip Fade: fade-in del canal principal ───────────────────────────
 void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
-    float volFrom, float volTo) {
+    float volFrom, float volTo, uint32_t generation) {
+    if (generation != m_fadeGeneration) {
+        return;
+    }
+
     if (step > totalSteps || !m_isFadingIn) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
@@ -682,15 +694,18 @@ void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
     float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo]() {
-        if (!m_isFadingIn) return;
+    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo, generation]() {
+        if (generation != m_fadeGeneration || !m_isFadingIn) return;
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
-        executeDipFadeIn(next, totalSteps, volFrom, volTo);
+        executeDipFadeIn(next, totalSteps, volFrom, volTo, generation);
     });
 }
 
 void ProfileMusicManager::stopCurrentAudio() {
+    ++m_fadeGeneration;
+    ++m_caveGeneration;
+
     // Cancelar cualquier fade en curso
     m_isFadingIn = false;
     m_isFadingOut = false;
@@ -763,15 +778,25 @@ void ProfileMusicManager::resumeProfileMusic() {
 }
 
 void ProfileMusicManager::stopProfileMusic() {
-    // Si ya hay un fade-out en curso, no hacer nada (evitar reiniciar o cortar)
-    if (m_isFadingOut) {
-        log::info("[ProfileMusic] Fade-out already in progress, ignoring stop request");
+    // Si no hay nada reproduciendose ni en fade, no tocar nada
+    if (!m_isPlaying && !m_isFadingOut) {
         return;
     }
 
-    // Si no hay nada reproduciendose, no tocar nada
-    // (evita que stopCurrentAudio restaure el BG channel innecesariamente)
-    if (!m_isPlaying) {
+    // Si ya hay un fade-out en curso, forzar parada inmediata en vez de ignorar
+    if (m_isFadingOut) {
+        log::info("[ProfileMusic] Fade-out in progress, forcing immediate stop");
+        forceStop();
+        // Restaurar musica de fondo
+        auto* dsm = DynamicSongManager::get();
+        if (dsm->wasDynamicStoppedByProfile()) {
+            dsm->replayLastSong();
+        } else {
+            auto engine = FMODAudioEngine::sharedEngine();
+            if (engine) {
+                reloadBgMusic(engine->m_musicVolume);
+            }
+        }
         return;
     }
 
@@ -1151,6 +1176,7 @@ void ProfileMusicManager::applyCaveEffect() {
 
     m_caveEffectActive = true;
     m_caveTransitioning = true;
+    auto generation = ++m_caveGeneration;
 
     log::info("[ProfileMusic] Cave effect: starting smooth transition IN (freq:{:.0f}, vol:{:.2f})",
         m_originalFrequency, m_originalVolume);
@@ -1161,7 +1187,7 @@ void ProfileMusicManager::applyCaveEffect() {
         22000.0f, 800.0f,
         m_originalFrequency, m_originalFrequency * 0.92f,
         m_originalVolume, m_originalVolume * 0.6f,
-        true);
+        true, generation);
 }
 
 void ProfileMusicManager::forceRemoveCaveEffect() {
@@ -1169,6 +1195,7 @@ void ProfileMusicManager::forceRemoveCaveEffect() {
     // (forceStop() limpia m_caveTransitioning antes de llamar aqui)
     if (!m_caveEffectActive && !m_caveTransitioning && !m_lowpassDSP) return;
 
+    ++m_caveGeneration;
     m_caveTransitioning = false;
     m_caveEffectActive = false;
 
@@ -1210,6 +1237,7 @@ void ProfileMusicManager::removeCaveEffect() {
     }
 
     m_caveTransitioning = true;
+    auto generation = ++m_caveGeneration;
 
     // Leer valores actuales
     float currentVol = 0.0f;
@@ -1234,13 +1262,17 @@ void ProfileMusicManager::removeCaveEffect() {
         800.0f, 22000.0f,
         currentFreq, targetFreq,
         currentVol, targetVol,
-        false);
+        false, generation);
 }
 
 void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     float cutoffFrom, float cutoffTo,
     float freqFrom, float freqTo,
-    float volFrom, float volTo, bool applying) {
+    float volFrom, float volTo, bool applying, uint32_t generation) {
+
+    if (generation != m_caveGeneration) {
+        return;
+    }
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!m_caveTransitioning || !engine || !engine->m_backgroundMusicChannel) {
@@ -1307,15 +1339,19 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     float stepDelay = 400.0f / static_cast<float>(totalSteps) / 1000.f; // 400ms total transition
 
     paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, cutoffFrom, cutoffTo,
-                                                freqFrom, freqTo, volFrom, volTo, applying]() {
+                                                freqFrom, freqTo, volFrom, volTo, applying, generation]() {
+        if (generation != m_caveGeneration) return;
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
         executeCaveTransitionStep(next, totalSteps, cutoffFrom, cutoffTo,
-            freqFrom, freqTo, volFrom, volTo, applying);
+            freqFrom, freqTo, volFrom, volTo, applying, generation);
     });
 }
 
 void ProfileMusicManager::forceStop() {
+    ++m_fadeGeneration;
+    ++m_caveGeneration;
+
     log::info("[ProfileMusic] forceStop called (fadingOut:{}, fadingIn:{}, playing:{})",
         m_isFadingOut, m_isFadingIn, m_isPlaying);
 
@@ -1327,6 +1363,15 @@ void ProfileMusicManager::forceStop() {
     // (forceRemoveCaveEffect ahora tambien chequea m_lowpassDSP)
     forceRemoveCaveEffect();
     m_caveTransitioning = false;
+
+    // Detener el canal de audio si estaba reproduciendose musica de perfil
+    // Sin esto, el audio seguia sonando despues de cerrar el perfil
+    if (m_isPlaying && !m_currentAudioPath.empty()) {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->stop();
+        }
+    }
 
     m_isPlaying = false;
     m_isPaused = false;

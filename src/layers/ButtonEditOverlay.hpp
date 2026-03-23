@@ -73,7 +73,8 @@ protected:
     void ccTouchCancelled(cocos2d::CCTouch* touch, cocos2d::CCEvent* event) override;
     
     EditableButton* findButtonAtPoint(cocos2d::CCPoint worldPos);
-    
+    bool isTouchOnSlider(cocos2d::CCTouch* touch);
+
     // snap
     cocos2d::CCPoint applySnap(cocos2d::CCPoint pos);
     void createSnapGuides();

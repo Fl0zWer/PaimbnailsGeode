@@ -448,10 +448,12 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (show && !targetName.empty()) {
             auto targetLower = geode::utils::string::toLower(targetName);
             Ref<ProfilePage> self = this;
-            HttpClient::get().get("/api/moderators", [self, targetLower](bool ok, std::string const& resp) {
+            int currentAccount = this->m_accountID;
+            HttpClient::get().get("/api/moderators", [self, targetLower, currentAccount](bool ok, std::string const& resp) {
                 if (!ok) return;
-                // compruebo que sigo vivo (por si acaso)
+                // compruebo que sigo vivo y es el mismo perfil
                 if (!self || !self->getParent()) return;
+                if (self->m_accountID != currentAccount) return;
 
                 auto parsed = matjson::parse(resp);
                 if (!parsed.isOk()) return;
@@ -1508,6 +1510,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
         musicMgr.getProfileMusicConfig(accountID, [self, accountID, cachedCopy](bool success, const ProfileMusicManager::ProfileMusicConfig& config) {
             Loader::get()->queueInMainThread([self, success, config, accountID, cachedCopy]() {
                 if (!self || !self->getParent()) return;
+                // Verificar que seguimos en el mismo perfil
+                if (self->m_accountID != accountID) return;
                 auto* page = static_cast<PaimonProfilePage*>(self.data());
                 if (page->m_fields->m_leaveForClose) return;
 
@@ -1584,8 +1588,28 @@ class $modify(PaimonProfilePage, ProfilePage) {
         this->unschedule(schedule_selector(PaimonProfilePage::fadeStepTick));
         auto& musicMgr = ProfileMusicManager::get();
         if (m_fields->m_leaveForClose) {
-            if (!musicMgr.isFadingOut()) {
-                musicMgr.stopProfileMusic();
+            // Cierre definitivo: forzar parada inmediata del audio de perfil
+            // forceStop() ahora detiene el canal de audio, no solo los flags
+            bool wasPlaying = musicMgr.isPlaying() || musicMgr.isFadingOut();
+            musicMgr.forceStop();
+
+            // Restaurar musica de fondo (menu o dynamic song)
+            auto* dsm = DynamicSongManager::get();
+            if (dsm->wasDynamicStoppedByProfile()) {
+                dsm->replayLastSong();
+            } else if (wasPlaying) {
+                // Solo restaurar BG si realmente habiamos tomado el canal
+                auto engine = FMODAudioEngine::sharedEngine();
+                auto gm = GameManager::get();
+                if (engine && gm && !gm->getGameVariable("0122") && engine->m_musicVolume > 0.0f) {
+                    std::string menuTrack = gm->getMenuMusicFile();
+                    DynamicSongManager::s_selfPlayMusic = true;
+                    engine->playMusic(menuTrack, true, 0.0f, 0);
+                    DynamicSongManager::s_selfPlayMusic = false;
+                    if (engine->m_backgroundMusicChannel) {
+                        engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
+                    }
+                }
             }
             resumeMenuMusicIfNeeded();
             m_fields->m_pausedForTemporaryExit = false;

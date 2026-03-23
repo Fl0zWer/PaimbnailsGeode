@@ -55,19 +55,9 @@ void PaimonSupportLayer::createBackground() {
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
     // fondo base oscuro (se ve mientras cargan los thumbnails)
-    auto bg = CCSprite::create("GJ_gradientBG.png");
-    if (bg) {
-        auto bgSize = bg->getTextureRect().size;
-        bg->setScaleX(winSize.width / bgSize.width);
-        bg->setScaleY(winSize.height / bgSize.height);
-        bg->setAnchorPoint({0, 0});
-        bg->setColor({15, 10, 30});
-        this->addChild(bg, -5);
-    } else {
-        auto fallbackBg = CCLayerColor::create({15, 10, 30, 255});
-        fallbackBg->setContentSize(winSize);
-        this->addChild(fallbackBg, -5);
-    }
+    auto bg = CCLayerColor::create(ccc4(15, 10, 30, 255));
+    bg->setContentSize(winSize);
+    this->addChild(bg, -5);
 
     // overlay oscuro sutil sobre el thumbnail para legibilidad
     auto overlay = CCLayerColor::create({0, 0, 0, 60});

@@ -8,7 +8,6 @@
 #include <Geode/utils/cocos.hpp>
 #include <Geode/loader/Mod.hpp>
 #include "../utils/Shaders.hpp"
-#include "../utils/SpriteHelper.hpp"
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
 
@@ -204,18 +203,6 @@ class $modify(PaimonInfoLayer, InfoLayer) {
                                     lk->setVisible(false);
                                 }
                             }
-                        }
-                    }
-
-                    // agregar fondo propio si no existe ya
-                    if (!child->getChildByID("paimon-comment-bg"_spr)) {
-                        auto cs = child->getContentSize();
-                        auto bg = paimon::SpriteHelper::createDarkPanel(cs.width, cs.height, 90, 4.f);
-                        if (bg) {
-                            bg->setPosition({0, 0});
-                            bg->setZOrder(-10);
-                            bg->setID("paimon-comment-bg"_spr);
-                            child->addChild(bg);
                         }
                     }
                 }

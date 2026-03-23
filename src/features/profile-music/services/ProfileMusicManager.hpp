@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <cstdint>
 
 /**
  * ProfileMusicManager - Gestiona la musica personalizada de perfiles
@@ -233,6 +234,7 @@ private:
     static constexpr int FADE_STEPS = 20;
     bool m_isFadingIn = false;
     bool m_isFadingOut = false;
+    uint32_t m_fadeGeneration = 0;
     float m_bgVolumeBeforeFade = 1.0f;
     unsigned int m_savedBgPosMs = 0;
 
@@ -241,8 +243,8 @@ private:
 
     void fadeInProfileMusic(float targetVolume);
     void fadeOutAndStop();
-    void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreAfter);
-    void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo);
+    void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreAfter, uint32_t generation);
+    void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo, uint32_t generation);
 
     // Cache de configuraciones
     std::map<int, ProfileMusicConfig> m_configCache;
@@ -280,10 +282,12 @@ private:
     FMOD::DSP* m_lowpassDSP = nullptr;
     bool m_caveEffectActive = false;
     bool m_caveTransitioning = false;
+    uint32_t m_caveGeneration = 0;
     float m_originalFrequency = 0.0f;
     float m_originalVolume = 0.0f;
     void executeCaveTransitionStep(int step, int totalSteps, float cutoffFrom, float cutoffTo,
-                                    float freqFrom, float freqTo, float volFrom, float volTo, bool applying);
+                                    float freqFrom, float freqTo, float volFrom, float volTo, bool applying,
+                                    uint32_t generation);
 };
 
 

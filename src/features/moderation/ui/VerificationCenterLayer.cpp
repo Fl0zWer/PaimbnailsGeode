@@ -59,20 +59,10 @@ bool VerificationCenterLayer::init() {
 
     auto winSize = CCDirector::sharedDirector()->getWinSize();
 
-    // fondo GD estandar
-    auto bg = CCSprite::create("GJ_gradientBG.png");
-    if (bg) {
-        auto bgSize = bg->getTextureRect().size;
-        bg->setScaleX(winSize.width / bgSize.width);
-        bg->setScaleY(winSize.height / bgSize.height);
-        bg->setAnchorPoint({0, 0});
-        bg->setColor({18, 18, 40});
-        this->addChild(bg, -2);
-    } else {
-        auto fallbackBg = CCLayerColor::create({18, 18, 40, 255});
-        fallbackBg->setContentSize(winSize);
-        this->addChild(fallbackBg, -2);
-    }
+    // fondo opaco GD estandar
+    auto bg = CCLayerColor::create(ccc4(18, 18, 40, 255));
+    bg->setContentSize(winSize);
+    this->addChild(bg, -2);
 
     // bordes decorativos (estilo GD)
     auto bottomLeft = CCSprite::createWithSpriteFrameName("GJ_sideArt_001.png");

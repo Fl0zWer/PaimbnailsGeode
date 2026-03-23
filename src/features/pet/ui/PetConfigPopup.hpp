@@ -5,6 +5,7 @@
 class PetConfigPopup : public geode::Popup {
 protected:
     void onExit() override;
+    void scrollWheel(float x, float y) override;
 
     // gallery
     cocos2d::CCNode* m_galleryContainer = nullptr;

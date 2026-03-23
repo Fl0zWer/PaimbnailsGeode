@@ -65,6 +65,44 @@ void PetConfigPopup::onExit() {
     Popup::onExit();
 }
 
+void PetConfigPopup::scrollWheel(float x, float y) {
+#if !defined(GEODE_IS_WINDOWS)
+    Popup::scrollWheel(x, y);
+#else
+    if (m_currentTab != 1 || !m_scrollLayer || !m_scrollLayer->isVisible()) {
+        Popup::scrollWheel(x, y);
+        return;
+    }
+
+    auto winSize = CCDirector::sharedDirector()->getWinSize();
+    CCPoint mousePos = CCDirector::sharedDirector()->getOpenGLView()->getMousePosition();
+    mousePos.y = winSize.height - mousePos.y;
+
+    CCRect scrollRect = m_scrollLayer->boundingBox();
+    scrollRect.origin = m_scrollLayer->getParent()->convertToWorldSpace(scrollRect.origin);
+    if (!scrollRect.containsPoint(mousePos)) {
+        Popup::scrollWheel(x, y);
+        return;
+    }
+
+    float scrollAmount = y * 28.f;
+    if (std::abs(scrollAmount) < 0.001f) {
+        scrollAmount = -x * 28.f;
+    }
+
+    auto* contentLayer = m_scrollLayer->m_contentLayer;
+    if (!contentLayer) return;
+
+    float newY = contentLayer->getPositionY() + scrollAmount;
+    float minY = m_scrollLayer->getContentSize().height - contentLayer->getContentSize().height;
+    float maxY = 0.f;
+    if (minY > maxY) minY = maxY;
+
+    contentLayer->setPositionY(std::max(minY, std::min(maxY, newY)));
+    checkScrollPosition(0.f);
+#endif
+}
+
 // ════════════════════════════════════════════════════════════
 // tabs
 // ════════════════════════════════════════════════════════════
@@ -399,6 +437,9 @@ void PetConfigPopup::buildSettingsTab() {
     m_scrollLayer = ScrollLayer::create({scrollW, scrollH});
     m_scrollLayer->setPosition({8.f, 8.f});
     m_settingsTab->addChild(m_scrollLayer, 5);
+#if defined(GEODE_IS_WINDOWS)
+    m_scrollLayer->setTouchEnabled(false);
+#endif
 
     auto* sc = m_scrollLayer->m_contentLayer;
     sc->setContentSize({scrollW, totalH});

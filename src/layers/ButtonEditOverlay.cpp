@@ -371,7 +371,34 @@ EditableButton* ButtonEditOverlay::findButtonAtPoint(CCPoint worldPos) {
     return nullptr;
 }
 
+// Helper: verifica si el toque cae sobre el area de un Slider (thumb + groove).
+// Los Sliders de GD manejan sus propios toques via registerWithTouchDispatcher;
+// si nosotros tragamos el toque aqui, nunca les llega.
+bool ButtonEditOverlay::isTouchOnSlider(CCTouch* touch) {
+    auto checkSlider = [&](Slider* slider) -> bool {
+        if (!slider || !slider->isVisible() || !slider->getParent()) return false;
+        // Usar el bounding box del slider completo (groove + thumb)
+        auto sliderWorldPos = slider->getParent()->convertToWorldSpace(slider->getPosition());
+        // El Slider de GD tiene un ancho/alto basado en su escala y contenido
+        auto cs = slider->getContentSize();
+        float sc = slider->getScale();
+        float w = cs.width * sc;
+        float h = std::max(cs.height * sc, 30.f); // minimo 30px de area tactil vertical
+        CCRect sliderRect(sliderWorldPos.x - w / 2.f, sliderWorldPos.y - h / 2.f, w, h);
+        return sliderRect.containsPoint(touch->getLocation());
+    };
+
+    if (checkSlider(m_scaleSlider)) return true;
+    if (checkSlider(m_opacitySlider)) return true;
+    return false;
+}
+
 bool ButtonEditOverlay::ccTouchBegan(CCTouch* touch, CCEvent* event) {
+    // Si el toque cae sobre un slider, no tragarlo — dejar que el Slider lo maneje
+    if (isTouchOnSlider(touch)) {
+        return false;
+    }
+
     auto touchPos = touch->getLocation();
     auto foundBtn = findButtonAtPoint(touchPos);
     

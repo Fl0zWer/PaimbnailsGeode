@@ -236,6 +236,8 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         m_isFadingOut = false;
     }
 
+    auto fadeGeneration = ++m_fadeGeneration;
+
     // Si ya estamos reproduciendo la MISMA cancion (retry de onEnter),
     // no avanzar la rotacion — reusar el mismo path.
     std::string songPath;
@@ -296,7 +298,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         m_isFadingIn = false;
 
         // Fase 1: fade-out del main (restoreMenu=false → al llegar a 0, carga pendingSong)
-        executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false);
+        executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, false, fadeGeneration);
 
     } else if (!m_isDynamicSongActive) {
         // ═══ Primera cancion — fade-in desde menu ═══
@@ -313,7 +315,7 @@ void DynamicSongManager::playSong(GJGameLevel* level) {
         if (isCrossfadeEnabled()) {
             m_isFadingIn = true;
             m_isFadingOut = false;
-            fadeInMainChannel(gameVolume);
+            fadeInMainChannel(gameVolume, fadeGeneration);
         } else {
             if (engine->m_backgroundMusicChannel) {
                 engine->m_backgroundMusicChannel->setVolume(gameVolume);
@@ -335,7 +337,7 @@ void DynamicSongManager::stopSong() {
     if (m_isFadingOut) return;
 
     if (isCrossfadeEnabled()) {
-        fadeOutAndRestore();
+        fadeOutAndRestore(++m_fadeGeneration);
     } else {
         // Pre-cargar menu antes de cambiar para evitar gap de silencio
         float targetVol = FMODAudioEngine::sharedEngine()->m_musicVolume;
@@ -346,12 +348,12 @@ void DynamicSongManager::stopSong() {
     }
 }
 
-void DynamicSongManager::fadeInMainChannel(float targetVolume) {
+void DynamicSongManager::fadeInMainChannel(float targetVolume, uint32_t generation) {
     // Fade-in: canal principal sube de 0 a targetVolume
-    executeDipFadeIn(0, FADE_STEPS, 0.0f, targetVolume);
+    executeDipFadeIn(0, FADE_STEPS, 0.0f, targetVolume, generation);
 }
 
-void DynamicSongManager::fadeOutAndRestore() {
+void DynamicSongManager::fadeOutAndRestore(uint32_t generation) {
     m_isFadingOut = true;
     m_isFadingIn = false;
     
@@ -367,13 +369,17 @@ void DynamicSongManager::fadeOutAndRestore() {
     // restoreMenu=true indica que al terminar fade-out se carga el menu
     m_pendingSongPath.clear(); // no hay cancion pendiente, es restore a menu
     m_pendingTargetVolume = engine->m_musicVolume;
-    executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, true);
+    executeDipFadeOut(0, FADE_STEPS, currentVol, 0.0f, true, generation);
 }
 
 // ─── Dip Fade: fade-out del canal principal ──────────────────────────
 // Al llegar a volTo (0), carga la cancion pendiente o el menu, y luego fade-in.
 void DynamicSongManager::executeDipFadeOut(int step, int totalSteps,
-    float volFrom, float volTo, bool restoreMenu) {
+    float volFrom, float volTo, bool restoreMenu, uint32_t generation) {
+    if (generation != m_fadeGeneration) {
+        return;
+    }
+
     if (step > totalSteps || !m_isFadingOut) {
         // Fade-out terminado — ahora cargar el audio nuevo y fade-in
         auto engine = FMODAudioEngine::sharedEngine();
@@ -398,7 +404,7 @@ void DynamicSongManager::executeDipFadeOut(int step, int totalSteps,
         // Iniciar fade-in
         m_isFadingOut = false;
         m_isFadingIn = true;
-        executeDipFadeIn(0, totalSteps, 0.0f, m_pendingTargetVolume);
+        executeDipFadeIn(0, totalSteps, 0.0f, m_pendingTargetVolume, generation);
         return;
     }
     
@@ -415,18 +421,22 @@ void DynamicSongManager::executeDipFadeOut(int step, int totalSteps,
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, volTo, restoreMenu]() {
+    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, volTo, restoreMenu, generation]() {
         if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
         auto manager = DynamicSongManager::get();
-        if (!manager->m_isFadingOut) return;
-        manager->executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreMenu);
+        if (generation != manager->m_fadeGeneration || !manager->m_isFadingOut) return;
+        manager->executeDipFadeOut(next, totalSteps, volFrom, volTo, restoreMenu, generation);
     });
 }
 
 // ─── Dip Fade: fade-in del canal principal ───────────────────────────
 void DynamicSongManager::executeDipFadeIn(int step, int totalSteps,
-    float volFrom, float volTo) {
+    float volFrom, float volTo, uint32_t generation) {
+    if (generation != m_fadeGeneration) {
+        return;
+    }
+
     if (step > totalSteps || !m_isFadingIn) {
         // Fade-in terminado: fijar volumen final
         auto engine = FMODAudioEngine::sharedEngine();
@@ -450,12 +460,12 @@ void DynamicSongManager::executeDipFadeIn(int step, int totalSteps,
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, volTo]() {
+    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, volTo, generation]() {
         if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
         auto manager = DynamicSongManager::get();
-        if (!manager->m_isFadingIn) return;
-        manager->executeDipFadeIn(next, totalSteps, volFrom, volTo);
+        if (generation != manager->m_fadeGeneration || !manager->m_isFadingIn) return;
+        manager->executeDipFadeIn(next, totalSteps, volFrom, volTo, generation);
     });
 }
 
@@ -481,10 +491,15 @@ void DynamicSongManager::fadeOutForLevelStart() {
     }
 
     m_isFadingOut = true;
-    executeLevelStartFade(0, FADE_STEPS, currentVol);
+    auto generation = ++m_fadeGeneration;
+    executeLevelStartFade(0, FADE_STEPS, currentVol, generation);
 }
 
-void DynamicSongManager::executeLevelStartFade(int step, int totalSteps, float volFrom) {
+void DynamicSongManager::executeLevelStartFade(int step, int totalSteps, float volFrom, uint32_t generation) {
+    if (generation != m_fadeGeneration) {
+        return;
+    }
+
     if (step > totalSteps || !m_isFadingOut) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
@@ -507,17 +522,18 @@ void DynamicSongManager::executeLevelStartFade(int step, int totalSteps, float v
     int next = step + 1;
     auto lifetimeToken = m_lifetimeToken;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom]() {
+    paimon::scheduleMainThreadDelay(stepDelay, [lifetimeToken, next, totalSteps, volFrom, generation]() {
         if (!lifetimeToken || !lifetimeToken->load(std::memory_order_acquire)) return;
 
         auto manager = DynamicSongManager::get();
-        if (!manager->m_isFadingOut) return;
-        manager->executeLevelStartFade(next, totalSteps, volFrom);
+        if (generation != manager->m_fadeGeneration || !manager->m_isFadingOut) return;
+        manager->executeLevelStartFade(next, totalSteps, volFrom, generation);
     });
 }
 
 void DynamicSongManager::forceKill() {
     log::info("[DynamicSong] forceKill");
+    ++m_fadeGeneration;
     m_isFadingIn = false;
     m_isFadingOut = false;
 
@@ -536,6 +552,8 @@ void DynamicSongManager::forceKill() {
 
 // ─── Stop/Replay para ProfileMusic y otros sistemas ──────────────────
 void DynamicSongManager::stopDynamicForProfileMusic() {
+    ++m_fadeGeneration;
+
     // Guardar posicion actual para restaurarla al salir del perfil
     auto engine = FMODAudioEngine::sharedEngine();
     if (engine && engine->m_backgroundMusicChannel) {
@@ -559,6 +577,7 @@ void DynamicSongManager::stopDynamicForProfileMusic() {
 }
 
 void DynamicSongManager::replayLastSong() {
+    auto fadeGeneration = ++m_fadeGeneration;
     m_stoppedByProfile = false;
 
     // Respetar el toggle nativo de musica de menu de GD
@@ -623,7 +642,7 @@ void DynamicSongManager::replayLastSong() {
         }
         m_isFadingIn = true;
         m_isFadingOut = false;
-        fadeInMainChannel(gameVolume);
+        fadeInMainChannel(gameVolume, fadeGeneration);
     } else {
         if (engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->setVolume(gameVolume);
@@ -692,6 +711,7 @@ bool DynamicSongManager::verifyPlayback() {
 
 void DynamicSongManager::onPlaybackHijacked() {
     log::info("[DynamicSong] Musica cambiada externamente, cediendo control");
+    ++m_fadeGeneration;
     m_isDynamicSongActive = false;
     m_isFadingIn = false;
     m_isFadingOut = false;

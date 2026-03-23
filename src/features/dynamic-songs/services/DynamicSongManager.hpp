@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <atomic>
+#include <cstdint>
 #include <vector>
 #include <string>
 
@@ -64,6 +65,7 @@ private:
     static constexpr int FADE_STEPS = 20;
     bool m_isFadingIn = false;
     bool m_isFadingOut = false;
+    uint32_t m_fadeGeneration = 0;
     float m_bgVolumeBeforeFade = 1.0f;
     bool m_stoppedByProfile = false;
     std::string m_lastSongPath;       // path del ultimo song para replay tras ProfileMusic
@@ -81,11 +83,11 @@ private:
     void restoreBgChannel();
 
     // Dip-fade helpers (solo canal principal, sin canales temporales)
-    void fadeInMainChannel(float targetVolume);
-    void fadeOutAndRestore();
-    void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreMenu);
-    void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo);
-    void executeLevelStartFade(int step, int totalSteps, float volFrom);
+    void fadeInMainChannel(float targetVolume, uint32_t generation);
+    void fadeOutAndRestore(uint32_t generation);
+    void executeDipFadeOut(int step, int totalSteps, float volFrom, float volTo, bool restoreMenu, uint32_t generation);
+    void executeDipFadeIn(int step, int totalSteps, float volFrom, float volTo, uint32_t generation);
+    void executeLevelStartFade(int step, int totalSteps, float volFrom, uint32_t generation);
 
     // Dip fade para transicion cancion→cancion
     std::string m_pendingSongPath;      // path pendiente para cargar cuando vol llegue a 0
