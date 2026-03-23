@@ -622,7 +622,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             bgWidth, bgHeight, kThumbWidthFactor, outCoverScale, scaleX, scaleY);
 
         CCSize scaledSize{ desiredWidth, bgHeight };
-        const float kDiagonalSkew = 20.f; // desplazamiento diagonal del borde izquierdo
+        const float kDiagonalSkew = 35.f; // desplazamiento diagonal del borde izquierdo
         auto drawMask = paimon::SpriteHelper::createDiagonalStencil(scaledSize.width, scaledSize.height, kDiagonalSkew);
         drawMask->setAnchorPoint({1,0});
         drawMask->ignoreAnchorPointForPosition(true);
@@ -633,7 +633,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         clippingNode->setStencil(drawMask);
         clippingNode->setContentSize(scaledSize);
         clippingNode->setAnchorPoint({1,0});
-        clippingNode->setPosition({ bgWidth, 0.3f });
+        clippingNode->setPosition({ bgWidth, 0.f });
         clippingNode->setID("paimon-clipping-node"_spr);
         clippingNode->setZOrder(-1);
 
@@ -655,7 +655,19 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto clippingNode = createThumbnailClippingNode(bg, sprite, coverScale);
         if (!clippingNode) return;
 
-        this->addChild(clippingNode);
+        // Clipper maestro que limita todo al area visible de la celda.
+        // Evita que el hover-zoom y la miniatura desborden los bordes de la celda.
+        auto boundsStencil = paimon::SpriteHelper::createRectStencil(bg->getContentWidth(), bg->getContentHeight());
+        auto boundsClipper = CCClippingNode::create(boundsStencil);
+        boundsClipper->setContentSize(bg->getContentSize());
+        boundsClipper->setPosition(bg->getPosition());
+        boundsClipper->setAnchorPoint({0, 0});
+        boundsClipper->setZOrder(-1);
+        boundsClipper->setID("paimon-bounds-clipper"_spr);
+        this->addChild(boundsClipper);
+
+        // La miniatura va dentro del bounds clipper
+        boundsClipper->addChild(clippingNode);
 
         fields->m_thumbSprite = sprite;
         fields->m_thumbBasePos = sprite->getPosition();
@@ -689,12 +701,12 @@ class $modify(PaimonLevelCell, LevelCell) {
             separator->ignoreAnchorPointForPosition(false);
             separator->setContentSize(scaledSize);
             separator->setAnchorPoint({1,0});
-            separator->setPosition({bgWidth - separator->getContentWidth()/2 - (20.f * separatorXMul), 0.3f});
+            separator->setPosition({bgWidth - separator->getContentWidth()/2 - (20.f * separatorXMul), 0.f});
             separator->setID("paimon-separator"_spr);
 
             fields->m_separator = separator;
             fields->m_separatorBasePos = separator->getPosition();
-            this->addChild(separator);
+            boundsClipper->addChild(separator);
         }
     }
 
@@ -817,24 +829,28 @@ class $modify(PaimonLevelCell, LevelCell) {
                  bg->reorderChild(clipper, 10);
                  fields->m_gradientLayer = bgSprite;
 
-                 // Degradado de opacidad en la miniatura (derecha) pa transicion
-                 // suave blur→sharp. Cubre max 3/4 del ancho del clipping.
+                 // Degradado suave: gradiente en el borde derecho del blur
+                 // que va desapareciendo hacia la miniatura. Se extiende un
+                 // poco mas alla del blur para crear una transicion natural.
                  if (fields->m_clippingNode) {
-                     float fadeW = fields->m_clippingNode->getContentSize().width * 0.75f;
-                     float fadeH = fields->m_clippingNode->getContentSize().height;
-                     GLubyte fadeAlpha = static_cast<GLubyte>(std::min<int>(opacity + 30, 255));
+                     float thumbLeft = bg->getContentWidth() - fields->m_clippingNode->getContentSize().width;
+                     // gradiente que cubre desde ~40px antes del borde de la miniatura
+                     // hasta ~25px dentro de la miniatura (overlap)
+                     float fadeW = 65.f;
+                     float fadeH = bg->getContentHeight();
+                     float fadeX = thumbLeft - 40.f; // empieza antes del borde
 
-                     auto fadeGrad = CCLayerGradient::create(
-                         ccc4(0, 0, 0, fadeAlpha),   // izquierda: oscuro (match blur overlay)
-                         ccc4(0, 0, 0, 0),            // derecha: transparente
-                         ccp(1, 0)                     // direccion izq→der
+                     auto blurFade = CCLayerGradient::create(
+                         ccc4(0, 0, 0, 0),        // izquierda: transparente (blur visible)
+                         ccc4(0, 0, 0, opacity),   // derecha: oscuro (match dark overlay)
+                         ccp(1, 0)                  // direccion izq→der
                      );
-                     fadeGrad->ignoreAnchorPointForPosition(false);
-                     fadeGrad->setAnchorPoint({0, 0});
-                     fadeGrad->setContentSize({fadeW, fadeH});
-                     fadeGrad->setPosition({0, 0});
-                     fadeGrad->setID("paimon-thumb-fade"_spr);
-                     fields->m_clippingNode->addChild(fadeGrad, 2);
+                     blurFade->ignoreAnchorPointForPosition(false);
+                     blurFade->setAnchorPoint({0, 0});
+                     blurFade->setContentSize({fadeW, fadeH});
+                     blurFade->setPosition({std::max(0.f, fadeX), 0});
+                     blurFade->setID("paimon-blur-fade"_spr);
+                     clipper->addChild(blurFade, 2);
                  }
 
                  return;
