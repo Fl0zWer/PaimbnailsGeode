@@ -1285,7 +1285,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto fields = m_fields.self();
         if (fields) {
             fields->m_isGalleryTransitioning = false;
-            log::info("[LevelCell] endGalleryTransition: transition guard released");
+            // Reset hover lerp so the effect smoothly animates in from zero
+            // instead of snapping to full intensity after the transition
+            fields->m_centerLerp = 0.0f;
         }
     }
 
@@ -1833,7 +1835,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         if (animType == PaimonAnimType::None) {
             fields->m_centerLerp = 0.0f;
         } else {
-            float target = fields->m_wasInCenter ? 1.0f : 0.0f;
+            // During gallery transitions the hover transforms are not applied,
+            // so drive lerp toward 0 to avoid a snap when the guard lifts.
+            float target = (fields->m_wasInCenter && !fields->m_isGalleryTransitioning) ? 1.0f : 0.0f;
             float speed = 6.0f * speedMult;
             fields->m_centerLerp += (target - fields->m_centerLerp) * std::min(1.0f, dt * speed);
         }

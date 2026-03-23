@@ -100,13 +100,13 @@ void ThumbnailTransportClient::getThumbnails(int levelId, ThumbnailListCallback 
                 info.position = item["position"].asInt().unwrapOr(1);
 
                 // autor — multiples campos posibles
-                for (auto const& key : {"author","username","uploader","uploaded_by","submitted_by","user","owner"}) {
+                for (auto const& key : {"creator","author","username","uploader","uploaded_by","submitted_by","user","owner"}) {
                     if (item.contains(key)) { info.creator = item[key].asString().unwrapOr("Unknown"); break; }
                 }
                 if (info.creator.empty()) info.creator = "Unknown";
 
                 // fecha
-                for (auto const& key : {"date","created_at","timestamp","uploaded_at"}) {
+                for (auto const& key : {"date","uploaded_at","created_at","timestamp"}) {
                     if (item.contains(key)) { info.date = item[key].asString().unwrapOr("Unknown"); break; }
                 }
                 if (info.date.empty()) info.date = "Unknown";

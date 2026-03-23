@@ -28,7 +28,12 @@ async function getLegacyVersions(env, levelId) {
   });
 
   if (matches.length > 0) {
-    return matches.map(key => {
+    // Try to read metadata for each legacy file to recover the real uploader
+    const metaResults = await Promise.all(
+      matches.map(key => env.THUMBNAILS_BUCKET.head(key).catch(() => null))
+    );
+
+    return matches.map((key, idx) => {
       const filename = key.split('/').pop();
       const ext = filename.split('.').pop();
       let version = 'legacy';
@@ -36,6 +41,11 @@ async function getLegacyVersions(env, levelId) {
       if (parts.length > 1 && parts[0] === levelId) {
         version = parts[1];
       }
+
+      // Recover uploader from stored metadata if available
+      const headObj = metaResults[idx];
+      const meta = headObj?.customMetadata || {};
+      const uploader = meta.uploadedBy || meta.updated_by || meta.originalSubmitter || 'Unknown';
 
       return {
         id: version === 'legacy' ? 'legacy_file' : version,
@@ -45,7 +55,8 @@ async function getLegacyVersions(env, levelId) {
         path: 'thumbnails',
         type: ext === 'gif' ? 'gif' : 'static',
         isLegacy: true,
-        uploadedBy: 'Unknown'
+        uploadedBy: uploader,
+        uploadedAt: meta.uploadedAt || (headObj?.uploaded ? headObj.uploaded.toISOString() : '')
       };
     });
   }
@@ -83,7 +94,10 @@ function toThumbnailPayload(levelId, env, v, origin) {
       type: v.type || 'static',
       format,
       creator: uploadedBy,
-      date: uploadedAt
+      author: uploadedBy,
+      uploaded_by: uploadedBy,
+      date: uploadedAt,
+      uploaded_at: uploadedAt
     };
   }
 
@@ -95,7 +109,10 @@ function toThumbnailPayload(levelId, env, v, origin) {
     type: v.type || (format === 'gif' ? 'gif' : 'static'),
     format,
     creator: uploadedBy,
-    date: uploadedAt
+    author: uploadedBy,
+    uploaded_by: uploadedBy,
+    date: uploadedAt,
+    uploaded_at: uploadedAt
   };
 }
 
