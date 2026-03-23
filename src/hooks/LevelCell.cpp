@@ -21,6 +21,7 @@
 #include "../utils/RetainedLazyTextureLoad.hpp"
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../framework/compat/ModCompat.hpp"
+#include "../utils/SpriteHelper.hpp"
 
 using namespace geode::prelude;
 using namespace Shaders;
@@ -189,7 +190,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         Ref<CCLayerColor> m_separator = nullptr;
         Ref<CCNode> m_gradient = nullptr;
         Ref<CCParticleSystemQuad> m_mythicParticles = nullptr;
-        Ref<CCLayerColor> m_darkOverlay = nullptr;
+        Ref<CCDrawNode> m_darkOverlay = nullptr;
         float m_gradientTime = 0.0f;
         ccColor3B m_gradientColorA = {0, 0, 0};
         ccColor3B m_gradientColorB = {0, 0, 0};
@@ -621,16 +622,7 @@ class $modify(PaimonLevelCell, LevelCell) {
             bgWidth, bgHeight, kThumbWidthFactor, outCoverScale, scaleX, scaleY);
 
         CCSize scaledSize{ desiredWidth, bgHeight };
-        CCPoint maskRect[4] = {
-            ccp(0, 0),
-            ccp(scaledSize.width, 0),
-            ccp(scaledSize.width, scaledSize.height),
-            ccp(0, scaledSize.height)
-        };
-        ccColor4F white = {1,1,1,1};
-        auto drawMask = CCDrawNode::create();
-        drawMask->drawPolygon(maskRect, 4, white, 0, white);
-        drawMask->setContentSize(scaledSize);
+        auto drawMask = paimon::SpriteHelper::createRectStencil(scaledSize.width, scaledSize.height);
         drawMask->setAnchorPoint({1,0});
         drawMask->ignoreAnchorPointForPosition(true);
         drawMask->setSkewX(18.f);
@@ -792,16 +784,8 @@ class $modify(PaimonLevelCell, LevelCell) {
              }
              
              if (bgSprite) {
-                auto stencil = CCDrawNode::create();
-                CCPoint rect[4] = {
-                    ccp(0, 0),
-                    ccp(bg->getContentWidth(), 0),
-                    ccp(bg->getContentWidth(), bg->getContentHeight()),
-                    ccp(0, bg->getContentHeight())
-                };
-                ccColor4F white = {1, 1, 1, 1};
-                stencil->drawPolygon(rect, 4, white, 0, white);
-                 
+                auto stencil = paimon::SpriteHelper::createRectStencil(bg->getContentWidth(), bg->getContentHeight());
+
                  auto clipper = CCClippingNode::create(stencil);
                  clipper->setContentSize(bg->getContentSize());
                  // No alpha threshold for geometric stencil
@@ -825,8 +809,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                  float darkness = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-darkness"));
                  GLubyte opacity = static_cast<GLubyte>(std::clamp(darkness, 0.0f, 1.0f) * 255.0f);
 
-                 auto overlay = CCLayerColor::create({0, 0, 0, opacity});
-                 overlay->setContentSize({bg->getContentWidth(), bg->getContentHeight()});
+                 auto overlay = paimon::SpriteHelper::createDarkPanel(bg->getContentWidth(), bg->getContentHeight(), opacity, 0.f);
                  overlay->setPosition({0, 0});
                  clipper->addChild(overlay);
                  fields->m_darkOverlay = overlay;

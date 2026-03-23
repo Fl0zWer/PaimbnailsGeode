@@ -385,6 +385,39 @@ void BackgroundConfigPopup::onApply(CCObject*) {
     this->onClose(nullptr);
 }
 
+// perfil
+
+CCNode* BackgroundConfigPopup::createProfileTab() {
+    auto node = CCNode::create();
+    auto size = m_mainLayer->getContentSize();
+    float centerX = size.width / 2;
+    float centerY = size.height / 2;
+
+    auto btnMenu = CCMenu::create();
+    btnMenu->setPosition({0, 0});
+    node->addChild(btnMenu);
+
+    // seccion fondo de perfil
+    auto bgSection = paimon::SpriteHelper::createDarkPanel(380, 110, 60);
+    bgSection->setPosition({centerX - 190, centerY + 20 - 55});
+    node->addChild(bgSection);
+
+    // botones
+    createBtn("Custom Image", {centerX - 110, centerY + 30}, menu_selector(BackgroundConfigPopup::onProfileCustomImage), btnMenu);
+    createBtn("Customize Photo", {centerX + 10, centerY + 30}, menu_selector(BackgroundConfigPopup::onCustomizePhoto), btnMenu);
+    createBtn("Clear", {centerX + 120, centerY + 30}, menu_selector(BackgroundConfigPopup::onProfileClear), btnMenu);
+
+    // descripcion
+    auto info = CCLabelBMFont::create("Set a custom background image\nfor your profile page.", "chatFont.fnt");
+    info->setAlignment(kCCTextAlignmentCenter);
+    info->setScale(0.6f);
+    info->setColor({200, 200, 200});
+    info->setPosition({centerX, centerY - 30});
+    node->addChild(info);
+
+    return node;
+}
+
 // mascota
 
 CCNode* BackgroundConfigPopup::createPetTab() {
