@@ -44,8 +44,7 @@ void PaimonOnModLoaded() {
 
     log::info("[PaimonThumbnails] Queueing main level thumbnails...");
     for (int i = 1; i <= 22; i++) {
-        std::string fileName = fmt::format("{}.png", i);
-        ThumbnailLoader::get().requestLoad(i, fileName, nullptr, 0);
+        ThumbnailLoader::get().prefetchLevelAssets(i, 1);
     }
 
     std::string langStr = Mod::get()->getSettingValue<std::string>("language");

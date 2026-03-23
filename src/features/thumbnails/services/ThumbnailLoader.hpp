@@ -34,6 +34,8 @@ public:
 
     // pedir carga de thumbnail. mayor valor = mas prioridad
     void requestLoad(int levelID, std::string fileName, LoadCallback callback, int priority = 0, bool isGif = false);
+    void prefetchLevelAssets(int levelID, int priority = 0);
+    void prefetchLevels(std::vector<int> const& levelIDs, int priority = 0);
     
     // cancelar carga pendiente
     void cancelLoad(int levelID, bool isGif = false);

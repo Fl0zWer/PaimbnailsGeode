@@ -340,7 +340,9 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
         // si viene con mas prioridad se la subo
         if (priority > taskIt->second->priority) {
             taskIt->second->priority = priority;
-            // el reordenado se hace luego en processQueue
+            if (!taskIt->second->running) {
+                m_priorityQueue.emplace(priority, key);
+            }
         }
         return;
     }
@@ -357,6 +359,31 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     m_priorityQueue.emplace(priority, key);
     
     processQueue();
+}
+
+void ThumbnailLoader::prefetchLevelAssets(int levelID, int priority) {
+    if (levelID <= 0) {
+        return;
+    }
+
+    this->requestLoad(levelID, fmt::format("{}.png", levelID), nullptr, priority);
+}
+
+void ThumbnailLoader::prefetchLevels(std::vector<int> const& levelIDs, int priority) {
+    if (levelIDs.empty()) {
+        return;
+    }
+
+    std::unordered_set<int> seen;
+    seen.reserve(levelIDs.size());
+
+    for (int levelID : levelIDs) {
+        if (levelID <= 0 || !seen.insert(levelID).second) {
+            continue;
+        }
+
+        this->prefetchLevelAssets(levelID, priority);
+    }
 }
 
 void ThumbnailLoader::cancelLoad(int levelID, bool isGif) {

@@ -1,13 +1,43 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/LevelListLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
+#include <Geode/binding/LevelCell.hpp>
 #include "../framework/state/SessionState.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include <unordered_set>
+#include <vector>
 
 using namespace geode::prelude;
+
+namespace {
+void collectVisibleLevelCellIDs(CCNode* node, std::vector<int>& levelIDs, std::unordered_set<int>& seen) {
+    if (!node || !node->isVisible()) {
+        return;
+    }
+
+    if (auto* levelCell = typeinfo_cast<LevelCell*>(node)) {
+        auto* level = levelCell->m_level;
+        if (level) {
+            int levelID = level->m_levelID.value();
+            if (levelID > 0 && seen.insert(levelID).second) {
+                levelIDs.push_back(levelID);
+            }
+        }
+    }
+
+    auto* children = node->getChildren();
+    if (!children) {
+        return;
+    }
+
+    for (auto* child : CCArrayExt<CCNode*>(children)) {
+        collectVisibleLevelCellIDs(child, levelIDs, seen);
+    }
+}
+}
 
 class $modify(PaimonLevelListLayer, LevelListLayer) {
     static void onModify(auto& self) {
@@ -47,7 +77,16 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         // engranaje de settings
         addSettingsGearButton();
 
+        this->schedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells), 0.35f);
+        this->scheduleOnce(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells), 0.0f);
+
         return true;
+    }
+
+    $override
+    void onExit() {
+        this->unschedule(schedule_selector(ContextTrackingBrowser::prefetchVisibleLevelCells));
+        LevelBrowserLayer::onExit();
     }
 
     CCMenuItemSpriteExtra* createGearButton(float sprScale) {
@@ -120,6 +159,18 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         });
 
         popup->show();
+    }
+
+    void prefetchVisibleLevelCells(float) {
+        std::vector<int> levelIDs;
+        std::unordered_set<int> seen;
+        collectVisibleLevelCellIDs(this, levelIDs, seen);
+
+        if (levelIDs.empty()) {
+            return;
+        }
+
+        ThumbnailLoader::get().prefetchLevels(levelIDs, 3);
     }
 
 };
