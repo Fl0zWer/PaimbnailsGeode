@@ -813,23 +813,26 @@ void ProfileMusicManager::getSongInfo(int songID, SongInfoCallback callback) {
     *poll = [songID, callback, attempts, poll]() {
         auto mdm = MusicDownloadManager::sharedState();
         if (!mdm) {
+            auto cb = callback; // copia local antes de destruir closure
             *poll = {};
-            callback(false, "", "", 0);
+            cb(false, "", "", 0);
             return;
         }
 
         auto songInfo = mdm->getSongInfoObject(songID);
         if (songInfo) {
-            *poll = {};
             std::string name = songInfo->m_songName;
             std::string artist = songInfo->m_artistName;
-            callback(true, name, artist, 0);
+            auto cb = callback; // copia local antes de destruir closure
+            *poll = {};
+            cb(true, name, artist, 0);
             return;
         }
 
         if (++(*attempts) >= 20) {
+            auto cb = callback; // copia local antes de destruir closure
             *poll = {};
-            callback(false, "", "", 0);
+            cb(false, "", "", 0);
             return;
         }
 
@@ -863,20 +866,24 @@ void ProfileMusicManager::downloadSongForPreview(int songID, DownloadCallback ca
     *poll = [songID, callback, attempts, poll]() {
         auto mdm = MusicDownloadManager::sharedState();
         if (!mdm) {
+            auto cb = callback; // copia local antes de destruir closure
             *poll = {};
-            callback(false, "");
+            cb(false, "");
             return;
         }
 
         if (mdm->isSongDownloaded(songID)) {
+            std::string path = mdm->pathForSong(songID);
+            auto cb = callback; // copia local antes de destruir closure
             *poll = {};
-            callback(true, mdm->pathForSong(songID));
+            cb(true, path);
             return;
         }
 
         if (++(*attempts) >= 30) {
+            auto cb = callback; // copia local antes de destruir closure
             *poll = {};
-            callback(false, "");
+            cb(false, "");
             return;
         }
 

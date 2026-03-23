@@ -26,6 +26,22 @@ struct SpriteHelper {
         return stencil;
     }
 
+    // Stencil con borde izquierdo diagonal (paralelogramo).
+    // skewOffset: desplazamiento horizontal del borde superior-izquierdo.
+    // Forma: (0,0)→(w,0)→(w,h)→(skew,h)  ← corte diagonal en la izquierda.
+    static cocos2d::CCDrawNode* createDiagonalStencil(float width, float height, float skewOffset) {
+        auto stencil = cocos2d::CCDrawNode::create();
+        cocos2d::CCPoint poly[4] = {
+            ccp(0, 0),
+            ccp(width, 0),
+            ccp(width, height),
+            ccp(skewOffset, height)
+        };
+        cocos2d::ccColor4F white = {1, 1, 1, 1};
+        stencil->drawPolygon(poly, 4, white, 0, white);
+        return stencil;
+    }
+
     // Verifica si un sprite es utilizable para el mod.
     static bool isValidSprite(cocos2d::CCSprite* spr) {
         if (!spr) return false;
@@ -89,6 +105,19 @@ struct SpriteHelper {
         if (radius > maxR) radius = maxR;
         if (radius < 0.f) radius = 0.f;
 
+        cocos2d::ccColor4F borderColor = {0, 0, 0, 0};
+
+        // Si radio es 0, dibujar rectangulo simple con 4 vertices
+        // (evita 36 puntos degenerados que causan artefactos de triangulacion)
+        if (radius <= 0.f) {
+            cocos2d::CCPoint rect[4] = {
+                ccp(0, 0), ccp(width, 0), ccp(width, height), ccp(0, height)
+            };
+            node->drawPolygon(rect, 4, fillColor, 0.f, borderColor);
+            node->setContentSize(cocos2d::CCSize(width, height));
+            return node;
+        }
+
         constexpr int kSegments = 8; // puntos por esquina
         std::vector<cocos2d::CCPoint> pts;
         pts.reserve(4 * kSegments);
@@ -107,7 +136,6 @@ struct SpriteHelper {
         addArc(width - radius, height - radius, 0.f);                        // TR (0..90)
         addArc(radius, height - radius, static_cast<float>(M_PI) * 0.5f);   // TL (90..180)
 
-        cocos2d::ccColor4F borderColor = {0, 0, 0, 0};
         node->drawPolygon(pts.data(), static_cast<unsigned int>(pts.size()),
                           fillColor, 0.f, borderColor);
 

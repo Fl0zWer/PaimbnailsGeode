@@ -622,7 +622,8 @@ class $modify(PaimonLevelCell, LevelCell) {
             bgWidth, bgHeight, kThumbWidthFactor, outCoverScale, scaleX, scaleY);
 
         CCSize scaledSize{ desiredWidth, bgHeight };
-        auto drawMask = paimon::SpriteHelper::createRectStencil(scaledSize.width, scaledSize.height);
+        const float kDiagonalSkew = 20.f; // desplazamiento diagonal del borde izquierdo
+        auto drawMask = paimon::SpriteHelper::createDiagonalStencil(scaledSize.width, scaledSize.height, kDiagonalSkew);
         drawMask->setAnchorPoint({1,0});
         drawMask->ignoreAnchorPointForPosition(true);
 
@@ -815,6 +816,27 @@ class $modify(PaimonLevelCell, LevelCell) {
                  bg->addChild(clipper);
                  bg->reorderChild(clipper, 10);
                  fields->m_gradientLayer = bgSprite;
+
+                 // Degradado de opacidad en la miniatura (derecha) pa transicion
+                 // suave blur→sharp. Cubre max 3/4 del ancho del clipping.
+                 if (fields->m_clippingNode) {
+                     float fadeW = fields->m_clippingNode->getContentSize().width * 0.75f;
+                     float fadeH = fields->m_clippingNode->getContentSize().height;
+                     GLubyte fadeAlpha = static_cast<GLubyte>(std::min<int>(opacity + 30, 255));
+
+                     auto fadeGrad = CCLayerGradient::create(
+                         ccc4(0, 0, 0, fadeAlpha),   // izquierda: oscuro (match blur overlay)
+                         ccc4(0, 0, 0, 0),            // derecha: transparente
+                         ccp(1, 0)                     // direccion izq→der
+                     );
+                     fadeGrad->ignoreAnchorPointForPosition(false);
+                     fadeGrad->setAnchorPoint({0, 0});
+                     fadeGrad->setContentSize({fadeW, fadeH});
+                     fadeGrad->setPosition({0, 0});
+                     fadeGrad->setID("paimon-thumb-fade"_spr);
+                     fields->m_clippingNode->addChild(fadeGrad, 2);
+                 }
+
                  return;
              }
         }
