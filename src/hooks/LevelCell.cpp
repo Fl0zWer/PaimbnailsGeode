@@ -625,7 +625,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto drawMask = paimon::SpriteHelper::createRectStencil(scaledSize.width, scaledSize.height);
         drawMask->setAnchorPoint({1,0});
         drawMask->ignoreAnchorPointForPosition(true);
-        drawMask->setSkewX(18.f);
 
         auto clippingNode = CCClippingNode::create();
         if (!clippingNode) return nullptr;
@@ -687,7 +686,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             separator->setOpacity(50);
             separator->setScaleX(0.45f);
             separator->ignoreAnchorPointForPosition(false);
-            separator->setSkewX(36.f);
             separator->setContentSize(scaledSize);
             separator->setAnchorPoint({1,0});
             separator->setPosition({bgWidth - separator->getContentWidth()/2 - (20.f * separatorXMul), 0.3f});

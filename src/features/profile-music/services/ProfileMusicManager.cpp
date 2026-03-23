@@ -1158,7 +1158,9 @@ void ProfileMusicManager::applyCaveEffect() {
 }
 
 void ProfileMusicManager::forceRemoveCaveEffect() {
-    if (!m_caveEffectActive && !m_caveTransitioning) return;
+    // Limpiar siempre si hay un DSP pendiente, incluso si los flags ya fueron limpiados
+    // (forceStop() limpia m_caveTransitioning antes de llamar aqui)
+    if (!m_caveEffectActive && !m_caveTransitioning && !m_lowpassDSP) return;
 
     m_caveTransitioning = false;
     m_caveEffectActive = false;
@@ -1310,13 +1312,14 @@ void ProfileMusicManager::forceStop() {
     log::info("[ProfileMusic] forceStop called (fadingOut:{}, fadingIn:{}, playing:{})",
         m_isFadingOut, m_isFadingIn, m_isPlaying);
 
-    // Cancelar todo: fades, transiciones de cueva, etc.
+    // Cancelar fades primero para que callbacks pendientes sean no-op
     m_isFadingIn = false;
     m_isFadingOut = false;
-    m_caveTransitioning = false;
 
-    // Limpiar efecto cueva
+    // Limpiar efecto cueva ANTES de borrar m_caveTransitioning
+    // (forceRemoveCaveEffect ahora tambien chequea m_lowpassDSP)
     forceRemoveCaveEffect();
+    m_caveTransitioning = false;
 
     m_isPlaying = false;
     m_isPaused = false;

@@ -291,6 +291,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     // estan visibles y en el estado correcto (soluciona el bug donde
     // el boton de ban u otros desaparecen intermitentemente).
     void verifyButtonIntegrity(float dt) {
+        if (!this->getParent()) return;
         if (!this->m_mainLayer) return;
         auto* leftMenu = getLeftMenu();
         if (!leftMenu) return;
@@ -1159,6 +1160,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     // Tick periodico: reaplica opacidad 0 a icon-background por si GD lo recrea
     // (e.g. al cambiar tab de comentarios).
     void tickStyleBgs(float) {
+        if (!this->getParent()) return;
         if (!m_fields->m_hasProfileBackdrop) return;
         if (auto* layer = this->m_mainLayer) {
             styleProfileInternalBgs(layer);
@@ -1505,8 +1507,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
                                  : std::nullopt;
         musicMgr.getProfileMusicConfig(accountID, [self, accountID, cachedCopy](bool success, const ProfileMusicManager::ProfileMusicConfig& config) {
             Loader::get()->queueInMainThread([self, success, config, accountID, cachedCopy]() {
-                if (!self->getParent()) return;
+                if (!self || !self->getParent()) return;
                 auto* page = static_cast<PaimonProfilePage*>(self.data());
+                if (page->m_fields->m_leaveForClose) return;
 
                 if (!success || config.songID <= 0 || !config.enabled) {
                     // Servidor dice que no hay musica â€” detener si estaba sonando desde cache
@@ -1558,6 +1561,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         m_fields->m_leaveForClose = true;
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
+        this->unschedule(schedule_selector(PaimonProfilePage::fadeStepTick));
         ProfilePage::onClose(sender);
     }
 
@@ -1577,6 +1581,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
     void onExit() {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
+        this->unschedule(schedule_selector(PaimonProfilePage::fadeStepTick));
         auto& musicMgr = ProfileMusicManager::get();
         if (m_fields->m_leaveForClose) {
             if (!musicMgr.isFadingOut()) {
@@ -1672,6 +1677,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
 
     void fadeStepTick(float) {
         if (!this->getParent()) return;
+        if (m_fields->m_leaveForClose) return;
         Ref<ProfilePage> safeRef = this;
         this->fadeMenuMusicStep(
             safeRef,
