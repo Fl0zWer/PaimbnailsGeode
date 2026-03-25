@@ -17,13 +17,12 @@ std::string DiskManifest::makeKey(int levelID, bool isGif) const {
 }
 
 std::string DiskManifest::makeUrlKey(std::string const& url) const {
-    // hash simple del URL para key del manifest
-    size_t h = std::hash<std::string>{}(url);
-    return "url_" + std::to_string(h);
+    // usar la URL completa como key para evitar hash collisions
+    return "url:" + url;
 }
 
 void DiskManifest::load(std::filesystem::path const& cacheDir) {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::recursive_mutex> lock(mutex);
     m_cacheDir = cacheDir;
     m_manifestPath = cacheDir / MANIFEST_FILENAME;
     m_entries.clear();
@@ -138,7 +137,7 @@ void DiskManifest::load(std::filesystem::path const& cacheDir) {
 }
 
 void DiskManifest::flush() {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::lock_guard<std::recursive_mutex> lock(mutex);
     if (!m_dirty) return;
 
     matjson::Value root = matjson::makeObject({});
@@ -177,29 +176,50 @@ void DiskManifest::flush() {
 
 // ── Consultas ───────────────────────────────────────────────────
 
+// ── Consultas thread-safe (toman mutex internamente) ───────
+
 bool DiskManifest::contains(int levelID, bool isGif) const {
-    return m_entries.count(makeKey(levelID, isGif)) > 0;
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    return containsLocked(levelID, isGif);
 }
 
 bool DiskManifest::containsUrl(std::string const& url) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
     return m_urlToKey.count(url) > 0;
 }
 
 DiskManifestEntry const* DiskManifest::getEntry(int levelID, bool isGif) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    return getEntryLocked(levelID, isGif);
+}
+
+DiskManifestEntry const* DiskManifest::getEntryByUrl(std::string const& url) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    return getEntryByUrlLocked(url);
+}
+
+bool DiskManifest::containsLegacyKey(int key) const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    if (key < 0) return containsLocked(-key, true);
+    return containsLocked(key, false);
+}
+
+// ── Consultas sin lock (caller DEBE tener mutex) ────────────
+
+bool DiskManifest::containsLocked(int levelID, bool isGif) const {
+    return m_entries.count(makeKey(levelID, isGif)) > 0;
+}
+
+DiskManifestEntry const* DiskManifest::getEntryLocked(int levelID, bool isGif) const {
     auto it = m_entries.find(makeKey(levelID, isGif));
     return it != m_entries.end() ? &it->second : nullptr;
 }
 
-DiskManifestEntry const* DiskManifest::getEntryByUrl(std::string const& url) const {
+DiskManifestEntry const* DiskManifest::getEntryByUrlLocked(std::string const& url) const {
     auto keyIt = m_urlToKey.find(url);
     if (keyIt == m_urlToKey.end()) return nullptr;
     auto it = m_entries.find(keyIt->second);
     return it != m_entries.end() ? &it->second : nullptr;
-}
-
-bool DiskManifest::containsLegacyKey(int key) const {
-    if (key < 0) return contains(-key, true);
-    return contains(key, false);
 }
 
 // ── Mutaciones ──────────────────────────────────────────────────
@@ -320,22 +340,33 @@ DiskManifest::PruneResult DiskManifest::computePrune(size_t maxBytes, std::chron
 }
 
 void DiskManifest::applyPrune(PruneResult const& result) {
-    for (auto const& filename : result.filesToDelete) {
-        // buscar la entry por filename y borrar
-        for (auto it = m_entries.begin(); it != m_entries.end(); ++it) {
-            if (it->second.filename == filename) {
-                if (!it->second.sourceUrl.empty()) {
-                    m_urlToKey.erase(it->second.sourceUrl);
-                }
-                // borrar archivo fisico
-                auto filePath = m_cacheDir / filename;
-                std::error_code ec;
-                std::filesystem::remove(filePath, ec);
+    if (result.filesToDelete.empty()) return;
 
-                m_entries.erase(it);
-                m_dirty = true;
-                break;
+    // indice inverso filename->key para evitar O(entries * filesToDelete)
+    std::unordered_map<std::string, std::string> filenameToKey;
+    filenameToKey.reserve(m_entries.size());
+    for (auto const& [key, me] : m_entries) {
+        if (!me.filename.empty()) {
+            filenameToKey[me.filename] = key;
+        }
+    }
+
+    for (auto const& filename : result.filesToDelete) {
+        auto keyIt = filenameToKey.find(filename);
+        if (keyIt == filenameToKey.end()) continue;
+
+        auto entryIt = m_entries.find(keyIt->second);
+        if (entryIt != m_entries.end()) {
+            if (!entryIt->second.sourceUrl.empty()) {
+                m_urlToKey.erase(entryIt->second.sourceUrl);
             }
+            // borrar archivo fisico
+            auto filePath = m_cacheDir / filename;
+            std::error_code ec;
+            std::filesystem::remove(filePath, ec);
+
+            m_entries.erase(entryIt);
+            m_dirty = true;
         }
     }
 }
@@ -343,6 +374,11 @@ void DiskManifest::applyPrune(PruneResult const& result) {
 // ── Stats ───────────────────────────────────────────────────
 
 size_t DiskManifest::totalBytes() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
+    return totalBytesLocked();
+}
+
+size_t DiskManifest::totalBytesLocked() const {
     size_t total = 0;
     for (auto const& [_, me] : m_entries) {
         total += me.byteSize;
@@ -351,6 +387,7 @@ size_t DiskManifest::totalBytes() const {
 }
 
 size_t DiskManifest::entryCount() const {
+    std::lock_guard<std::recursive_mutex> lock(mutex);
     return m_entries.size();
 }
 

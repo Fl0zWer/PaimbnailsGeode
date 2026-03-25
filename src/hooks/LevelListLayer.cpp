@@ -7,6 +7,7 @@
 #include "../features/thumbnails/ui/LevelCellSettingsPopup.hpp"
 #include "../features/backgrounds/services/LayerBackgroundManager.hpp"
 #include "../utils/SpriteHelper.hpp"
+#include "../utils/HttpClient.hpp"
 #include <unordered_set>
 #include <vector>
 
@@ -64,6 +65,11 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
         // AfterPost: correr despues de geode.node-ids para acceder a IDs de nodos
         (void)self.setHookPriorityAfterPost("LevelBrowserLayer::init", "geode.node-ids");
     }
+
+    struct Fields {
+        // track which level IDs already had their manifest fetched to avoid re-requesting
+        std::unordered_set<int> m_manifestFetchedIds;
+    };
 
     $override
     bool init(GJSearchObject* p0) {
@@ -168,6 +174,26 @@ class $modify(ContextTrackingBrowser, LevelBrowserLayer) {
 
         if (levelIDs.empty()) {
             return;
+        }
+
+        // batch manifest prefetch — collect IDs we haven't fetched yet
+        std::vector<int> newManifestIds;
+        for (int id : levelIDs) {
+            if (m_fields->m_manifestFetchedIds.find(id) == m_fields->m_manifestFetchedIds.end()) {
+                newManifestIds.push_back(id);
+            }
+        }
+
+        if (!newManifestIds.empty()) {
+            // mark as fetched immediately to prevent duplicate requests on next timer tick
+            for (int id : newManifestIds) {
+                m_fields->m_manifestFetchedIds.insert(id);
+            }
+
+            // single manifest request populates CDN URL cache for all visible levels;
+            // subsequent downloadThumbnail calls will use the cached CDN URLs
+            // instead of hitting the Worker endpoint individually
+            HttpClient::get().fetchManifest(newManifestIds, nullptr);
         }
 
         ThumbnailLoader::get().prefetchLevels(levelIDs, 3);

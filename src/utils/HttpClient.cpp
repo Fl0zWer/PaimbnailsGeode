@@ -4,6 +4,7 @@
 #include <Geode/Geode.hpp>
 #include <Geode/utils/web.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
+#include <matjson.hpp>
 #include <ctime>
 #include <map>
 #include <chrono>
@@ -12,6 +13,8 @@
 #include <iomanip>
 #include <sstream>
 #include <string_view>
+#include <filesystem>
+#include <fstream>
 
 using namespace geode::prelude;
 
@@ -46,6 +49,9 @@ HttpClient::HttpClient() {
 
     // cargo el mod code que tenga guardado
     m_modCode = Mod::get()->getSavedValue<std::string>("mod-code", "");
+
+    // hydrate manifest cache from disk (avoids Worker requests on restart)
+    loadManifestFromDisk();
 
     PaimonDebug::log("[HttpClient] Initialized with server: {}", m_serverURL);
 }
@@ -415,17 +421,13 @@ void HttpClient::uploadProfileImgGIF(int accountID, std::vector<uint8_t> const& 
 void HttpClient::downloadProfileImg(int accountID, DownloadCallback callback, bool isSelf) {
     PaimonDebug::log("[HttpClient] Downloading profile image for account {} (self={})", accountID, isSelf);
 
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-
     std::vector<std::string> headers = {
-        "X-API-Key: " + m_apiKey,
-        "Cache-Control: no-cache"
+        "X-API-Key: " + m_apiKey
     };
 
-    std::string url = m_serverURL + "/profileimgs/" + std::to_string(accountID) + "?_ts=" + std::to_string(ts);
+    std::string url = m_serverURL + "/profileimgs/" + std::to_string(accountID);
     if (isSelf) {
-        url += "&self=1";
+        url += "?self=1";
     }
 
     performBinaryRequest(url, headers, [callback = std::move(callback), accountID](bool success, std::vector<uint8_t> const& data) {
@@ -468,15 +470,11 @@ void HttpClient::uploadProfileConfig(int accountID, std::string const& jsonConfi
 
 void HttpClient::downloadProfileConfig(int accountID, GenericCallback callback) {
     PaimonDebug::log("[HttpClient] Downloading profile config for account {}", accountID);
-    
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    
-    std::string url = m_serverURL + "/api/profiles/config/" + std::to_string(accountID) + ".json?_ts=" + std::to_string(ts);
-    
+
+    std::string url = m_serverURL + "/api/profiles/config/" + std::to_string(accountID) + ".json";
+
     std::vector<std::string> headers = {
-        "X-API-Key: " + m_apiKey,
-        "Cache-Control: no-cache"
+        "X-API-Key: " + m_apiKey
     };
     
     performRequest(url, "GET", "", headers, [callback = std::move(callback)](bool success, std::string const& response) {
@@ -487,19 +485,15 @@ void HttpClient::downloadProfileConfig(int accountID, GenericCallback callback) 
 void HttpClient::downloadProfile(int accountID, std::string const& username, DownloadCallback callback) {
     PaimonDebug::log("[HttpClient] Downloading profile background for account {} (user: {})", accountID, username);
 
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    
     std::vector<std::string> headers = {
-        "X-API-Key: " + m_apiKey,
-        "Cache-Control: no-cache"
+        "X-API-Key: " + m_apiKey
     };
-    
+
     // descargar desde /profilebackground/ (endpoint dedicado, separado de thumbnails)
 
-    std::string url = m_serverURL + "/profilebackground/" + std::to_string(accountID) + "?_ts=" + std::to_string(ts);
+    std::string url = m_serverURL + "/profilebackground/" + std::to_string(accountID);
     if (!username.empty()) {
-        url += "&username=" + encodeQueryParam(username);
+        url += "?username=" + encodeQueryParam(username);
     }
     
     performBinaryRequest(url, headers, [callback = std::move(callback), accountID](bool success, std::vector<uint8_t> const& data) {
@@ -681,16 +675,12 @@ void HttpClient::uploadUpdate(int levelId, std::vector<uint8_t> const& pngData, 
 
 void HttpClient::downloadSuggestion(int levelId, DownloadCallback callback) {
     PaimonDebug::log("[HttpClient] Downloading suggestion for level {}", levelId);
-    
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    
+
     std::vector<std::string> headers = {
-        "X-API-Key: " + m_apiKey,
-        "Cache-Control: no-cache"
+        "X-API-Key: " + m_apiKey
     };
-    
-    std::string url = m_serverURL + "/suggestions/" + std::to_string(levelId) + ".webp?_ts=" + std::to_string(ts);
+
+    std::string url = m_serverURL + "/suggestions/" + std::to_string(levelId) + ".webp";
     
     performBinaryRequest(url, headers, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
         if (success && !data.empty()) {
@@ -705,16 +695,12 @@ void HttpClient::downloadSuggestion(int levelId, DownloadCallback callback) {
 
 void HttpClient::downloadUpdate(int levelId, DownloadCallback callback) {
     PaimonDebug::log("[HttpClient] Downloading update for level {}", levelId);
-    
-    auto now = std::chrono::system_clock::now().time_since_epoch();
-    auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-    
+
     std::vector<std::string> headers = {
-        "X-API-Key: " + m_apiKey,
-        "Cache-Control: no-cache"
+        "X-API-Key: " + m_apiKey
     };
-    
-    std::string url = m_serverURL + "/updates/" + std::to_string(levelId) + ".webp?_ts=" + std::to_string(ts);
+
+    std::string url = m_serverURL + "/updates/" + std::to_string(levelId) + ".webp";
     
     performBinaryRequest(url, headers, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
         if (success && !data.empty()) {
@@ -725,6 +711,180 @@ void HttpClient::downloadUpdate(int levelId, DownloadCallback callback) {
             callback(false, {}, 0, 0);
         }
     });
+}
+
+// ── Manifest cache ─────────────────────────────────────────────
+
+void HttpClient::fetchManifest(std::vector<int> const& levelIds, std::function<void(bool)> callback) {
+    if (levelIds.empty()) {
+        if (callback) callback(false);
+        return;
+    }
+
+    // build comma-separated ids query param
+    std::string ids;
+    for (size_t i = 0; i < levelIds.size(); i++) {
+        if (i > 0) ids += ",";
+        ids += std::to_string(levelIds[i]);
+    }
+
+    std::string url = m_serverURL + "/api/manifest?ids=" + ids;
+    PaimonDebug::log("[HttpClient] fetchManifest for {} levels: {}", levelIds.size(), url);
+
+    std::vector<std::string> headers = {
+        "X-API-Key: " + m_apiKey,
+        "Accept: application/json"
+    };
+
+    performRequest(url, "GET", "", headers, [this, callback](bool success, std::string const& response) {
+        if (success) {
+            updateManifestFromJson(response);
+            saveManifestToDisk();
+            PaimonDebug::log("[HttpClient] Manifest fetched and cached successfully");
+            if (callback) callback(true);
+        } else {
+            PaimonDebug::warn("[HttpClient] Failed to fetch manifest: {}", response);
+            if (callback) callback(false);
+        }
+    });
+}
+
+void HttpClient::updateManifestFromJson(std::string const& json) {
+    auto parseResult = matjson::parse(json);
+    if (!parseResult.isOk()) {
+        PaimonDebug::warn("[HttpClient] Manifest JSON parse error");
+        return;
+    }
+    auto& root = parseResult.unwrap();
+    if (!root.isObject()) {
+        PaimonDebug::warn("[HttpClient] Manifest root is not an object");
+        return;
+    }
+
+    std::lock_guard<std::mutex> lock(m_manifestMutex);
+    int count = 0;
+
+    for (auto& [key, val] : root) {
+        if (!val.isObject()) continue;
+
+        auto parsed = geode::utils::numFromString<int>(key);
+        if (!parsed.isOk()) continue;
+        int levelId = parsed.unwrap();
+        if (levelId <= 0) continue;
+
+        ManifestEntry entry;
+        entry.format  = val["format"].asString().unwrapOr("");
+        entry.cdnUrl  = val["cdnUrl"].asString().unwrapOr("");
+        entry.version = val["version"].asString().unwrapOr("");
+        entry.id      = val["id"].asString().unwrapOr("");
+
+        if (!entry.cdnUrl.empty()) {
+            m_manifestCache[levelId] = std::move(entry);
+            count++;
+        }
+    }
+
+    PaimonDebug::log("[HttpClient] Manifest updated: {} entries cached", count);
+
+    // prune if over limit — erase arbitrary entries to stay within bounds
+    while (m_manifestCache.size() > MAX_MANIFEST_ENTRIES) {
+        m_manifestCache.erase(m_manifestCache.begin());
+    }
+}
+
+std::optional<HttpClient::ManifestEntry> HttpClient::getManifestEntry(int levelId) {
+    std::lock_guard<std::mutex> lock(m_manifestMutex);
+    auto it = m_manifestCache.find(levelId);
+    if (it != m_manifestCache.end()) {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
+void HttpClient::saveManifestToDisk() {
+    std::lock_guard<std::mutex> lock(m_manifestMutex);
+
+    if (m_manifestCache.empty()) return;
+
+    auto path = Mod::get()->getSaveDir() / "manifest_cache.json";
+
+    matjson::Value root = matjson::Value::object();
+    for (auto& [levelId, entry] : m_manifestCache) {
+        matjson::Value obj = matjson::Value::object();
+        obj["format"]  = entry.format;
+        obj["cdnUrl"]  = entry.cdnUrl;
+        obj["version"] = entry.version;
+        obj["id"]      = entry.id;
+        root[std::to_string(levelId)] = std::move(obj);
+    }
+
+    std::string json = root.dump(matjson::NO_INDENTATION);
+
+    std::error_code ec;
+    std::filesystem::create_directories(path.parent_path(), ec);
+
+    std::ofstream ofs(path, std::ios::binary | std::ios::trunc);
+    if (ofs.is_open()) {
+        ofs.write(json.data(), json.size());
+        ofs.close();
+        PaimonDebug::log("[HttpClient] Manifest saved to disk ({} entries)", m_manifestCache.size());
+    } else {
+        PaimonDebug::warn("[HttpClient] Failed to write manifest_cache.json");
+    }
+}
+
+void HttpClient::loadManifestFromDisk() {
+    auto path = Mod::get()->getSaveDir() / "manifest_cache.json";
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) return;
+
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs.is_open()) return;
+
+    std::string json((std::istreambuf_iterator<char>(ifs)),
+                      std::istreambuf_iterator<char>());
+    ifs.close();
+
+    if (json.empty()) return;
+
+    auto parseResult = matjson::parse(json);
+    if (!parseResult.isOk()) {
+        PaimonDebug::warn("[HttpClient] manifest_cache.json parse error");
+        return;
+    }
+    auto& root = parseResult.unwrap();
+    if (!root.isObject()) return;
+
+    std::lock_guard<std::mutex> lock(m_manifestMutex);
+    int count = 0;
+
+    for (auto& [key, val] : root) {
+        if (!val.isObject()) continue;
+
+        auto parsed = geode::utils::numFromString<int>(key);
+        if (!parsed.isOk()) continue;
+        int levelId = parsed.unwrap();
+        if (levelId <= 0) continue;
+
+        ManifestEntry entry;
+        entry.format  = val["format"].asString().unwrapOr("");
+        entry.cdnUrl  = val["cdnUrl"].asString().unwrapOr("");
+        entry.version = val["version"].asString().unwrapOr("");
+        entry.id      = val["id"].asString().unwrapOr("");
+
+        if (!entry.cdnUrl.empty()) {
+            m_manifestCache[levelId] = std::move(entry);
+            count++;
+        }
+    }
+
+    PaimonDebug::log("[HttpClient] Manifest loaded from disk: {} entries", count);
+
+    // prune if over limit
+    while (m_manifestCache.size() > MAX_MANIFEST_ENTRIES) {
+        m_manifestCache.erase(m_manifestCache.begin());
+    }
 }
 
 void HttpClient::downloadReported(int levelId, DownloadCallback callback) {
@@ -742,57 +902,45 @@ void HttpClient::downloadThumbnail(int levelId, bool isGif, DownloadCallback cal
 }
 
 void HttpClient::downloadThumbnail(int levelId, DownloadCallback callback) {
-    PaimonDebug::log("[HttpClient] downloadThumbnail llamado para level {} (priorizando WebP/GIF)", levelId);
-    
-    bool preferGif = true; // priorizar GIF para preservar animaciones sin dependencias externas
+    PaimonDebug::log("[HttpClient] downloadThumbnail para level {} (formato unico, sin extension)", levelId);
+
+    // Check manifest cache first — use direct Bunny CDN URL if available
+    auto manifestEntry = getManifestEntry(levelId);
+    if (manifestEntry.has_value() && !manifestEntry->cdnUrl.empty()) {
+        PaimonDebug::log("[HttpClient] Manifest hit for level {}: CDN URL={}", levelId, manifestEntry->cdnUrl);
+
+        std::vector<std::string> cdnHeaders = { "Connection: keep-alive" };
+        performBinaryRequest(manifestEntry->cdnUrl, cdnHeaders, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
+            if (success && !data.empty()) {
+                PaimonDebug::log("[HttpClient] CDN download success for level {}: {} bytes", levelId, data.size());
+                callback(true, data, 0, 0);
+            } else {
+                PaimonDebug::warn("[HttpClient] CDN download failed for level {}, no fallback", levelId);
+                callback(false, {}, 0, 0);
+            }
+        });
+        return;
+    }
+
+    // Fallback: use Worker endpoint /t/{levelId}
+    PaimonDebug::log("[HttpClient] Manifest miss for level {}, using Worker fallback", levelId);
 
     auto headers = std::vector<std::string>{
         "X-API-Key: " + m_apiKey,
         "Connection: keep-alive"
     };
-    
-    std::string gifURL = m_serverURL + "/t/" + std::to_string(levelId) + ".gif";
-    std::string webpURL = m_serverURL + "/t/" + std::to_string(levelId) + ".webp";
-    std::string pngURL = m_serverURL + "/t/" + std::to_string(levelId) + ".png";
-    
-    PaimonDebug::log("[HttpClient] Prioridad: {} -> WebP -> PNG (fallback)", preferGif ? "GIF" : "WebP");
 
-    // lista con prioridad y callbacks en cadena (sin recursion)
+    // Single request: /t/{levelId} without extension — server auto-detects format.
+    // Client handles all formats (GIF/WebP/PNG/JPG) via magic bytes in bytesToTexture().
+    std::string url = m_serverURL + "/t/" + std::to_string(levelId);
 
-    auto tryPNG = [this, levelId, pngURL, headers, callback]() {
-        performBinaryRequest(pngURL, headers, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
-             if (success && !data.empty()) {
-                 PaimonDebug::log("[HttpClient] Found PNG for level {}", levelId);
-                callback(true, data, 0, 0);
-            } else {
-                 PaimonDebug::warn("[HttpClient] Format PNG failed for level {}", levelId);
-                callback(false, {}, 0, 0);
-            }
-        });
-    };
-
-    auto trySecondary = [this, levelId, gifURL, webpURL, headers, callback, preferGif, tryPNG](bool primaryFailed) {
-        std::string url = preferGif ? webpURL : gifURL; // si preferGif, el secundario es webp; si no, gif
-
-        PaimonDebug::log("[HttpClient] Primary failed, trying secondary: {}", url);
-        performBinaryRequest(url, headers, [callback = std::move(callback), levelId, tryPNG](bool success, std::vector<uint8_t> const& data) {
-            if (success && !data.empty()) {
-                callback(true, data, 0, 0);
-            } else {
-                tryPNG();
-            }
-        });
-    };
-
-    std::string primaryURL = preferGif ? gifURL : webpURL;
-    PaimonDebug::log("[HttpClient] Trying primary: {}", primaryURL);
-    
-    performBinaryRequest(primaryURL, headers, [callback = std::move(callback), levelId, trySecondary](bool success, std::vector<uint8_t> const& data) {
+    performBinaryRequest(url, headers, [callback = std::move(callback), levelId](bool success, std::vector<uint8_t> const& data) {
         if (success && !data.empty()) {
-            PaimonDebug::log("[HttpClient] Found primary for level {}", levelId);
+            PaimonDebug::log("[HttpClient] Found thumbnail for level {}", levelId);
             callback(true, data, 0, 0);
         } else {
-            trySecondary(true);
+            PaimonDebug::warn("[HttpClient] No thumbnail found for level {}", levelId);
+            callback(false, {}, 0, 0);
         }
     });
 }

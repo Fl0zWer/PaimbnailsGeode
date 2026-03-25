@@ -454,7 +454,7 @@
       "type": "bool",
       "name": "Clear Cache on Exit",
       "description": "Delete downloaded thumbnails when the game closes. Next session will re-download them.",
-      "default": true
+      "default": false
     },
     "enable-debug-logs": {
       "type": "bool",

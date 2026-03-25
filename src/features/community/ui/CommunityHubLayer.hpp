@@ -9,6 +9,7 @@
 #include <Geode/utils/web.hpp>
 #include <fmod.hpp>
 #include <memory>
+#include <unordered_set>
 
 class CommunityHubLayer : public cocos2d::CCLayer {
 public:
@@ -30,6 +31,8 @@ protected:
 
     void onBack(cocos2d::CCObject* sender);
     void onTab(cocos2d::CCObject* sender);
+    void onModProfile(cocos2d::CCObject* sender);
+    void onDeferredModeratorsRebuild(float);
 
     // data loading
     void loadTab(Tab tab);
@@ -41,6 +44,7 @@ protected:
     void buildModeratorsList();
     void buildCreatorsList();
     void buildThumbnailsList();
+    void requestModeratorsListRebuild();
 
     // GDBrowser profile fetch (for moderators)
     void fetchGDBrowserProfile(std::string const& username, std::string const& role);
@@ -54,6 +58,8 @@ protected:
     Tab m_currentTab = Tab::Moderators;
     cocos2d::CCMenu* m_tabsMenu = nullptr;
     std::vector<CCMenuItemToggler*> m_tabs;
+    bool m_isLoadingTab = false;
+    bool m_moderatorsRebuildQueued = false;
 
     // loading
     geode::LoadingSpinner* m_loadingSpinner = nullptr;
@@ -70,6 +76,7 @@ protected:
     std::vector<ModEntry> m_modEntries;
     geode::Ref<cocos2d::CCArray> m_modScores;
     int m_pendingProfiles = 0;
+    std::unordered_set<int> m_requestedModeratorProfiles;
 
     // creators data
     struct CreatorEntry {

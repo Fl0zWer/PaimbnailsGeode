@@ -529,7 +529,10 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                 
                 // comprobar cache primero
                 auto cachedProfile = ProfileThumbs::get().getCachedProfile(accountID);
-                if (cachedProfile && (cachedProfile->texture || !cachedProfile->gifKey.empty())) {
+                bool wantsGifProfile = cachedProfile && !cachedProfile->gifKey.empty();
+                bool hasReadyCachedGif = wantsGifProfile && AnimatedGIFSprite::isCached(cachedProfile->gifKey);
+                bool hasReadyCachedProfile = cachedProfile && (hasReadyCachedGif || (!wantsGifProfile && cachedProfile->texture));
+                if (hasReadyCachedProfile) {
                     log::debug("[GJScoreCell] Found cached profile for account {}", accountID);
                     // cargo desde cache de forma asincrona
                     WeakRef<PaimonGJScoreCell> safeThis = this;
@@ -548,7 +551,11 @@ class $modify(PaimonGJScoreCell, GJScoreCell) {
                     return;
                 }
                 
-                log::debug("[GJScoreCell] No cache for account {}, downloading...", accountID);
+                if (wantsGifProfile && !hasReadyCachedGif) {
+                    log::info("[GJScoreCell] GIF cache cold for account {}, re-downloading profile image", accountID);
+                } else {
+                    log::debug("[GJScoreCell] No cache for account {}, downloading...", accountID);
+                }
                 
                 // no esta en cache: toca descargar del server
                 log::debug("[GJScoreCell] Profile not in cache for user: {} - Downloading...", username);

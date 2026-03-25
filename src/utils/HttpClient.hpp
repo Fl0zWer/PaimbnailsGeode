@@ -7,6 +7,9 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <unordered_map>
+#include <mutex>
+#include <optional>
 
 class HttpClient {
 public:
@@ -142,6 +145,22 @@ public:
         std::vector<uint8_t> const& imageData, std::string const& format,
         UploadCallback callback);
 
+    // manifest cache — stores CDN URLs fetched from /api/manifest to bypass Worker
+    struct ManifestEntry {
+        std::string format;   // "webp", "png", "gif", etc.
+        std::string cdnUrl;   // direct Bunny CDN URL
+        std::string version;  // revision/version token
+        std::string id;       // thumbnail id
+    };
+
+    void fetchManifest(std::vector<int> const& levelIds, std::function<void(bool)> callback);
+    std::optional<ManifestEntry> getManifestEntry(int levelId);
+    void updateManifestFromJson(std::string const& json);
+
+    // disk persistence for manifest cache
+    void saveManifestToDisk();
+    void loadManifestFromDisk();
+
 private:
     HttpClient();
     ~HttpClient() = default;
@@ -160,6 +179,11 @@ private:
     };
     std::map<int, ExistsCacheEntry> m_existsCache;
     static constexpr int EXISTS_CACHE_DURATION = 300; // 5 min
+
+    // manifest cache — CDN URLs indexed by levelId
+    std::unordered_map<int, ManifestEntry> m_manifestCache;
+    std::mutex m_manifestMutex;
+    static constexpr size_t MAX_MANIFEST_ENTRIES = 5000;
 
     // request async
     void performRequest(

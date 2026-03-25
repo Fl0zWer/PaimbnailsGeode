@@ -96,6 +96,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         int m_galleryToken = 0;
         int m_bgRequestToken = 0;
         int m_invalidationListenerId = 0;
+        bool m_audioDeactivated = false;
     };
     
     void applyThumbnailBackground(CCTexture2D* tex, int32_t levelID) {
@@ -156,7 +157,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         };
 
         // lambda efectos
-        auto applyEffects = [this, &bgStyle, &intensity, &win, &tex, &lookupShader](CCSprite*& sprite, bool isGIF) {
+        auto applyEffects = [this, bgStyle, intensity, win, tex, lookupShader](CCSprite*& sprite, bool isGIF) {
             if (!sprite) return;
 
             // scale + pos inicial
@@ -179,9 +180,16 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                          shader->use();
                          shader->setUniformsForBuiltins();
                          float intensityVal = (intensity - 1) / 9.0f;
-                         if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) ags->m_intensity = intensityVal;
-                         else shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), intensityVal);
-                         shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                         if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) {
+                             ags->m_intensity = intensityVal;
+                             ags->m_screenSize = win;
+                             if (auto* animTex = ags->getTexture()) {
+                                 ags->m_texSize = animTex->getContentSizeInPixels();
+                             }
+                         } else {
+                             shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), intensityVal);
+                             shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                         }
                      }
                 } else {
                     float t = (intensity - 1) / 9.0f;
@@ -222,9 +230,16 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                          shader->use();
                          shader->setUniformsForBuiltins();
                          float intensityVal = (intensity - 1) / 9.0f;
-                         if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) ags->m_intensity = intensityVal;
-                         else shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), intensityVal);
-                         shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                         if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) {
+                             ags->m_intensity = intensityVal;
+                             ags->m_screenSize = win;
+                             if (auto* animTex = ags->getTexture()) {
+                                 ags->m_texSize = animTex->getContentSizeInPixels();
+                             }
+                         } else {
+                             shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), intensityVal);
+                             shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                         }
                      }
                 } else {
                     sprite = Shaders::createBlurredSprite(tex, win, static_cast<float>(intensity));
@@ -240,14 +255,23 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                     shader->setUniformsForBuiltins();
                     if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) {
                         ags->m_intensity = val;
+                        ags->m_screenSize = win;
                     } else {
                         shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_intensity"), val);
                     }
                     if (useScreenSize) {
-                        shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                        if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) {
+                            ags->m_screenSize = win;
+                        } else {
+                            shader->setUniformLocationWith2f(shader->getUniformLocationForName("u_screenSize"), win.width, win.height);
+                        }
                     }
                     if (needsTime) {
-                        shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_time"), 0.0f);
+                        if (auto ags = typeinfo_cast<AnimatedGIFSprite*>(sprite)) {
+                            ags->m_time = 0.0f;
+                        } else {
+                            shader->setUniformLocationWith1f(shader->getUniformLocationForName("u_time"), 0.0f);
+                        }
                         m_fields->m_animatedShader = true;
                         m_fields->m_shaderTime = 0.0f;
                     }
@@ -255,46 +279,99 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         };
 
-        // 1. sprite estatico
-        CCSprite* finalSprite = CCSprite::createWithTexture(tex);
-        if (finalSprite) {
-            applyEffects(finalSprite, false);
-            
+        auto refreshShaderSchedule = [this]() {
+            this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
+            if (m_fields->m_animatedShader && m_fields->m_pixelBg) {
+                this->schedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
+            }
+        };
+
+        auto installBackgroundSprite = [this, applyEffects, refreshShaderSchedule](CCSprite* sprite, bool isGIF) {
+            if (!sprite) return;
+
+            // Ocultar fondo nativo de GD ahora que tenemos thumbnail real
+            if (auto vanillaBg = this->getChildByID("background")) {
+                vanillaBg->setVisible(false);
+            }
+            // Ocultar objetos decorativos marrones (side-art corners) instantaneamente
+            if (auto blArt = this->getChildByID("bottom-left-art")) blArt->setVisible(false);
+            if (auto brArt = this->getChildByID("bottom-right-art")) brArt->setVisible(false);
+
+            m_fields->m_animatedShader = false;
+            m_fields->m_shaderTime = 0.0f;
+
+            CCSprite* preparedSprite = sprite;
+            applyEffects(preparedSprite, isGIF);
+            if (!preparedSprite) return;
+
             Ref<CCNode> oldBg = m_fields->m_pixelBg;
             if (!oldBg) {
                 oldBg = this->getChildByID("paimon-levelinfo-pixel-bg"_spr);
             }
-            
-            finalSprite->setZOrder(kBackgroundZOrder);
-            finalSprite->setID("paimon-levelinfo-pixel-bg"_spr);
-            this->addChild(finalSprite);
-            m_fields->m_pixelBg = finalSprite;
 
-            // crossfade: fondo nuevo se desvanece encima del viejo (sin dual-fade que deja ver el fondo negro)
+            preparedSprite->setZOrder(kBackgroundZOrder);
+            preparedSprite->setID("paimon-levelinfo-pixel-bg"_spr);
+            this->addChild(preparedSprite);
+            m_fields->m_pixelBg = preparedSprite;
+
             if (oldBg && oldBg->getParent()) {
-                float targetScale = finalSprite->getScale();
-                finalSprite->setOpacity(0);
-                finalSprite->setScale(targetScale * 1.06f);
-                finalSprite->runAction(CCSpawn::create(
-                    CCFadeTo::create(0.5f, 255),
-                    CCEaseOut::create(CCScaleTo::create(0.5f, targetScale), 2.0f),
+                float targetScale = preparedSprite->getScale();
+                preparedSprite->setOpacity(0);
+                preparedSprite->setScale(targetScale * 1.03f);
+                preparedSprite->runAction(CCSpawn::create(
+                    CCFadeTo::create(0.2f, 255),
+                    CCEaseOut::create(CCScaleTo::create(0.2f, targetScale), 2.0f),
                     nullptr
                 ));
-                // viejo se queda a opacidad completa debajo; se elimina al terminar la transicion
                 auto* oldPtr = oldBg.data();
                 oldPtr->runAction(CCSequence::create(
-                    CCDelayTime::create(0.55f),
+                    CCDelayTime::create(0.25f),
                     CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
                     nullptr
                 ));
             } else if (oldBg) {
                 oldBg->removeFromParent();
             }
+
+            refreshShaderSchedule();
+        };
+
+        bool hasGifBackground = ThumbnailLoader::get().hasGIFData(levelID);
+        std::string gifPath = hasGifBackground
+            ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, true))
+            : std::string();
+
+        if (hasGifBackground) {
+            if (AnimatedGIFSprite::isCached(gifPath)) {
+                if (auto cachedGif = AnimatedGIFSprite::createFromCache(gifPath)) {
+                    cachedGif->play();
+                    installBackgroundSprite(cachedGif, true);
+                } else if (auto fallbackSprite = CCSprite::createWithTexture(tex)) {
+                    installBackgroundSprite(fallbackSprite, false);
+                }
+            } else {
+                Ref<LevelInfoLayer> self = this;
+                AnimatedGIFSprite::createAsync(gifPath, [self, applyEffects, installBackgroundSprite, tex](AnimatedGIFSprite* anim) {
+                    auto* layer = static_cast<PaimonLevelInfoLayer*>(self.data());
+                    if (!layer || !layer->getParent()) {
+                        return;
+                    }
+
+                    if (anim) {
+                        anim->play();
+                        installBackgroundSprite(anim, true);
+                    } else if (auto fallbackSprite = CCSprite::createWithTexture(tex)) {
+                        installBackgroundSprite(fallbackSprite, false);
+                    }
+                });
+            }
+        } else if (auto finalSprite = CCSprite::createWithTexture(tex)) {
+            installBackgroundSprite(finalSprite, false);
         }
 
         // === MULTI-EFECTO: capas extra ===
         std::string extraStylesRaw = geode::Mod::get()->getSettingValue<std::string>("levelinfo-extra-styles");
-        if (!extraStylesRaw.empty() && finalSprite) {
+        if (!extraStylesRaw.empty() && tex) {
             // parsear comma-separated, max 4 extra
             std::vector<std::string> extraStyles;
             {
@@ -310,7 +387,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 }
             }
 
-            float intensityF = (intensity / 10.0f) * 2.25f;
             for (auto& es : extraStyles) {
                 if (es.empty() || es == "normal" || es == bgStyle) continue;
 
@@ -343,46 +419,6 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
                 this->addChild(extraSpr);
                 m_fields->m_extraBgSprites.push_back(extraSpr);
             }
-        }
-
-        // schedule animacion de shader si es necesario
-        this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
-        if (m_fields->m_animatedShader && m_fields->m_pixelBg) {
-            this->schedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
-        }
-
-        // 2. gif? reemplazar
-        if (ThumbnailLoader::get().hasGIFData(levelID)) {
-             auto path = ThumbnailLoader::get().getCachePath(levelID, true);
-             Ref<LevelInfoLayer> self = this;
-             AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [self, applyEffects](AnimatedGIFSprite* anim) {
-                 auto* layer = static_cast<PaimonLevelInfoLayer*>(self.data());
-                 if (anim) {
-                     // efectos al gif
-                     CCSprite* spritePtr = anim;
-                     applyEffects(spritePtr, true);
-                     
-                     anim->setZOrder(kBackgroundZOrder);
-                     anim->setID("paimon-levelinfo-pixel-bg"_spr);
-                     anim->setOpacity(0);
-                     layer->addChild(anim);
-                     anim->runAction(CCFadeTo::create(0.5f, 255));
-
-                     // quitar fondo estatico despues de la transicion
-                     auto oldBg = layer->m_fields->m_pixelBg;
-                     if (oldBg && oldBg->getParent()) {
-                         auto* oldPtr = oldBg.data();
-                         oldPtr->runAction(CCSequence::create(
-                             CCDelayTime::create(0.55f),
-                             CCCallFunc::create(oldPtr, callfunc_selector(CCNode::removeFromParent)),
-                             nullptr
-                         ));
-                     } else if (auto old = layer->getChildByID("paimon-levelinfo-pixel-bg"_spr)) {
-                         if (old != anim) old->removeFromParent();
-                     }
-                     layer->m_fields->m_pixelBg = anim;
-                 }
-             });
         }
 
         // overlay — reusar si ya existe con la misma opacidad, sino crear
@@ -443,12 +479,16 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
         if (m_fields->m_pixelBg) {
             auto sprite = typeinfo_cast<CCSprite*>(static_cast<CCNode*>(m_fields->m_pixelBg));
             if (sprite) {
-                auto shader = sprite->getShaderProgram();
-                if (shader) {
-                    shader->use();
-                    GLint loc = shader->getUniformLocationForName("u_time");
-                    if (loc >= 0) {
-                        shader->setUniformLocationWith1f(loc, m_fields->m_shaderTime);
+                if (auto gif = typeinfo_cast<AnimatedGIFSprite*>(sprite)) {
+                    gif->m_time = m_fields->m_shaderTime;
+                } else {
+                    auto shader = sprite->getShaderProgram();
+                    if (shader) {
+                        shader->use();
+                        GLint loc = shader->getUniformLocationForName("u_time");
+                        if (loc >= 0) {
+                            shader->setUniformLocationWith1f(loc, m_fields->m_shaderTime);
+                        }
                     }
                 }
             }
@@ -470,6 +510,15 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
     $override
     void onExit() {
         log::info("[LevelInfoLayer] onExit: levelID={}", m_level ? m_level->m_levelID.value() : 0);
+
+        // Deactivate dynamic song context if this layer is being permanently removed.
+        // onBack() already handles normal navigation; this catches scene replacements
+        // and forced navigations that bypass onBack().
+        if (!m_fields->m_audioDeactivated) {
+            m_fields->m_audioDeactivated = true;
+            AudioContextCoordinator::get().deactivateLevelInfo(false);
+        }
+
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateGallery));
         this->unschedule(schedule_selector(PaimonLevelInfoLayer::updateShaderTime));
         if (m_fields->m_invalidationListenerId != 0) {
@@ -537,12 +586,8 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
 
         if (!LevelInfoLayer::init(level, challenge)) return false;
 
-        // ocultar fondo nativo de GD; lo reemplaza nuestro thumbnail bg
-        if (level && level->m_levelID.value() > 0 && level->m_levelType != GJLevelType::Main) {
-            if (auto bg = this->getChildByID("background")) {
-                bg->setVisible(false);
-            }
-        }
+        // El fondo nativo se oculta en installBackgroundSprite cuando el
+        // thumbnail esta listo, asi niveles sin thumbnail conservan el fondo.
         
         if (!level || level->m_levelID <= 0) {
                 log::debug("[LevelInfoLayer] Level ID invalid, skipping thumbnail button");
@@ -901,6 +946,7 @@ class $modify(PaimonLevelInfoLayer, LevelInfoLayer) {
             }
         }
 
+        m_fields->m_audioDeactivated = true;
         AudioContextCoordinator::get().deactivateLevelInfo(returnsToLevelSelect);
 
         if (m_fields->m_fromVerificationQueue) {

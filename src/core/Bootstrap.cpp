@@ -8,14 +8,12 @@
 #include "../features/thumbnails/services/LevelColors.hpp"
 #include "../utils/Localization.hpp"
 #include "../utils/MainThreadDelay.hpp"
+#include "../utils/HttpClient.hpp"
 #include "QualityConfig.hpp"
 #include <thread>
 #include <filesystem>
 
 using namespace geode::prelude;
-
-// declarada en RuntimeLifecycle.cpp
-extern void cleanupDiskCache(char const* context);
 
 namespace {
 void applyLanguageSetting(std::string const& langStr) {
@@ -40,13 +38,19 @@ void PaimonOnModLoaded() {
     // carga la configuracion de transiciones personalizables
     TransitionManager::get().loadConfig();
 
-    // limpia el cache de disco de la sesion anterior ANTES de cargar thumbnails nuevos
-    cleanupDiskCache("startup");
-
     log::info("[PaimonThumbnails] Queueing main level thumbnails...");
-    for (int i = 1; i <= 22; i++) {
-        ThumbnailLoader::get().prefetchLevelAssets(i, 1);
-    }
+
+    // Batch fetch manifest for main levels first, then prefetch
+    std::vector<int> mainLevels;
+    for (int i = 1; i <= 22; i++) mainLevels.push_back(i);
+
+    HttpClient::get().fetchManifest(mainLevels, [](bool success) {
+        log::info("[PaimonThumbnails] Manifest fetch {}, starting prefetch", success ? "succeeded" : "failed (will use Worker fallback)");
+        // Prefetch from disk/CDN using manifest data
+        for (int i = 1; i <= 22; i++) {
+            ThumbnailLoader::get().prefetchLevelAssets(i, 1);
+        }
+    });
 
     std::string langStr = Mod::get()->getSettingValue<std::string>("language");
     log::info("[PaimonThumbnails][Init] Language setting='{}'", langStr);
@@ -60,21 +64,6 @@ void PaimonOnModLoaded() {
     }
 
     log::info("[PaimonThumbnails][Init] Applying startup init");
-
-    // borro el cache de perfiles al abrir el mod
-    auto profileDir = paimon::quality::cacheDir() / "profiles";
-    
-    std::error_code profileEc;
-    if (std::filesystem::exists(profileDir, profileEc)) {
-        std::error_code ec;
-        std::filesystem::remove_all(profileDir, ec);
-        if (ec) {
-            log::warn("[PaimonThumbnails] Failed to delete profiles directory: {}", ec.message());
-        } else {
-            log::info("[PaimonThumbnails] Deleted profiles directory for update synchronization");
-        }
-    }
-    
 
     log::info("[PaimonThumbnails][Init] Scheduling color extraction thread");
     // hilo de I/O de disco + procesamiento CPU — no migrable a WebTask (no es peticion web).

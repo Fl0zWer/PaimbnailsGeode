@@ -164,7 +164,7 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
         }
     });
 
-    ThumbnailAPI::get().downloadFromUrl(url, [self, requestToken](bool success, CCTexture2D* tex) {
+    ThumbnailAPI::get().downloadFromUrl(url, [self, requestToken, index](bool success, CCTexture2D* tex) {
         if (!self->isUiAlive()) return;
         if (requestToken != self->m_galleryRequestToken) return;
         if (success && tex) {
@@ -172,6 +172,23 @@ void LocalThumbnailViewPopup::loadThumbnailAt(int index) {
             float maxWidth = content.width - 40.f;
             float maxHeight = content.height - 80.f;
             self->displayThumbnail(tex, maxWidth, maxHeight, content, false);
+
+            // Prefetch adjacent thumbnails for instant navigation
+            int count = static_cast<int>(self->m_thumbnails.size());
+            if (count > 1) {
+                auto prefetch = [&thumbs = self->m_thumbnails, count](int idx) {
+                    idx = ((idx % count) + count) % count;
+                    auto& t = thumbs[idx];
+                    std::string purl = t.url;
+                    if (!t.id.empty()) {
+                        auto s = (purl.find('?') == std::string::npos) ? "?" : "&";
+                        purl += fmt::format("{}_pv={}", s, t.id);
+                    }
+                    ThumbnailAPI::get().downloadFromUrl(purl, [](bool, CCTexture2D*) {});
+                };
+                prefetch(index + 1);
+                prefetch(index - 1);
+            }
         } else {
             auto content = self->m_mainLayer->getContentSize();
             self->showNoThumbnail(content);
@@ -451,7 +468,7 @@ void LocalThumbnailViewPopup::setup(std::pair<int32_t, bool> const& data) {
     this->m_mainLayer->addChild(m_clippingNode, 1);
 
     auto clippingBg = CCLayerColor::create({0, 0, 0, 255});
-    clippingBg->setOpacity(25);
+    clippingBg->setOpacity(255);
     clippingBg->setContentSize({maxWidth, maxHeight});
     clippingBg->ignoreAnchorPointForPosition(false);
     clippingBg->setAnchorPoint({0.5f, 0.5f});

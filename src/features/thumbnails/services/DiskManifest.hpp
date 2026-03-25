@@ -22,7 +22,7 @@ public:
     // persiste el manifest a disco (deferred: solo si dirty)
     void flush();
 
-    // ── Consultas ───────────────────────────────────────────────
+    // ── Consultas (thread-safe: toman mutex internamente) ────────
 
     bool contains(int levelID, bool isGif) const;
     bool containsUrl(std::string const& url) const;
@@ -31,6 +31,12 @@ public:
 
     // chequeo rapido legacy (para mantener compatibilidad con el loader actual)
     bool containsLegacyKey(int key) const;
+
+    // ── Consultas sin lock (caller DEBE tener mutex) ────────────
+    // Versiones _locked para uso interno cuando el caller ya tiene el lock.
+    bool containsLocked(int levelID, bool isGif) const;
+    DiskManifestEntry const* getEntryLocked(int levelID, bool isGif) const;
+    DiskManifestEntry const* getEntryByUrlLocked(std::string const& url) const;
 
     // ── Mutaciones ──────────────────────────────────────────────
 
@@ -57,6 +63,7 @@ public:
     // ── Stats ───────────────────────────────────────────────────
 
     size_t totalBytes() const;
+    size_t totalBytesLocked() const; // caller DEBE tener mutex
     size_t entryCount() const;
 
     // ── Legacy compat ───────────────────────────────────────────
@@ -64,7 +71,7 @@ public:
     // genera un unordered_set<int> con las keys legacy (para la transicion)
     std::unordered_set<int> legacyKeySet() const;
 
-    mutable std::mutex mutex;
+    mutable std::recursive_mutex mutex;
 
 private:
     // key = "levelID" or "-levelID" for gif, or "url:<hash>" for gallery

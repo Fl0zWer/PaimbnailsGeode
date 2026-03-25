@@ -63,7 +63,7 @@ ThumbnailLoader::~ThumbnailLoader() {
     // durante el cierre del proceso (destructores estaticos) el orden de destruccion
     // es indefinido: Cocos2d, el autorelease pool y otros singletons pueden ya estar muertos.
     // geode::Ref llama release() al destruirse. Usamos take() para sacar los punteros sin release().
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     for (auto& [id, entry] : m_textureCache) {
         (void)entry.texture.take();
     }
@@ -72,6 +72,19 @@ ThumbnailLoader::~ThumbnailLoader() {
         (void)entry.texture.take();
     }
     m_urlTextureCache.clear();
+
+    // Limpiar tasks y sus callbacks ANTES de que la destruccion implicita de miembros
+    // los destruya. Las callbacks capturan WeakRef<PaimonLevelCell> cuyo destructor
+    // interactua con CCPoolManager — que puede ya estar muerto a estas alturas.
+    for (auto& [id, task] : m_tasks) {
+        if (task) task->callbacks.clear();
+    }
+    m_tasks.clear();
+    for (auto& [url, task] : m_urlTasks) {
+        if (task) task->callbacks.clear();
+    }
+    m_urlTasks.clear();
+    m_invalidationListeners.clear();
 }
 
 void ThumbnailLoader::initDiskCache() {
@@ -99,18 +112,18 @@ void ThumbnailLoader::initDiskCache() {
 
         // --- cargar manifest persistente (o migrar desde directorio) ---
         {
-            std::lock_guard<std::mutex> lock(m_manifest.mutex);
+            std::lock_guard<std::recursive_mutex> lock(m_manifest.mutex);
             m_manifest.load(path);
         }
 
         // --- hidratar el legacy disk index desde el manifest ---
         std::unordered_set<int> legacyKeys;
         {
-            std::lock_guard<std::mutex> ml(m_manifest.mutex);
+            std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
             legacyKeys = m_manifest.legacyKeySet();
         }
         {
-            std::lock_guard<std::mutex> lock(m_diskMutex);
+            std::lock_guard<std::recursive_mutex> lock(m_diskMutex);
             m_diskCache = std::move(legacyKeys);
         }
 
@@ -140,7 +153,7 @@ void ThumbnailLoader::pruneFailedCacheLocked(std::chrono::steady_clock::time_poi
 void ThumbnailLoader::pruneDiskCache() {
     size_t maxDiskBytes = paimon::settings::quality::diskCacheBytes();
 
-    std::lock_guard<std::mutex> ml(m_manifest.mutex);
+    std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
     size_t currentBytes = m_manifest.totalBytes();
     if (currentBytes <= maxDiskBytes) return;
 
@@ -153,7 +166,7 @@ void ThumbnailLoader::pruneDiskCache() {
     // re-sync legacy disk index
     {
         auto legacyKeys = m_manifest.legacyKeySet();
-        std::lock_guard<std::mutex> lock(m_diskMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_diskMutex);
         m_diskCache = std::move(legacyKeys);
     }
 
@@ -172,19 +185,19 @@ void ThumbnailLoader::setMaxConcurrentTasks(int max) {
 
 bool ThumbnailLoader::isLoaded(int levelID, bool isGif) const {
     int key = isGif ? -levelID : levelID;
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     return m_textureCache.find(key) != m_textureCache.end();
 }
 
 bool ThumbnailLoader::isPending(int levelID, bool isGif) const {
     int key = isGif ? -levelID : levelID;
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     return m_tasks.find(key) != m_tasks.end();
 }
 
 bool ThumbnailLoader::isFailed(int levelID, bool isGif) const {
     int key = isGif ? -levelID : levelID;
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto it = m_failedCache.find(key);
     if (it == m_failedCache.end()) return false;
     // expirado = no fallido
@@ -192,7 +205,7 @@ bool ThumbnailLoader::isFailed(int levelID, bool isGif) const {
 }
 
 bool ThumbnailLoader::hasGIFData(int levelID) const {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     return m_gifLevels.find(levelID) != m_gifLevels.end();
 }
 
@@ -208,7 +221,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
     log::info("[ThumbnailLoader] requestLoad: levelID={} key={} priority={} isGif={}", levelID, key, priority, isGif);
     
     // lock protege m_textureCache, m_failedCache y m_tasks de carreras con finishTask
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto now = std::chrono::steady_clock::now();
     pruneFailedCacheLocked(now);
 
@@ -247,7 +260,7 @@ void ThumbnailLoader::requestLoad(int levelID, std::string fileName, LoadCallbac
             {
                 bool isGifKey = key < 0;
                 int realId = std::abs(key);
-                std::lock_guard<std::mutex> ml(m_manifest.mutex);
+                std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
                 m_manifest.touchAccess(realId, isGifKey);
             }
             
@@ -334,7 +347,7 @@ void ThumbnailLoader::prefetchLevels(std::vector<int> const& levelIDs, int prior
 
 void ThumbnailLoader::cancelLoad(int levelID, bool isGif) {
     int key = isGif ? -levelID : levelID;
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto it = m_tasks.find(key);
     if (it != m_tasks.end()) {
         log::info("[ThumbnailLoader] cancelLoad: key={}", key);
@@ -428,7 +441,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
     bool inDiskIndex = false;
     bool gifInDiskIndex = false;
     {
-        std::lock_guard<std::mutex> lock(m_diskMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_diskMutex);
         inDiskIndex = m_diskCache.count(isGif ? -realID : realID) > 0;
         if (!isGif) gifInDiskIndex = m_diskCache.count(-realID) > 0;
     }
@@ -552,7 +565,7 @@ void ThumbnailLoader::workerLoadFromDisk(std::shared_ptr<Task> task) {
 
         if (decoded.success && !decoded.pixels.empty()) {
             if (decoded.isGif) {
-                { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
+                { std::lock_guard<std::recursive_mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
             }
 
             auto pixelsCopy = std::move(decoded.pixels);
@@ -632,11 +645,11 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
                                 me.touchAccess();
                                 me.touchValidated();
                                 {
-                                    std::lock_guard<std::mutex> ml(m_manifest.mutex);
+                                    std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
                                     m_manifest.upsert(realID, dataIsGif, std::move(me));
                                 }
 
-                                std::lock_guard<std::mutex> lock(m_diskMutex);
+                                std::lock_guard<std::recursive_mutex> lock(m_diskMutex);
                                 m_diskCache.insert(dataIsGif ? -realID : realID);
                             } else {
                                 log::error("[ThumbnailLoader] no se pudo abrir archivo para guardar en disco");
@@ -649,11 +662,11 @@ void ThumbnailLoader::workerDownload(std::shared_ptr<Task> task) {
 
                         if (decoded.success && !decoded.pixels.empty()) {
                             if (decoded.isGif) {
-                                { std::lock_guard<std::mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
+                                { std::lock_guard<std::recursive_mutex> lock(m_queueMutex); m_gifLevels.insert(realID); }
                             }
                             // update manifest with decoded dimensions
                             {
-                                std::lock_guard<std::mutex> ml(m_manifest.mutex);
+                                std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
                                 if (auto* entry = const_cast<paimon::cache::DiskManifestEntry*>(
                                         m_manifest.getEntry(realID, decoded.isGif))) {
                                     entry->width = decoded.width;
@@ -701,10 +714,10 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
 
     // main thread: lock protege m_textureCache, m_failedCache, m_tasks
     {
-        std::lock_guard<std::mutex> lock(m_queueMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
 
         if (task->isUrlTask) {
-            // URL-based task (gallery shared cache)
+            // URL-based task (gallery shared cache) — usa pool separado
             if (!shuttingDown && success && texture) {
                 addToUrlCache(task->url, texture);
             } else if (!shuttingDown && !task->cancelled) {
@@ -712,6 +725,13 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
             }
             if (shouldNotify) callbacks = task->callbacks;
             m_urlTasks.erase(task->url);
+
+            m_activeUrlTaskCount.fetch_sub(1, std::memory_order_relaxed);
+
+            // procesar cola de URL pendientes
+            if (!shuttingDown) {
+                processUrlQueue();
+            }
         } else {
             // level-based task
             if (!shuttingDown && success && texture) {
@@ -721,13 +741,13 @@ void ThumbnailLoader::finishTask(std::shared_ptr<Task> task, cocos2d::CCTexture2
             }
             if (shouldNotify) callbacks = task->callbacks;
             m_tasks.erase(task->levelID);
-        }
 
-        m_activeTaskCount.fetch_sub(1, std::memory_order_relaxed);
+            m_activeTaskCount.fetch_sub(1, std::memory_order_relaxed);
 
-        // proceso el siguiente solo si seguimos vivos
-        if (!shuttingDown) {
-            processQueue();
+            // proceso el siguiente level task solo si seguimos vivos
+            if (!shuttingDown) {
+                processQueue();
+            }
         }
     }
 
@@ -785,7 +805,7 @@ void ThumbnailLoader::addToCache(int levelID, cocos2d::CCTexture2D* texture, int
 
 void ThumbnailLoader::clearCache() {
     log::info("[ThumbnailLoader] clearCache: clearing RAM cache");
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     m_textureCache.clear();
     m_lruOrder.clear();
     m_lruMap.clear();
@@ -805,7 +825,7 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
     std::vector<InvalidationCallback> listeners;
 
     {
-        std::lock_guard<std::mutex> lock(m_queueMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
         // incremento la version de invalidacion para que los consumidores sepan que hay cambio
         m_invalidationVersions[levelID]++;
 
@@ -855,13 +875,13 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
         }
         // actualizar manifest
         {
-            std::lock_guard<std::mutex> ml(m_manifest.mutex);
+            std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
             m_manifest.remove(levelID, false);
             m_manifest.remove(levelID, true);
         }
         // actualizar legacy index
         {
-            std::lock_guard<std::mutex> lock(m_diskMutex);
+            std::lock_guard<std::recursive_mutex> lock(m_diskMutex);
             m_diskCache.erase(levelID);
             m_diskCache.erase(-levelID);
         }
@@ -869,14 +889,14 @@ void ThumbnailLoader::invalidateLevel(int levelID, bool isGif) {
 }
 
 int ThumbnailLoader::getInvalidationVersion(int levelID) const {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto it = m_invalidationVersions.find(levelID);
     return it != m_invalidationVersions.end() ? it->second : 0;
 }
 
 int ThumbnailLoader::addInvalidationListener(InvalidationCallback callback) {
     if (!callback) return 0;
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     int id = m_nextInvalidationListenerId++;
     m_invalidationListeners[id] = std::move(callback);
     return id;
@@ -884,7 +904,7 @@ int ThumbnailLoader::addInvalidationListener(InvalidationCallback callback) {
 
 void ThumbnailLoader::removeInvalidationListener(int listenerId) {
     if (listenerId <= 0) return;
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     m_invalidationListeners.erase(listenerId);
 }
 
@@ -899,11 +919,11 @@ void ThumbnailLoader::clearDiskCache() {
             log::error("[ThumbnailLoader] error limpiando cache de disco: {}", ec.message());
         }
         {
-            std::lock_guard<std::mutex> ml(m_manifest.mutex);
+            std::lock_guard<std::recursive_mutex> ml(m_manifest.mutex);
             m_manifest.clear();
         }
         {
-            std::lock_guard<std::mutex> lock(m_diskMutex);
+            std::lock_guard<std::recursive_mutex> lock(m_diskMutex);
             m_diskCache.clear();
         }
         initDiskCache(); // vuelvo a crear la carpeta
@@ -911,7 +931,7 @@ void ThumbnailLoader::clearDiskCache() {
 }
 
 void ThumbnailLoader::clearPendingQueue() {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     for (auto& [id, task] : m_tasks) {
         task->cancelled = true;
     }
@@ -920,7 +940,7 @@ void ThumbnailLoader::clearPendingQueue() {
 }
 
 void ThumbnailLoader::updateSessionCache(int levelID, cocos2d::CCTexture2D* texture) {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     addToCache(levelID, texture);
 }
 
@@ -929,11 +949,33 @@ void ThumbnailLoader::cleanup() {
     m_shuttingDown.store(true, std::memory_order_release);
     clearPendingQueue();
     waitBackgroundWorkers();
+
+    // Limpiar invalidation listeners ANTES de la destruccion estatica.
+    // Los listeners capturan WeakRef<PaimonLevelCell> cuyo destructor
+    // interactua con CCPoolManager — si se destruyen en el ~ThumbnailLoader
+    // (destruccion estatica del DLL), CCPoolManager ya murio → crash.
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
+        m_invalidationListeners.clear();
+
+        // Limpiar callbacks de tasks que capturan WeakRef<PaimonLevelCell>.
+        // Despues de waitBackgroundWorkers() no hay threads activos,
+        // asi que podemos limpiar las callbacks y los mapas de forma segura.
+        for (auto& [id, task] : m_tasks) {
+            if (task) task->callbacks.clear();
+        }
+        m_tasks.clear();
+        for (auto& [url, task] : m_urlTasks) {
+            if (task) task->callbacks.clear();
+        }
+        m_urlTasks.clear();
+    }
+
     clearCache();
 }
 
 void ThumbnailLoader::spawnBackground(std::function<void()> job) {
-    std::lock_guard<std::mutex> lock(m_workerMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_workerMutex);
     pruneFinishedWorkers();
     m_backgroundWorkers.emplace_back(std::async(std::launch::async, [job = std::move(job)]() mutable {
         job();
@@ -954,7 +996,7 @@ void ThumbnailLoader::pruneFinishedWorkers() {
 void ThumbnailLoader::waitBackgroundWorkers() {
     std::vector<std::future<void>> workers;
     {
-        std::lock_guard<std::mutex> lock(m_workerMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_workerMutex);
         workers.swap(m_backgroundWorkers);
     }
     for (auto& worker : workers) {
@@ -984,7 +1026,7 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
 
     detectQualityChange();
 
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto now = std::chrono::steady_clock::now();
 
     // 1. reviso cache RAM de URLs
@@ -1036,10 +1078,31 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
 
     m_urlTasks[url] = task;
 
-    // arranco directamente (no entra en la priority queue de levels)
-    if (m_activeTaskCount < m_maxConcurrentTasks) {
+    // arranco directamente con pool separado de URLs (no compite con level tasks)
+    if (m_activeUrlTaskCount < m_maxConcurrentUrlTasks) {
         task->running = true;
-        m_activeTaskCount.fetch_add(1, std::memory_order_relaxed);
+        m_activeUrlTaskCount.fetch_add(1, std::memory_order_relaxed);
+        spawnBackground([this, task]() {
+            if (m_shuttingDown.load(std::memory_order_relaxed)) {
+                Loader::get()->queueInMainThread([this, task]() {
+                    finishTask(task, nullptr, false);
+                });
+                return;
+            }
+            geode::utils::thread::setName("ThumbnailLoader URL Worker");
+            workerUrlDownload(task);
+        });
+    }
+    // else: queda encolada en m_urlTasks, processUrlQueue la arrancara cuando haya slot
+}
+
+void ThumbnailLoader::processUrlQueue() {
+    // must be called with m_queueMutex held
+    for (auto& [url, task] : m_urlTasks) {
+        if (m_activeUrlTaskCount >= m_maxConcurrentUrlTasks) break;
+        if (task->running || task->cancelled) continue;
+        task->running = true;
+        m_activeUrlTaskCount.fetch_add(1, std::memory_order_relaxed);
         spawnBackground([this, task]() {
             if (m_shuttingDown.load(std::memory_order_relaxed)) {
                 Loader::get()->queueInMainThread([this, task]() {
@@ -1053,13 +1116,19 @@ void ThumbnailLoader::requestUrlLoad(std::string const& url, LoadCallback callba
     }
 }
 
+void ThumbnailLoader::requestUrlBatchLoad(std::vector<std::string> const& urls, LoadCallback perUrlCallback, int priority) {
+    for (auto const& url : urls) {
+        requestUrlLoad(url, perUrlCallback, priority);
+    }
+}
+
 bool ThumbnailLoader::isUrlLoaded(std::string const& url) const {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     return m_urlTextureCache.find(url) != m_urlTextureCache.end();
 }
 
 void ThumbnailLoader::cancelUrlLoad(std::string const& url) {
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto it = m_urlTasks.find(url);
     if (it != m_urlTasks.end()) {
         it->second->cancelled = true;
@@ -1153,9 +1222,6 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
         result.width = frame.width;
         result.height = frame.height;
 
-        // aplico downscale si sale de la calidad
-        paimon::quality::downscaleRGBA(result.pixels, result.width, result.height);
-
         // extraer colores dominantes
         if (realID > 0 && !LevelColors::get().getPair(realID)) {
             LevelColors::get().extractFromRawData(realID, result.pixels.data(),
@@ -1173,9 +1239,6 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
             stbi_image_free(pixels);
             result.width = w;
             result.height = h;
-
-            // aplico downscale por calidad
-            paimon::quality::downscaleRGBA(result.pixels, result.width, result.height);
 
             // extraer colores dominantes
             if (realID > 0 && !LevelColors::get().getPair(realID)) {
@@ -1201,7 +1264,7 @@ ThumbnailLoader::DecodeResult ThumbnailLoader::decodeImageData(std::vector<uint8
 void ThumbnailLoader::updateRemoteRevision(int levelID, std::string const& revisionToken) {
     if (levelID <= 0 || revisionToken.empty()) return;
 
-    std::lock_guard<std::mutex> lock(m_queueMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_queueMutex);
     auto it = m_remoteRevisions.find(levelID);
     if (it != m_remoteRevisions.end() && it->second == revisionToken) {
         return; // sin cambios

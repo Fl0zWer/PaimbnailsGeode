@@ -5,6 +5,8 @@
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <string>
 #include <vector>
+#include <memory>
+#include <atomic>
 #include <filesystem>
 #include <cstdint>
 
@@ -213,6 +215,12 @@ public:
     float getGlobalVolume() const;
 
 private:
+    enum class PlaybackKind {
+        None,
+        Profile,
+        Preview,
+    };
+
     ProfileMusicManager();
     ~ProfileMusicManager() = default;
 
@@ -225,6 +233,7 @@ private:
     int m_currentProfileID = 0;
     uint32_t m_profileSessionToken = 0;
     std::string m_currentAudioPath;
+    PlaybackKind m_playbackKind = PlaybackKind::None;
 
     // Parametros pendientes para carga tras dip fade
     int m_pendingStartMs = 0;
@@ -236,6 +245,7 @@ private:
     bool m_isFadingIn = false;
     bool m_isFadingOut = false;
     uint32_t m_fadeGeneration = 0;
+    std::shared_ptr<std::atomic<bool>> m_lifetimeToken = std::make_shared<std::atomic<bool>>(true);
     float m_bgVolumeBeforeFade = 1.0f;
     unsigned int m_savedBgPosMs = 0;
 
@@ -276,7 +286,8 @@ private:
     void loadProfileOnMainChannel(const std::string& path, bool loop, int startMs, int endMs, float volume);
     void playAudioFile(std::string const& path, bool loop, int startMs = 0, int endMs = 0);
     void playProfileMusicWithConfig(int accountID, ProfileMusicConfig const& config);
-    void stopCurrentAudio();
+    void stopOwnedAudioPlayback();
+    void stopCurrentAudio(bool restoreContext = true);
 
     // Efecto cueva (lowpass + pitch)
     FMOD::DSP* m_lowpassDSP = nullptr;

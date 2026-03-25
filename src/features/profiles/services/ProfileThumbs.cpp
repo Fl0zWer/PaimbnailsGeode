@@ -1,5 +1,6 @@
 #include "ProfileThumbs.hpp"
 #include "../../../managers/ThumbnailAPI.hpp"
+#include "../../../core/Settings.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../core/QualityConfig.hpp"
 #include <Geode/utils/file.hpp>
@@ -22,6 +23,85 @@ using namespace Shaders;
 
 namespace {
     struct Header { int32_t w; int32_t h; int32_t fmt; };
+
+    std::mutex& getProfileThumbsPruneMutex() {
+        static std::mutex mutex;
+        return mutex;
+    }
+
+    std::filesystem::path getProfileThumbsDir() {
+        return paimon::quality::cacheDir() / "profiles";
+    }
+
+    size_t getProfileThumbsMaxBytes() {
+        return std::clamp<size_t>(
+            paimon::settings::quality::diskCacheBytes() / 2,
+            128ull * 1024ull * 1024ull,
+            512ull * 1024ull * 1024ull
+        );
+    }
+
+    void pruneProfileThumbsDiskCache() {
+        std::lock_guard<std::mutex> lock(getProfileThumbsPruneMutex());
+
+        auto dir = getProfileThumbsDir();
+        std::error_code ec;
+        if (!std::filesystem::exists(dir, ec)) {
+            return;
+        }
+
+        struct CacheEntry {
+            std::filesystem::path path;
+            std::filesystem::file_time_type mtime;
+            uintmax_t size = 0;
+        };
+
+        std::vector<CacheEntry> entries;
+        uintmax_t totalBytes = 0;
+        auto now = std::filesystem::file_time_type::clock::now();
+        auto maxAge = std::chrono::hours(24 * 14);
+
+        for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
+            if (ec || !entry.is_regular_file()) continue;
+
+            std::error_code sizeEc;
+            auto fileSize = entry.file_size(sizeEc);
+            if (sizeEc) continue;
+
+            std::error_code timeEc;
+            auto mtime = entry.last_write_time(timeEc);
+            if (timeEc) continue;
+
+            if (now - mtime > maxAge) {
+                std::filesystem::remove(entry.path(), timeEc);
+                continue;
+            }
+
+            totalBytes += fileSize;
+            entries.push_back({entry.path(), mtime, fileSize});
+        }
+
+        auto maxBytes = getProfileThumbsMaxBytes();
+        if (totalBytes <= maxBytes) {
+            return;
+        }
+
+        std::sort(entries.begin(), entries.end(), [](CacheEntry const& lhs, CacheEntry const& rhs) {
+            return lhs.mtime < rhs.mtime;
+        });
+
+        for (auto const& entry : entries) {
+            if (totalBytes <= maxBytes) {
+                break;
+            }
+
+            std::error_code rmEc;
+            std::filesystem::remove(entry.path, rmEc);
+            if (!rmEc) {
+                totalBytes = (entry.size > totalBytes) ? 0 : (totalBytes - entry.size);
+            }
+        }
+    }
 }
 
 ProfileThumbs& ProfileThumbs::get() {
@@ -29,33 +109,13 @@ ProfileThumbs& ProfileThumbs::get() {
     static bool initialized = false;
     if (!initialized) {
         initialized = true;
-        // limpieza selectiva por antiguedad en vez de borrar todo
-        auto dir = paimon::quality::cacheDir() / "profiles";
-        std::error_code ec;
-        if (std::filesystem::exists(dir, ec)) {
-            int deleted = 0;
-            auto now = std::filesystem::file_time_type::clock::now();
-            auto maxAge = std::chrono::hours(24 * 14); // 14 dias, igual que CACHE_DURATION
-            for (auto const& entry : std::filesystem::directory_iterator(dir, ec)) {
-                if (ec || !entry.is_regular_file()) continue;
-                std::error_code ftEc;
-                auto ftime = entry.last_write_time(ftEc);
-                if (ftEc) continue;
-                if (now - ftime > maxAge) {
-                    std::filesystem::remove(entry.path(), ftEc);
-                    if (!ftEc) deleted++;
-                }
-            }
-            if (deleted > 0) {
-                log::info("[ProfileThumbs] Removed {} expired profile files on startup", deleted);
-            }
-        }
+        pruneProfileThumbsDiskCache();
     }
     return inst;
 }
 
 std::string ProfileThumbs::makePath(int accountID) const {
-    auto dir = paimon::quality::cacheDir() / "profiles";
+    auto dir = getProfileThumbsDir();
     (void)file::createDirectoryAll(dir);
     return geode::utils::string::pathToString(dir / fmt::format("{}.rgb", accountID));
 }
@@ -96,6 +156,8 @@ bool ProfileThumbs::saveRGB(int accountID, const uint8_t* rgb, int width, int he
                 Header h{width, height, 24};
                 out.write(reinterpret_cast<char const*>(&h), sizeof(h));
                 out.write(reinterpret_cast<char const*>(data.data()), data.size());
+                out.close();
+                pruneProfileThumbsDiskCache();
                 log::debug("[ProfileThumbs] Saved profile to disk asynchronously for account {}", accountID);
             }
         });
@@ -298,6 +360,7 @@ void ProfileThumbs::cacheProfileGIF(int accountID, std::string const& gifKey,
 }
 
 void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& config) {
+    std::lock_guard<std::mutex> lock(m_cacheMutex);
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         it->second.config = config;
@@ -310,6 +373,7 @@ void ProfileThumbs::cacheProfileConfig(int accountID, ProfileConfig const& confi
 }
 
 ProfileConfig ProfileThumbs::getProfileConfig(int accountID) {
+    std::lock_guard<std::mutex> lock(m_cacheMutex);
     auto it = m_profileCache.find(accountID);
     if (it != m_profileCache.end()) {
         ProfileConfig config = it->second.config;
@@ -322,6 +386,9 @@ ProfileConfig ProfileThumbs::getProfileConfig(int accountID) {
     return ProfileConfig();
 }
 
+// NOTA: devuelve puntero interno. El caller NO debe guardar el puntero
+// mas alla de la linea actual — es valido solo mientras el cache no sea
+// modificado (seguro en main thread si se usa de forma inmediata).
 ProfileCacheEntry* ProfileThumbs::getCachedProfile(int accountID) {
     std::lock_guard<std::mutex> lock(m_cacheMutex);
     auto it = m_profileCache.find(accountID);
@@ -370,6 +437,7 @@ void ProfileThumbs::clearCache(int accountID) {
     removeFromNoProfileCache(accountID);
 }
 
+// Precondicion: el caller DEBE tener m_cacheMutex bloqueado.
 void ProfileThumbs::clearOldCache() {
     auto now = std::chrono::steady_clock::now();
     

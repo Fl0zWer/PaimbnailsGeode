@@ -89,6 +89,7 @@ public:
     float m_time = 0.0f;
     float m_brightness = 1.0f;
     cocos2d::CCSize m_texSize = {0, 0};
+    cocos2d::CCSize m_screenSize = {0, 0};
 
     static void clearCache();
     static void remove(std::string const& filename);
@@ -118,7 +119,6 @@ public:
     static std::string getCachePath(std::string const& path);
 
 private:
-    static constexpr size_t MAX_DISK_CACHE_BYTES = 512ull * 1024ull * 1024ull;
     static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);
 
     // Worker queue
@@ -149,6 +149,13 @@ public:
         m_currentFrame = 0;
         if (!m_frames.empty() && m_frames[0] && m_frames[0]->texture) {
             this->setTexture(m_frames[0]->texture);
+        }
+    }
+
+    void onEnter() override {
+        CCSprite::onEnter();
+        if (m_isPlaying && !m_frames.empty()) {
+            this->scheduleUpdate();
         }
     }
     

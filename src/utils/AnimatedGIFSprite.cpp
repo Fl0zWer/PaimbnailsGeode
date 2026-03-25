@@ -334,6 +334,13 @@ void AnimatedGIFSprite::updateTextureLoading(float dt) {
     if (m_frames.size() == 1) {
         this->setCurrentFrame(0);
     }
+
+    // Start animation as soon as 2 frames are available instead of
+    // waiting for all pending frames to finish loading.
+    // scheduleUpdate is idempotent so the final call when pending empties is harmless.
+    if (m_frames.size() == 2 && m_isPlaying) {
+        this->scheduleUpdate();
+    }
 }
 
 bool AnimatedGIFSprite::processNextPendingFrame() {
@@ -1066,12 +1073,17 @@ void AnimatedGIFSprite::draw() {
 
         GLint sizeLoc = getShaderProgram()->getUniformLocationForName("u_texSize");
         if (sizeLoc != -1) {
-            if (m_texSize.width == 0 && getTexture()) {
+            if (getTexture()) {
                 m_texSize = getTexture()->getContentSizeInPixels();
             }
             float w = m_texSize.width > 0 ? m_texSize.width : 1.0f;
             float h = m_texSize.height > 0 ? m_texSize.height : 1.0f;
             getShaderProgram()->setUniformLocationWith2f(sizeLoc, w, h);
+        }
+
+        GLint screenSizeLoc = getShaderProgram()->getUniformLocationForName("u_screenSize");
+        if (screenSizeLoc != -1 && m_screenSize.width > 0.0f && m_screenSize.height > 0.0f) {
+            getShaderProgram()->setUniformLocationWith2f(screenSizeLoc, m_screenSize.width, m_screenSize.height);
         }
     }
 

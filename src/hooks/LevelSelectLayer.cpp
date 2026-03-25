@@ -36,6 +36,10 @@ class $modify(PaimonGameManager, GameManager) {
         if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
             return;
         }
+        // limpiar flag obsoleto: interop activo pero DSM ya esta idle
+        if (paimon::isDynamicSongInteropActive() && !dsm->isActive()) {
+            paimon::setDynamicSongInteropActive(false);
+        }
         // tampoco si esta la musica de perfil
         if (paimon::isProfileMusicInteropActive()) {
             return;
@@ -75,14 +79,8 @@ class $modify(PaimonFMODAudioEngine, FMODAudioEngine) {
             }
 
             auto* dsm = DynamicSongManager::get();
-            if (paimon::isDynamicSongInteropActive() && dsm->isInValidLayer()) {
-                if (isMenuTrack) {
-                    return;
-                }
-
-                dsm->onPlaybackHijacked();
-                FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
-                return;
+            if (dsm->isActive() && dsm->isInValidLayer()) {
+                return; // HIGH PRIORITY: bloquear todo intento externo
             }
         }
         FMODAudioEngine::playMusic(path, shouldLoop, fadeInTime, channel);
@@ -102,6 +100,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         float m_smoothedPeak = 0.f;
         int m_verifyFrameCounter = 0;  // verificar musica cada ~1s
         bool m_meteringEnabled = false;
+        bool m_audioCleanedUp = false;
     };
 
     $override
@@ -147,7 +146,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
         if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
             auto* dsm = DynamicSongManager::get();
             // si ya suena pa este nivel, no relanzar (evita corte al volver de info)
-            if (dsm->m_isDynamicSongActive) {
+            if (dsm->isActive()) {
                 return;
             }
             // primera vez o volviendo de PlayLayer
@@ -157,8 +156,10 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
 
     $override
     void onExit() {
-        // parar musica y desregistrar
-        AudioContextCoordinator::get().deactivateLevelSelect(true);
+        if (!m_fields->m_audioCleanedUp) {
+            m_fields->m_audioCleanedUp = true;
+            AudioContextCoordinator::get().deactivateLevelSelect(true);
+        }
         LevelSelectLayer::onExit();
     }
 
@@ -213,7 +214,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             m_fields->m_currentLevelID = levelID;
 
             // nueva cancion pa el nivel
-            if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
+            if (Mod::get()->getSettingValue<bool>("dynamic-song") && !m_fields->m_audioCleanedUp) {
                 if (levelID != -1) {
                     AudioContextCoordinator::get().activateLevelSelect(levelID, true);
                 }
@@ -223,7 +224,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             this->updateThumbnailBackground(levelID);
         }
         // chequeo cada ~1s si otro mod se metio con la musica
-        if (Mod::get()->getSettingValue<bool>("dynamic-song")) {
+        if (Mod::get()->getSettingValue<bool>("dynamic-song") && !m_fields->m_audioCleanedUp) {
             // asegurar registro
             auto* dsm = DynamicSongManager::get();
             if (!dsm->isInValidLayer()) {
@@ -234,7 +235,7 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
             if (m_fields->m_verifyFrameCounter >= 60) {
                 m_fields->m_verifyFrameCounter = 0;
                 // no verificar durante transiciones
-                if (dsm->m_isDynamicSongActive && !dsm->isTransitioning() && !dsm->verifyPlayback()) {
+                if (dsm->isActive() && !dsm->isFading() && !dsm->verifyPlayback()) {
                     dsm->exitLayer(DynSongLayer::LevelSelect);
                     dsm->onPlaybackHijacked();
                 }
@@ -380,8 +381,9 @@ class $modify(PaimonLevelSelectLayer, LevelSelectLayer) {
     
 
     void cleanupDynamicSong() {
-        DynamicSongManager::get()->exitLayer(DynSongLayer::LevelSelect);
-        DynamicSongManager::get()->stopSong();
+        if (m_fields->m_audioCleanedUp) return;
+        m_fields->m_audioCleanedUp = true;
+        AudioContextCoordinator::get().deactivateLevelSelect(true);
     }
 
     $override

@@ -10,6 +10,7 @@
 #include "../../../utils/ShapeStencil.hpp"
 #include "../../../utils/AnimatedGIFSprite.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../services/ProfileImageService.hpp"
 #include "../services/ProfileThumbs.hpp"
 #include <filesystem>
 #include <fstream>
@@ -700,9 +701,28 @@ void ProfilePicEditorPopup::rebuildPreview() {
     int myAccountID = GJAccountManager::get()->m_accountID;
     bool hasContent = false;
 
-    // 1) GIF en cache
+    // 1) GIF real de profileimg en cache
+    auto profileImgGifKey = ProfileImageService::get().getProfileImgGifKey(myAccountID);
+    if (!profileImgGifKey.empty() && AnimatedGIFSprite::isCached(profileImgGifKey)) {
+        auto gifSpr = AnimatedGIFSprite::createFromCache(profileImgGifKey);
+        if (gifSpr) {
+            float gw = gifSpr->getContentSize().width;
+            float gh = gifSpr->getContentSize().height;
+            if (gw > 0 && gh > 0) {
+                float scale = std::max(thumbSize / gw, thumbSize / gh);
+                gifSpr->setScale(scale);
+            }
+            gifSpr->setAnchorPoint({0.5f, 0.5f});
+            gifSpr->setPosition({thumbSize / 2, thumbSize / 2});
+            gifSpr->play();
+            clip->addChild(gifSpr);
+            hasContent = true;
+        }
+    }
+
+    // 2) GIF legacy en cache de ProfileThumbs
     auto* cached = ProfileThumbs::get().getCachedProfile(myAccountID);
-    if (cached && !cached->gifKey.empty() && AnimatedGIFSprite::isCached(cached->gifKey)) {
+    if (!hasContent && cached && !cached->gifKey.empty() && AnimatedGIFSprite::isCached(cached->gifKey)) {
         auto gifSpr = AnimatedGIFSprite::createFromCache(cached->gifKey);
         if (gifSpr) {
             float gw = gifSpr->getContentSize().width;
@@ -718,7 +738,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 2) Textura en cache de ProfileThumbs
+    // 3) Textura en cache de ProfileThumbs
     if (!hasContent && cached && cached->texture) {
         auto imgSpr = CCSprite::createWithTexture(cached->texture);
         if (imgSpr) {
@@ -735,7 +755,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 3) Cargar desde disco via ProfileThumbs::loadTexture (RGB guardado)
+    // 4) Cargar desde disco via ProfileThumbs::loadTexture (RGB guardado)
     if (!hasContent) {
         auto tex = ProfileThumbs::get().loadTexture(myAccountID);
         if (tex) {
@@ -755,7 +775,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 4) Cargar desde profileimg_cache en disco (datos descargados del servidor)
+    // 5) Cargar desde profileimg_cache en disco (datos descargados del servidor)
     if (!hasContent) {
         auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
         auto cachePath = cacheDir / fmt::format("{}_{}.dat", myAccountID, paimon::settings::quality::tag());
@@ -794,7 +814,7 @@ void ProfilePicEditorPopup::rebuildPreview() {
         }
     }
 
-    // 5) Placeholder si no hay imagen
+    // 6) Placeholder si no hay imagen
     if (!hasContent) {
         auto placeholder = CCLayerColor::create({80, 40, 40, 255});
         placeholder->setContentSize({thumbSize, thumbSize});

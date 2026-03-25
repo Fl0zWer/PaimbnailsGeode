@@ -12,6 +12,9 @@
 #include "../managers/ThumbnailAPI.hpp"
 #include "../features/thumbnails/services/ThumbnailLoader.hpp"
 #include "../features/profile-music/services/ProfileMusicManager.hpp"
+#include "../features/profiles/services/ProfileImageService.hpp"
+#include "../utils/AnimatedGIFSprite.hpp"
+#include <algorithm>
 
 using namespace geode::prelude;
 
@@ -37,23 +40,38 @@ class $modify(PaimonInfoLayer, InfoLayer) {
             int accountID = score->m_accountID;
             if (accountID <= 0) return true;
 
+            auto gifKey = ProfileImageService::get().getProfileImgGifKey(accountID);
+            if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
+                applyBlurredBackgroundGif(gifKey);
+            }
+
             CCTexture2D* tex = getProfileImgCachedTexture(accountID);
-            if (!tex) {
+            bool needsAnimatedFetch = !gifKey.empty() && !AnimatedGIFSprite::isCached(gifKey);
+            if (needsAnimatedFetch || !tex) {
                 Ref<InfoLayer> safeRef = this;
-                ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef](bool success, CCTexture2D* texture) {
+                ThumbnailAPI::get().downloadProfileImg(accountID, [safeRef, accountID](bool success, CCTexture2D* texture) {
                     if (success && texture) {
-                        Loader::get()->queueInMainThread([safeRef, texture]() {
+                        Loader::get()->queueInMainThread([safeRef, accountID, texture]() {
                             auto* self = static_cast<PaimonInfoLayer*>(safeRef.data());
-                            if (self->getParent()) {
-                                self->applyBlurredBackground(texture);
+                            if (self && self->getParent()) {
+                                auto liveGifKey = ProfileImageService::get().getProfileImgGifKey(accountID);
+                                if (!liveGifKey.empty() && AnimatedGIFSprite::isCached(liveGifKey)) {
+                                    self->applyBlurredBackgroundGif(liveGifKey);
+                                } else {
+                                    self->applyBlurredBackground(texture);
+                                }
                             }
                         });
                     }
                 }, false);
-                return true;
+                if (needsAnimatedFetch || !tex) {
+                    return true;
+                }
             }
 
-            applyBlurredBackground(tex);
+            if (!needsAnimatedFetch && m_fields->m_bgClip == nullptr && tex) {
+                applyBlurredBackground(tex);
+            }
 
             if (ProfileMusicManager::get().isPlaying()) {
                 ProfileMusicManager::get().applyCaveEffect();
@@ -79,6 +97,10 @@ class $modify(PaimonInfoLayer, InfoLayer) {
 
     void applyBlurredBackground(CCTexture2D* tex) {
         if (!tex) return;
+        if (m_fields->m_bgClip) {
+            m_fields->m_bgClip->removeFromParent();
+            m_fields->m_bgClip = nullptr;
+        }
 
         auto layer = this->m_mainLayer;
         if (!layer) return;
@@ -142,6 +164,79 @@ class $modify(PaimonInfoLayer, InfoLayer) {
         styleInfoLayerBgs(layer);
 
         // re-aplicar estilos periodicamente
+        this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
+    }
+
+    void applyBlurredBackgroundGif(std::string const& gifKey) {
+        auto gif = AnimatedGIFSprite::createFromCache(gifKey);
+        if (!gif) return;
+        if (m_fields->m_bgClip) {
+            m_fields->m_bgClip->removeFromParent();
+            m_fields->m_bgClip = nullptr;
+        }
+
+        auto layer = this->m_mainLayer;
+        if (!layer) return;
+        auto layerSize = layer->getContentSize();
+
+        CCSize popupSize = CCSize(440.f, 290.f);
+        CCPoint popupCenter = ccp(layerSize.width * 0.5f, layerSize.height * 0.5f);
+
+        if (auto bg = layer->getChildByID("background")) {
+            popupSize = bg->getScaledContentSize();
+            popupCenter = bg->getPosition();
+        } else {
+            for (auto* child : CCArrayExt<CCNode*>(layer->getChildren())) {
+                if (typeinfo_cast<CCScale9Sprite*>(child)) {
+                    popupSize = child->getScaledContentSize();
+                    popupCenter = child->getPosition();
+                    break;
+                }
+            }
+        }
+
+        float padding = 3.f;
+        CCSize imgArea = CCSize(popupSize.width - padding * 2.f, popupSize.height - padding * 2.f);
+
+        float scaleX = imgArea.width / std::max(1.0f, gif->getContentWidth());
+        float scaleY = imgArea.height / std::max(1.0f, gif->getContentHeight());
+        gif->setScale(std::max(scaleX, scaleY));
+        gif->setAnchorPoint(ccp(0.5f, 0.5f));
+        gif->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
+        gif->m_intensity = std::clamp((7.0f - 1.0f) / 9.0f, 0.0f, 1.0f);
+        if (gif->getTexture()) {
+            gif->m_texSize = gif->getTexture()->getContentSizeInPixels();
+        }
+        if (auto shader = Shaders::getBlurSinglePassShader()) {
+            gif->setShaderProgram(shader);
+        }
+        gif->play();
+
+        auto stencil = CCDrawNode::create();
+        CCPoint rect[4] = { ccp(0,0), ccp(imgArea.width,0), ccp(imgArea.width,imgArea.height), ccp(0,imgArea.height) };
+        ccColor4F white = {1,1,1,1};
+        stencil->drawPolygon(rect, 4, white, 0, white);
+
+        auto clip = CCClippingNode::create();
+        clip->setStencil(stencil);
+        clip->setContentSize(imgArea);
+        clip->setAnchorPoint(ccp(0.5f, 0.5f));
+        clip->setPosition(popupCenter);
+        clip->setID("paimon-infolayer-bg-clip"_spr);
+
+        clip->addChild(gif);
+
+        auto dark = CCLayerColor::create(ccc4(0, 0, 0, 120));
+        dark->setContentSize(imgArea);
+        dark->setAnchorPoint(ccp(0, 0));
+        dark->setPosition(ccp(0, 0));
+        dark->setID("paimon-infolayer-dark-overlay"_spr);
+        clip->addChild(dark);
+
+        layer->addChild(clip, -1);
+        m_fields->m_bgClip = clip;
+
+        styleInfoLayerBgs(layer);
         this->schedule(schedule_selector(PaimonInfoLayer::tickStyleBgs), 0.5f);
     }
 

@@ -18,6 +18,22 @@
 
 using namespace geode::prelude;
 
+namespace {
+void removePathIfExists(std::filesystem::path const& path, char const* label) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return;
+    }
+
+    std::filesystem::remove_all(path, ec);
+    if (ec) {
+        log::warn("[PaimonThumbnails] Failed to remove {} at {}: {}", label, geode::utils::string::pathToString(path), ec.message());
+    } else {
+        log::info("[PaimonThumbnails] Removed {} at {}", label, geode::utils::string::pathToString(path));
+    }
+}
+}
+
 // limpieza de cache de disco, la uso tanto al arrancar como al salir
 void cleanupDiskCache(char const* context) {
     bool clearCache = Mod::get()->getSettingValue<bool>("clear-cache-on-exit");
@@ -27,33 +43,8 @@ void cleanupDiskCache(char const* context) {
         return;
     }
 
-    log::info("[PaimonThumbnails] Cleaning thumbnail disk cache ({})...", context);
-
-    auto cachePath = paimon::quality::cacheDir();
-    std::error_code ec;
-    if (!std::filesystem::exists(cachePath, ec)) return;
-
-    int deletedCount = 0;
-    for (auto const& entry : std::filesystem::directory_iterator(cachePath, ec)) {
-        if (ec) break;
-        if (!entry.is_regular_file()) continue;
-        auto stem = geode::utils::string::pathToString(entry.path().stem());
-        int id = 0;
-        // compatibilidad: archivos legacy con _anim en el nombre
-        if (stem.find("_anim") != std::string::npos) {
-            std::string idStr = stem.substr(0, stem.find("_anim"));
-            id = geode::utils::numFromString<int>(idStr).unwrapOr(0);
-        } else {
-            id = geode::utils::numFromString<int>(stem).unwrapOr(0);
-        }
-        // los main levels (1-22) siempre se mantienen en cache
-        int realID = std::abs(id);
-        if (realID >= 1 && realID <= 22) continue;
-
-        std::filesystem::remove(entry.path(), ec);
-        if (!ec) deletedCount++;
-    }
-    log::info("[PaimonThumbnails] Deleted {} cached thumbnails ({})", deletedCount, context);
+    log::info("[PaimonThumbnails] Cleaning quality cache tree ({})...", context);
+    removePathIfExists(paimon::quality::cacheDir(), "quality cache");
 }
 
 // al cerrar el juego:
@@ -67,13 +58,19 @@ $on_game(Exiting) {
     // para que los hilos de fondo no reescriban archivos que vamos a borrar
     ThumbnailLoader::get().cleanup();
 
+    bool clearCacheOnExit = Mod::get()->getSettingValue<bool>("clear-cache-on-exit");
+
     // persistir manifest de disco antes de cerrar (sincrono, ya no hay workers)
-    ThumbnailLoader::get().diskManifest().flush();
+    // solo si no se va a borrar inmediatamente despues
+    if (!clearCacheOnExit) {
+        ThumbnailLoader::get().diskManifest().flush();
+    }
 
     LocalThumbs::get().shutdown();
     ProfileThumbs::get().shutdown();
 
     // forzar escritura de colores pendientes antes del cierre
+    // (siempre flush: thumbnails/ ya no se borra en el cleanup)
     LevelColors::get().flushIfDirty();
 
     // === RAM cleanup (siempre, para evitar crashes con destructores estaticos) ===
@@ -98,74 +95,21 @@ $on_game(Exiting) {
 
     // === Disk cleanup (solo si clear-cache-on-exit esta activado) ===
 
-    bool clearCache = Mod::get()->getSettingValue<bool>("clear-cache-on-exit");
+    bool clearCache = clearCacheOnExit;
     if (!clearCache) {
         log::info("[PaimonThumbnails] Disk cache cleanup disabled by setting");
         return;
     }
 
-    // 4. thumbnails de disco (carpeta "cache/", preserva main levels 1-22)
+    // 4. cache regenerable quality-aware (thumbnails, GIFs, profiles, manifests derivados)
     cleanupDiskCache("exit");
 
-    // 5. cache de disco de GIFs decodificados (quality-aware "gifs/" subdir)
-    {
-        auto gifCacheDir = paimon::quality::cacheDir() / "gifs";
-        std::error_code ec;
-        if (std::filesystem::exists(gifCacheDir, ec)) {
-            std::filesystem::remove_all(gifCacheDir, ec);
-            if (!ec) {
-                log::info("[PaimonThumbnails] gif_cache cleared on exit");
-            }
-        }
-    }
-
-    // 6. cache de musica de perfiles (disco: carpeta "profile_music/")
-    ProfileMusicManager::get().clearCache();
-
-    // 7. cache de disco de profileimg (fotos de perfil descargadas del servidor)
-    {
-        auto profileImgDir = Mod::get()->getSaveDir() / "profileimg_cache";
-        std::error_code ec;
-        if (std::filesystem::exists(profileImgDir, ec)) {
-            std::filesystem::remove_all(profileImgDir, ec);
-            if (!ec) {
-                log::info("[PaimonThumbnails] profileimg_cache cleared on exit");
-            }
-        }
-    }
-
-    // 8. cache de disco de perfiles RGB (quality-aware profiles/ subdir)
-    {
-        auto profileDir = paimon::quality::cacheDir() / "profiles";
-        std::error_code ec;
-        if (std::filesystem::exists(profileDir, ec)) {
-            std::filesystem::remove_all(profileDir, ec);
-            if (!ec) {
-                log::info("[PaimonThumbnails] profile thumbnail cache cleared on exit");
-            }
-        }
-    }
-
-    // 9. thumbnails locales subidos por el usuario (thumbnails/*.rgb)
-    {
-        auto thumbDir = Mod::get()->getSaveDir() / "thumbnails";
-        std::error_code ec;
-        if (std::filesystem::exists(thumbDir, ec)) {
-            int deleted = 0;
-            for (auto const& entry : std::filesystem::directory_iterator(thumbDir, ec)) {
-                if (ec) break;
-                if (!entry.is_regular_file()) continue;
-                auto ext = entry.path().extension();
-                if (ext == ".rgb" || ext == ".RGB") {
-                    std::filesystem::remove(entry.path(), ec);
-                    if (!ec) deleted++;
-                }
-            }
-            if (deleted > 0) {
-                log::info("[PaimonThumbnails] Deleted {} local thumbnail .rgb files on exit", deleted);
-            }
-        }
-    }
+    // 5. caches regenerables del servidor (profile music, profile images)
+    auto saveDir = Mod::get()->getSaveDir();
+    removePathIfExists(saveDir / "profile_music", "profile music cache");
+    removePathIfExists(saveDir / "profileimg_cache", "profile image cache");
+    // NO tocamos thumbnails/, saved_thumbnails/ ni downloaded_thumbnails/
+    // porque son datos locales del usuario que no se pueden regenerar
 
     log::info("[PaimonThumbnails] All caches cleaned on exit");
 }

@@ -8,11 +8,101 @@
 #include "../../thumbnails/services/ThumbnailTransportClient.hpp"
 #include <Geode/loader/Log.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
+#include <algorithm>
+#include <chrono>
 #include <fstream>
+#include <vector>
 
 using namespace geode::prelude;
 
 namespace {
+constexpr auto PROFILE_IMG_CACHE_MAX_AGE = std::chrono::hours(24 * 14);
+
+std::mutex& getProfileImgCachePruneMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::filesystem::path getProfileImgCacheDir() {
+    return Mod::get()->getSaveDir() / "profileimg_cache";
+}
+
+size_t getProfileImgCacheMaxBytes() {
+    return std::clamp<size_t>(
+        paimon::settings::quality::diskCacheBytes() / 2,
+        128ull * 1024ull * 1024ull,
+        512ull * 1024ull * 1024ull
+    );
+}
+
+void pruneProfileImgCache() {
+    std::lock_guard<std::mutex> lock(getProfileImgCachePruneMutex());
+
+    auto cacheDir = getProfileImgCacheDir();
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec)) {
+        return;
+    }
+
+    struct CacheEntry {
+        std::filesystem::path path;
+        std::filesystem::file_time_type mtime;
+        uintmax_t size = 0;
+    };
+
+    std::vector<CacheEntry> entries;
+    uintmax_t totalBytes = 0;
+    auto now = std::filesystem::file_time_type::clock::now();
+
+    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
+        if (ec || !entry.is_regular_file()) {
+            continue;
+        }
+
+        std::error_code sizeEc;
+        auto fileSize = entry.file_size(sizeEc);
+        if (sizeEc) {
+            continue;
+        }
+
+        std::error_code timeEc;
+        auto mtime = entry.last_write_time(timeEc);
+        if (timeEc) {
+            continue;
+        }
+
+        if (now - mtime > PROFILE_IMG_CACHE_MAX_AGE) {
+            std::error_code rmEc;
+            std::filesystem::remove(entry.path(), rmEc);
+            continue;
+        }
+
+        totalBytes += fileSize;
+        entries.push_back({entry.path(), mtime, fileSize});
+    }
+
+    auto maxBytes = getProfileImgCacheMaxBytes();
+    if (totalBytes <= maxBytes) {
+        return;
+    }
+
+    std::sort(entries.begin(), entries.end(), [](CacheEntry const& lhs, CacheEntry const& rhs) {
+        return lhs.mtime < rhs.mtime;
+    });
+
+    for (auto const& entry : entries) {
+        if (totalBytes <= maxBytes) {
+            break;
+        }
+
+        std::error_code rmEc;
+        std::filesystem::remove(entry.path, rmEc);
+        if (!rmEc) {
+            totalBytes = (entry.size > totalBytes) ? 0 : (totalBytes - entry.size);
+        }
+    }
+}
+
 int getProfileVariantSlot(int accountID) {
     int qualityIndex = 1;
     switch (paimon::settings::quality::current()) {
@@ -35,12 +125,12 @@ std::string makeProfileGifKey(char const* prefix, int accountID) {
 }
 
 std::filesystem::path getProfileImgCachePath(int accountID) {
-    return Mod::get()->getSaveDir() / "profileimg_cache" /
+    return getProfileImgCacheDir() /
            fmt::format("{}_{}.dat", accountID, paimon::settings::quality::tag());
 }
 
 void pruneProfileImgCacheVariants(int accountID) {
-    auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
+    auto cacheDir = getProfileImgCacheDir();
     std::error_code ec;
     if (!std::filesystem::exists(cacheDir, ec)) {
         return;
@@ -65,6 +155,10 @@ void pruneProfileImgCacheVariants(int accountID) {
         std::filesystem::remove(entry.path(), rmEc);
     }
 }
+}
+
+ProfileImageService::ProfileImageService() {
+    pruneProfileImgCache();
 }
 
 std::string ProfileImageService::getProfileImgGifKey(int accountID) const {
@@ -130,7 +224,7 @@ void ProfileImageService::downloadProfile(int accountID, std::string const& user
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadProfile(accountID, username,
-        [accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [profileAccountID = accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
 
             // detectar GIF
@@ -139,11 +233,11 @@ void ProfileImageService::downloadProfile(int accountID, std::string const& user
                 data[3]=='8' && (data[4]=='7' || data[4]=='9') && data[5]=='a';
 
             if (isGIF) {
-                std::string gifKey = makeProfileGifKey("profile_gif", accountID);
+                std::string gifKey = makeProfileGifKey("profile_gif", profileAccountID);
                 AnimatedGIFSprite::createAsync(data, gifKey,
-                    [accountID, gifKey, callback](AnimatedGIFSprite* sprite) {
+                    [profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
                         if (sprite) {
-                            ProfileThumbs::get().cacheProfileGIF(accountID, gifKey,
+                            ProfileThumbs::get().cacheProfileGIF(profileAccountID, gifKey,
                                 {255,255,255}, {255,255,255}, 0.6f);
                             callback(true, sprite->getTexture());
                         } else {
@@ -188,49 +282,50 @@ void ProfileImageService::downloadProfileImg(int accountID, DownloadCallback cal
     if (!m_serverEnabled) { callback(false, nullptr); return; }
 
     HttpClient::get().downloadProfileImg(accountID,
-        [this, accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [this, profileAccountID = accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) {
-                clearProfileImgGifKey(accountID);
+                clearProfileImgGifKey(profileAccountID);
                 callback(false, nullptr);
                 return;
             }
 
             // cache disco
             {
-                auto cacheDir = Mod::get()->getSaveDir() / "profileimg_cache";
+                auto cacheDir = getProfileImgCacheDir();
                 std::error_code ec;
                 std::filesystem::create_directories(cacheDir, ec);
-                pruneProfileImgCacheVariants(accountID);
-                auto cachePath = getProfileImgCachePath(accountID);
+                pruneProfileImgCacheVariants(profileAccountID);
+                auto cachePath = getProfileImgCachePath(profileAccountID);
                 std::ofstream cacheFile(cachePath, std::ios::binary);
                 if (cacheFile) {
                     cacheFile.write(reinterpret_cast<char const*>(data.data()), data.size());
                 }
+                pruneProfileImgCache();
             }
 
             bool isGIF = GIFDecoder::isGIF(data.data(), data.size());
             if (isGIF) {
-                std::string gifKey = makeProfileGifKey("profileimg_gif", accountID);
-                AnimatedGIFSprite::createAsync(data, gifKey, [this, accountID, gifKey, callback](AnimatedGIFSprite* sprite) {
+                std::string gifKey = makeProfileGifKey("profileimg_gif", profileAccountID);
+                AnimatedGIFSprite::createAsync(data, gifKey, [this, profileAccountID, gifKey, callback](AnimatedGIFSprite* sprite) {
                     if (!sprite || !sprite->getTexture()) {
-                        queueInMainThread([this, accountID, callback]() {
-                            clearProfileImgGifKey(accountID);
+                        queueInMainThread([this, profileAccountID, callback]() {
+                            clearProfileImgGifKey(profileAccountID);
                             callback(false, nullptr);
                         });
                         return;
                     }
                     auto* tex = sprite->getTexture();
-                    queueInMainThread([this, accountID, gifKey, callback, tex]() {
-                        rememberProfileImgGifKey(accountID, gifKey);
+                    queueInMainThread([this, profileAccountID, gifKey, callback, tex]() {
+                        rememberProfileImgGifKey(profileAccountID, gifKey);
                         callback(true, tex);
                     });
                 });
                 return;
             }
 
-            clearProfileImgGifKey(accountID);
+            clearProfileImgGifKey(profileAccountID);
             auto dataCopy = std::make_shared<std::vector<uint8_t>>(data);
-            queueInMainThread([accountID, callback, dataCopy]() {
+            queueInMainThread([callback, dataCopy]() {
                 auto loaded = ImageLoadHelper::loadWithSTBFromMemory(dataCopy->data(), dataCopy->size());
                 if (!loaded.success || !loaded.texture) {
                     callback(false, nullptr);
@@ -251,7 +346,7 @@ void ProfileImageService::downloadPendingProfile(int accountID, DownloadCallback
                     + "/pending_profilebackground/" + std::to_string(accountID) + "?self=1";
 
     HttpClient::get().downloadFromUrl(url,
-        [accountID, callback](bool success, std::vector<uint8_t> const& data, int, int) {
+        [callback](bool success, std::vector<uint8_t> const& data, int, int) {
             if (!success || data.empty()) { callback(false, nullptr); return; }
             auto* texture = ThumbnailTransportClient::bytesToTexture(data);
             callback(texture != nullptr, texture);

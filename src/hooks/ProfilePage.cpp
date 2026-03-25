@@ -33,6 +33,8 @@
 #include "../features/profile-music/ui/ProfileMusicPopup.hpp"
 #include "../features/profiles/ui/RateProfilePopup.hpp"
 #include "../features/profiles/ui/ProfileReviewsPopup.hpp"
+#include "../features/profiles/services/ProfileImageService.hpp"
+#include "../core/Settings.hpp"
 #include "../utils/Shaders.hpp"
 #include "../utils/ImageLoadHelper.hpp"
 #include <Geode/ui/LoadingSpinner.hpp>
@@ -57,7 +59,14 @@ static std::unordered_map<int, geode::Ref<CCTexture2D>> s_profileImgCache;
 static std::list<int> s_profileImgLru;
 static std::unordered_map<int, std::list<int>::iterator> s_profileImgLruMap;
 static constexpr size_t MAX_PROFILEIMG_CACHE_SIZE = 64;
+static constexpr size_t MAX_PROFILEIMG_CACHE_BYTES = 64ull * 1024 * 1024; // 64 MB
+static size_t s_profileImgCacheBytes = 0;
 static std::atomic<bool> s_profileImgShutdown{false};
+
+static size_t estimateTextureBytes(CCTexture2D* tex) {
+    if (!tex) return 0;
+    return static_cast<size_t>(tex->getPixelsWide()) * static_cast<size_t>(tex->getPixelsHigh()) * 4;
+}
 
 static void touchProfileImgCache(int accountID) {
     auto it = s_profileImgLruMap.find(accountID);
@@ -71,13 +80,33 @@ static void touchProfileImgCache(int accountID) {
 static void cacheProfileImgTexture(int accountID, CCTexture2D* texture) {
     if (!texture) return;
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
+
+    size_t incomingBytes = estimateTextureBytes(texture);
+
+    // if replacing an existing entry, subtract old bytes
+    auto oldIt = s_profileImgCache.find(accountID);
+    if (oldIt != s_profileImgCache.end()) {
+        size_t oldBytes = estimateTextureBytes(oldIt->second);
+        if (s_profileImgCacheBytes >= oldBytes) s_profileImgCacheBytes -= oldBytes;
+    }
+
     s_profileImgCache[accountID] = texture;
+    s_profileImgCacheBytes += incomingBytes;
     touchProfileImgCache(accountID);
-    while (s_profileImgCache.size() > MAX_PROFILEIMG_CACHE_SIZE && !s_profileImgLru.empty()) {
+
+    // evict by entry count OR byte limit
+    while ((s_profileImgCache.size() > MAX_PROFILEIMG_CACHE_SIZE ||
+            s_profileImgCacheBytes > MAX_PROFILEIMG_CACHE_BYTES) &&
+           !s_profileImgLru.empty()) {
         int removeID = s_profileImgLru.front();
         s_profileImgLru.pop_front();
         s_profileImgLruMap.erase(removeID);
-        s_profileImgCache.erase(removeID);
+        auto removeIt = s_profileImgCache.find(removeID);
+        if (removeIt != s_profileImgCache.end()) {
+            size_t removedBytes = estimateTextureBytes(removeIt->second);
+            if (s_profileImgCacheBytes >= removedBytes) s_profileImgCacheBytes -= removedBytes;
+            s_profileImgCache.erase(removeIt);
+        }
     }
 }
 
@@ -92,6 +121,7 @@ $on_game(Exiting) {
         (void)ref.take();
     }
     s_profileImgCache.clear();
+    s_profileImgCacheBytes = 0;
     s_profileImgLru.clear();
     s_profileImgLruMap.clear();
 }
@@ -114,13 +144,22 @@ static std::filesystem::path getProfileImgCacheDir() {
 }
 
 static std::filesystem::path getProfileImgCachePath(int accountID) {
-    return getProfileImgCacheDir() / fmt::format("{}.dat", accountID);
+    return getProfileImgCacheDir() / fmt::format("{}_{}.dat", accountID, paimon::settings::quality::tag());
+}
+
+static std::string getProfileImgGifCacheKey(int accountID) {
+    auto key = ProfileImageService::get().getProfileImgGifKey(accountID);
+    if (!key.empty()) {
+        return key;
+    }
+    return fmt::format("profileimg_gif_{}_{}", accountID, paimon::settings::quality::tag());
 }
 
 // Limpia todo el cache de profileimg (RAM + disco)
 void clearProfileImgCache() {
     std::lock_guard<std::mutex> lock(s_profileImgMutex);
     s_profileImgCache.clear();
+    s_profileImgCacheBytes = 0;
     s_profileImgLru.clear();
     s_profileImgLruMap.clear();
     std::error_code ec;
@@ -147,24 +186,7 @@ static CCTexture2D* loadProfileImgFromDisk(int accountID) {
     file.close();
 
     if (GIFDecoder::isGIF(data.data(), data.size())) {
-        auto gif = GIFDecoder::decode(data.data(), data.size());
-        if (gif.frames.empty()) return nullptr;
-        auto const& frame = gif.frames.front();
-        if (frame.pixels.empty() || frame.width <= 0 || frame.height <= 0) return nullptr;
-
-        auto* tex = new CCTexture2D();
-        if (!tex->initWithData(
-            frame.pixels.data(),
-            kCCTexture2DPixelFormat_RGBA8888,
-            frame.width,
-            frame.height,
-            CCSize(static_cast<float>(frame.width), static_cast<float>(frame.height))
-        )) {
-            tex->release();
-            return nullptr;
-        }
-        tex->autorelease();
-        return tex;
+        return nullptr;
     }
 
     auto loaded = ImageLoadHelper::loadWithSTBFromMemory(data.data(), data.size());
@@ -214,6 +236,7 @@ class $modify(PaimonProfilePage, ProfilePage) {
         bool m_hasProfileBackdrop = false;
         bool m_leaveForClose = false;
         bool m_pausedForTemporaryExit = false;
+        bool m_audioCleanedUp = false;
     };
 
     bool canShowModerationControls() {
@@ -553,6 +576,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         gif->setPosition(ccp(imgArea.width * 0.5f, imgArea.height * 0.5f));
         gif->play();
         clip->addChild(gif);
+        if (gif->getTexture()) {
+            cacheProfileImgTexture(this->m_accountID, gif->getTexture());
+        }
 
         auto dark = CCLayerColor::create(ccc4(0, 0, 0, 70));
         dark->setContentSize(imgArea);
@@ -569,12 +595,18 @@ class $modify(PaimonProfilePage, ProfilePage) {
         styleProfileInternalBgs(layer);
     }
 
-    void tryDisplayAnimatedProfileImg(int accountID) {
-        auto bytes = readProfileImgCacheBytes(accountID);
-        if (!bytes || bytes->empty()) return;
-        if (!GIFDecoder::isGIF(bytes->data(), bytes->size())) return;
+    bool ensureAnimatedProfileImg(int accountID) {
+        auto gifKey = getProfileImgGifCacheKey(accountID);
+        if (!gifKey.empty() && AnimatedGIFSprite::isCached(gifKey)) {
+            displayProfileImgGif(gifKey);
+            return true;
+        }
 
-        std::string gifKey = fmt::format("profileimg_gif_{}", accountID);
+        auto bytes = readProfileImgCacheBytes(accountID);
+        if (!bytes || bytes->empty()) return false;
+        if (!GIFDecoder::isGIF(bytes->data(), bytes->size())) return false;
+
+        ProfileImageService::get().rememberProfileImgGifKey(accountID, gifKey);
         Ref<ProfilePage> safeRef = this;
         AnimatedGIFSprite::createAsync(*bytes, gifKey, [safeRef, accountID, gifKey](AnimatedGIFSprite* sprite) {
             if (!sprite) return;
@@ -585,6 +617,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
                 page->displayProfileImgGif(gifKey);
             });
         });
+
+        return true;
     }
 
     void addOrUpdateProfileImgOnPage(int accountID, bool isSelf = false) {
@@ -596,19 +630,22 @@ class $modify(PaimonProfilePage, ProfilePage) {
         if (f->m_profileImgClip) { f->m_profileImgClip->removeFromParent(); f->m_profileImgClip = nullptr; }
         if (f->m_profileImgBorder) { f->m_profileImgBorder->removeFromParent(); f->m_profileImgBorder = nullptr; }
 
-        // 1) si hay cache en memoria, mostrar de inmediato
-        auto it = s_profileImgCache.find(accountID);
-        if (it != s_profileImgCache.end() && it->second) {
-            this->displayProfileImg(accountID, it->second);
-        } else {
-            // 2) si hay cache en disco, cargar y mostrar
-            if (auto* diskTex = loadProfileImgFromDisk(accountID)) {
-                // Ref<> hace retain en la asignacion y release del anterior automaticamente
-                cacheProfileImgTexture(accountID, diskTex);
-                this->displayProfileImg(accountID, diskTex);
+        bool queuedAnimated = ensureAnimatedProfileImg(accountID);
+
+        if (!queuedAnimated) {
+            // 1) si hay cache en memoria, mostrar de inmediato
+            auto it = s_profileImgCache.find(accountID);
+            if (it != s_profileImgCache.end() && it->second) {
+                this->displayProfileImg(accountID, it->second);
+            } else {
+                // 2) si hay cache en disco, cargar y mostrar
+                if (auto* diskTex = loadProfileImgFromDisk(accountID)) {
+                    // Ref<> hace retain en la asignacion y release del anterior automaticamente
+                    cacheProfileImgTexture(accountID, diskTex);
+                    this->displayProfileImg(accountID, diskTex);
+                }
             }
         }
-        tryDisplayAnimatedProfileImg(accountID);
 
         // descargar del servidor en segundo plano (actualizar cache)
         // Ref<> mantiene vivo el ProfilePage hasta que termine el callback
@@ -619,8 +656,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
             if (success && texture) {
                 // Ref<> hace retain en la asignacion y release del anterior automaticamente
                 cacheProfileImgTexture(accountID, texture);
-                static_cast<PaimonProfilePage*>(self.data())->displayProfileImg(accountID, texture);
-                static_cast<PaimonProfilePage*>(self.data())->tryDisplayAnimatedProfileImg(accountID);
+                auto* page = static_cast<PaimonProfilePage*>(self.data());
+                if (!page->ensureAnimatedProfileImg(accountID)) {
+                    page->displayProfileImg(accountID, texture);
+                }
             }
         }, isSelf);
     }
@@ -1315,6 +1354,11 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     PaimonNotify::create("Profile image uploaded!", NotificationIcon::Success)->show();
 
                     saveProfileImgToDisk(accountID, imgData);
+                    ProfileImageService::get().rememberProfileImgGifKey(accountID, getProfileImgGifCacheKey(accountID));
+                    auto* page = static_cast<PaimonProfilePage*>(imgGifSafeRef.data());
+                    if (page && page->ensureAnimatedProfileImg(accountID)) {
+                        return;
+                    }
 
                     if (GIFDecoder::isGIF(imgData.data(), imgData.size())) {
                         auto gif = GIFDecoder::decode(imgData.data(), imgData.size());
@@ -1393,8 +1437,8 @@ class $modify(PaimonProfilePage, ProfilePage) {
                         ThumbnailAPI::get().uploadProfileImg(accountID, pngData, username, "image/png", [imgUploadRef, accountID, pngData, loading, buf, w, h](bool success, std::string const& msg) {
                             if (loading) loading->removeFromParent();
 
-                            if (success) {
-                                bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
+                if (success) {
+                    bool isPending = (msg.find("pending") != std::string::npos || msg.find("verification") != std::string::npos);
 
                                 if (isPending) {
                                     PaimonNotify::create("Image submitted! Pending moderator verification.", NotificationIcon::Warning)->show();
@@ -1402,9 +1446,10 @@ class $modify(PaimonProfilePage, ProfilePage) {
                                     PaimonNotify::create("Profile image uploaded!", NotificationIcon::Success)->show();
                                 }
 
-                                saveProfileImgToDisk(accountID, pngData);
+                    saveProfileImgToDisk(accountID, pngData);
+                    ProfileImageService::get().clearProfileImgGifKey(accountID);
 
-                                CCImage finalImg;
+                    CCImage finalImg;
                                 if (finalImg.initWithImageData(buf.get(), w * h * 4, CCImage::kFmtRawData, w, h)) {
                                     auto finalTex = geode::Ref<CCTexture2D>(new CCTexture2D());
                                     if (finalTex->initWithImage(&finalImg)) {
@@ -1547,22 +1592,37 @@ class $modify(PaimonProfilePage, ProfilePage) {
                     }
                 }
 
-                AudioContextCoordinator::get().activateProfile(accountID, config);
+                AudioContextCoordinator::get().updateProfileMusicConfig(accountID, config);
                 page->m_fields->m_musicPlaying = true;
                 page->updatePauseButtonSprite(true);
             });
         });
     }
 
+    void cleanupProfileAudio() {
+        if (m_fields->m_audioCleanedUp) return;
+        m_fields->m_audioCleanedUp = true;
+
+        auto& musicMgr = ProfileMusicManager::get();
+        bool hadProfileAudio = musicMgr.isPlaying() || musicMgr.isPaused() || musicMgr.isFadingOut();
+        auto sessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+        musicMgr.forceStop();
+        AudioContextCoordinator::get().handleProfileClosedAfterForceStop(hadProfileAudio, sessionToken);
+        m_fields->m_menuMusicPaused = false;
+        m_fields->m_pausedForTemporaryExit = false;
+    }
+
     $override
     void keyBackClicked() {
         m_fields->m_leaveForClose = true;
+        cleanupProfileAudio();
         ProfilePage::keyBackClicked();
     }
 
     $override
     void onClose(CCObject* sender) {
         m_fields->m_leaveForClose = true;
+        cleanupProfileAudio();
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
         this->unschedule(schedule_selector(PaimonProfilePage::fadeStepTick));
@@ -1586,30 +1646,9 @@ class $modify(PaimonProfilePage, ProfilePage) {
         this->unschedule(schedule_selector(PaimonProfilePage::tickStyleBgs));
         this->unschedule(schedule_selector(PaimonProfilePage::verifyButtonIntegrity));
         this->unschedule(schedule_selector(PaimonProfilePage::fadeStepTick));
-        auto& musicMgr = ProfileMusicManager::get();
-        if (m_fields->m_leaveForClose) {
-            // Cierre definitivo: forzar parada inmediata del audio de perfil
-            bool hadProfileAudio = musicMgr.isPlaying() || musicMgr.isPaused() || musicMgr.isFadingOut();
-            auto sessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
-            if (hadProfileAudio) {
-                musicMgr.stopProfileMusic();
-                AudioContextCoordinator::get().clearProfileContext();
-            } else {
-                musicMgr.forceStop();
-                AudioContextCoordinator::get().handleProfileClosedAfterForceStop(false, sessionToken);
-            }
-            m_fields->m_menuMusicPaused = false;
-            m_fields->m_pausedForTemporaryExit = false;
-        } else {
-            // Salida temporal (push de otra pantalla): pausar en vez de cortar audio.
-            if (m_fields->m_musicPlaying && musicMgr.isPlaying() && !musicMgr.isPaused()) {
-                musicMgr.pauseProfileMusic();
-                m_fields->m_pausedForTemporaryExit = true;
-                updatePauseButtonSprite(false);
-            } else {
-                m_fields->m_pausedForTemporaryExit = false;
-            }
-        }
+
+        cleanupProfileAudio();
+
         ProfilePage::onExit();
     }
 

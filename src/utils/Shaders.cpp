@@ -73,6 +73,7 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     srcSprite->setScale(scale);
     srcSprite->setAnchorPoint({0.5f, 0.5f});
     srcSprite->setPosition(targetSize * 0.5f);
+    srcSprite->setFlipY(true);
 
     ccTexParams params{GL_LINEAR, GL_LINEAR, GL_CLAMP_TO_EDGE, GL_CLAMP_TO_EDGE};
     texture->setTexParameters(&params);
@@ -122,7 +123,6 @@ CCSprite* createBlurredSprite(CCTexture2D* texture, CCSize const& targetSize, fl
     }
 
     auto finalSprite = CCSprite::createWithTexture(rtB->getSprite()->getTexture());
-    finalSprite->setFlipY(true);
     finalSprite->setAnchorPoint({0.5f, 0.5f});
     finalSprite->getTexture()->setTexParameters(&params);
 

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <string_view>
 #include <random>
+#include <chrono>
 #include <unordered_set>
 #include "../features/thumbnails/services/LocalThumbs.hpp"
 #include "../features/thumbnails/services/LevelColors.hpp"
@@ -42,6 +43,7 @@ enum class PaimonGalleryTransition : uint8_t {
     Crossfade, SlideLeft, SlideRight, SlideUp, SlideDown,
     ZoomIn, ZoomOut, FlipHorizontal, FlipVertical,
     RotateCW, RotateCCW, Cube, Dissolve, Swipe, Bounce,
+    ElasticSlide, Spiral, Wave, Pop,
     Random
 };
 
@@ -167,13 +169,17 @@ static PaimonGalleryTransition parseGalleryTransition(std::string const& s) {
     if (s == "dissolve") return PaimonGalleryTransition::Dissolve;
     if (s == "swipe") return PaimonGalleryTransition::Swipe;
     if (s == "bounce") return PaimonGalleryTransition::Bounce;
+    if (s == "elastic-slide") return PaimonGalleryTransition::ElasticSlide;
+    if (s == "spiral") return PaimonGalleryTransition::Spiral;
+    if (s == "wave") return PaimonGalleryTransition::Wave;
+    if (s == "pop") return PaimonGalleryTransition::Pop;
     if (s == "random") return PaimonGalleryTransition::Random;
     return PaimonGalleryTransition::Crossfade;
 }
 
 static PaimonGalleryTransition resolveRandomTransition() {
     static std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(0, 14); // 0..14 = all types except Random
+    std::uniform_int_distribution<int> dist(0, 18); // 0..18 = all types except Random
     return static_cast<PaimonGalleryTransition>(dist(rng));
 }
 
@@ -238,6 +244,11 @@ class $modify(PaimonLevelCell, LevelCell) {
         float m_lastSpriteHoverScale = 1.0f;
         float m_lastSpriteHoverRotation = 0.0f;
         float m_lastSpriteHoverOffsetX = 0.0f;
+        float m_lastBoundsHoverScale = 1.0f;
+        float m_lastBoundsHoverOffsetX = 0.0f;
+        float m_lastBoundsHoverRotation = 0.0f;
+        Ref<CCClippingNode> m_boundsClipper = nullptr;
+        Ref<CCNode> m_hoverContainer = nullptr; // nodo intermedio dentro de boundsClipper para hover zoom
 
         // version de invalidacion: si cambia, recargar miniatura
         int m_loadedInvalidationVersion = 0;
@@ -250,11 +261,13 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool m_isDailyCellCached = false;
         std::vector<ThumbnailAPI::ThumbnailInfo> m_galleryThumbnails;
         std::unordered_set<std::string> m_galleryPendingUrls;
-        int m_galleryIndex = -1;
+        int m_galleryIndex = 0;
         float m_galleryTimer = 0.f;
         bool m_galleryRequested = false;
         int m_galleryToken = 0;
         int m_invalidationListenerId = 0;
+        std::chrono::steady_clock::time_point m_galleryTransitionStart{};
+        static constexpr float GALLERY_TRANSITION_SAFETY_TIMEOUT = 2.0f;
     };
     
     // destructor pa marcar celda como destruyendose
@@ -492,6 +505,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         removeNodeSafe(fields->m_clippingNode);
         removeNodeSafe(fields->m_separator);
         removeNodeSafe(fields->m_gradient);
+        removeNodeSafe(fields->m_hoverContainer);
+        removeNodeSafe(fields->m_boundsClipper);
         
         // m_mythicParticles is a CCParticleSystemQuad*, manual handling or cast
         if (fields->m_mythicParticles) {
@@ -515,6 +530,8 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_lastSpriteHoverScale = 1.0f;
         fields->m_lastSpriteHoverRotation = 0.0f;
         fields->m_lastSpriteHoverOffsetX = 0.0f;
+        fields->m_lastBoundsHoverScale = 1.0f;
+        fields->m_lastBoundsHoverOffsetX = 0.0f;
 
         // limpiar restos con id "paimon" en bg y this
         auto cleanByID = [](CCNode* parent) {
@@ -536,16 +553,28 @@ class $modify(PaimonLevelCell, LevelCell) {
     // setupDarkMode removed Ã¢â‚¬â€ was empty (dead code)
 
     CCSprite* createThumbnailSprite(CCTexture2D* texture, bool allowLevelGIF = true) {
+        int32_t levelIDForGIF = m_level ? m_level->m_levelID.value() : 0;
+        bool hasLevelGIF = allowLevelGIF && levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF);
+        std::string gifPath = hasLevelGIF
+            ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelIDForGIF, true))
+            : std::string();
+
+        if (hasLevelGIF && AnimatedGIFSprite::isCached(gifPath)) {
+            if (auto gifSprite = AnimatedGIFSprite::createFromCache(gifPath)) {
+                gifSprite->setID("paimon-thumbnail"_spr);
+                gifSprite->play();
+                return gifSprite;
+            }
+        }
+
         CCSprite* sprite = PaimonShaderSprite::createWithTexture(texture);
         if (!sprite) return nullptr;
 
-        int32_t levelIDForGIF = m_level ? m_level->m_levelID.value() : 0;
-        
-        if (allowLevelGIF && levelIDForGIF > 0 && ThumbnailLoader::get().hasGIFData(levelIDForGIF)) {
-            auto path = ThumbnailLoader::get().getCachePath(levelIDForGIF, true);
+        if (hasLevelGIF) {
+            sprite->setOpacity(0);
             
             WeakRef<PaimonLevelCell> safeRef = this;
-            AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [safeRef, levelIDForGIF](AnimatedGIFSprite* anim) {
+            AnimatedGIFSprite::createAsync(gifPath, [safeRef, levelIDForGIF](AnimatedGIFSprite* anim) {
                 auto cellRef = safeRef.lock();
                 auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
                 if (!cell) return;
@@ -565,13 +594,16 @@ class $modify(PaimonLevelCell, LevelCell) {
                             anim->setSkewY(old->getSkewY());
                             anim->setZOrder(old->getZOrder());
                             anim->setColor(old->getColor());
-                            anim->setOpacity(old->getOpacity());
+                            anim->setOpacity(255);
                             anim->setID("paimon-thumbnail"_spr);
+                            anim->play();
                             
                             old->removeFromParent();
                             parent->addChild(anim);
                             fields->m_thumbSprite = anim;
                         }
+                    } else if (fields->m_thumbSprite) {
+                        fields->m_thumbSprite->setOpacity(255);
                     }
                 }
             });
@@ -586,35 +618,10 @@ class $modify(PaimonLevelCell, LevelCell) {
             
             std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
 
-            if (bgType == "thumbnail") {
-                // Si ImagePlus esta activo, verificar que la textura no tenga
-                // animacion adjunta antes de aplicar shaders (ImagePlus hookea
-                // CCSprite::initWithTexture y puede añadir scheduler de animacion
-                // que conflictua con nuestros shaders custom)
-                bool skipShader = false;
-                if (paimon::compat::ModCompat::isImagePlusLoaded()) {
-                    // ImagePlus usa schedule_selector(ImagePlusSprite::animationUpdate)
-                    // Verificamos si el sprite tiene acciones/schedulers no nuestros
-                    if (sprite->numberOfRunningActions() > 0) {
-                        skipShader = true;
-                    }
-                }
-                
-                if (!skipShader) {
-                    auto shader = getOrCreateShader("paimon_cell_saturation", vertexShaderCell, fragmentShaderSaturationCell);
-                    if (shader) {
-                        // aplicar boost saturacion/brillo solo a imagenes estaticas (PaimonShaderSprite)
-                        if (auto pss = typeinfo_cast<PaimonShaderSprite*>(sprite)) {
-                            sprite->setShaderProgram(shader);
-                            float saturation = 2.5f;
-                            float brightness = 3.0f;
-                            pss->m_intensity = saturation;
-                            pss->m_brightness = brightness;
-                        }
-                        // AnimatedGIFSprite (GIFs) se renderiza con shader por defecto (sin efecto)
-                    }
-                }
-            }
+            // No aplicar shader de saturacion/brillo aqui — el sistema de
+            // efectos en updateCenterAnimation maneja todos los shaders.
+            // Aplicarlo aqui causaba un flash ultra-brillante durante la
+            // transicion de entrada (brightness=3.0 con color blanco = 3x brillo).
         }
         return sprite;
     }
@@ -682,9 +689,22 @@ class $modify(PaimonLevelCell, LevelCell) {
         boundsClipper->setID("paimon-bounds-clipper"_spr);
         this->addChild(boundsClipper);
 
-        // La miniatura va dentro del bounds clipper
-        boundsClipper->addChild(clippingNode);
+        // Contenedor intermedio para hover zoom durante transiciones.
+        // Escalar el boundsClipper directamente escalaría también su stencil,
+        // haciendo que el contenido desborde la celda. En cambio, escalamos
+        // este contenedor y el stencil se mantiene fijo.
+        auto hoverContainer = CCNode::create();
+        hoverContainer->setContentSize(bg->getContentSize());
+        hoverContainer->setAnchorPoint({0, 0});
+        hoverContainer->setPosition({0, 0});
+        hoverContainer->setID("paimon-hover-container"_spr);
+        boundsClipper->addChild(hoverContainer);
 
+        // La miniatura va dentro del hover container (dentro del bounds clipper)
+        hoverContainer->addChild(clippingNode);
+
+        fields->m_boundsClipper = boundsClipper;
+        fields->m_hoverContainer = hoverContainer;
         fields->m_thumbSprite = sprite;
         fields->m_thumbBasePos = sprite->getPosition();
         fields->m_clipBasePos = clippingNode->getPosition();
@@ -705,9 +725,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         bool hoverEnabled = Mod::get()->getSettingValue<bool>("levelcell-hover-effects");
 
         if (hoverEnabled) {
-            this->unschedule(schedule_selector(PaimonLevelCell::checkCenterPosition));
             this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
-            this->schedule(schedule_selector(PaimonLevelCell::checkCenterPosition), 0.05f);
             this->schedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
         }
 
@@ -731,7 +749,7 @@ class $modify(PaimonLevelCell, LevelCell) {
 
             fields->m_separator = separator;
             fields->m_separatorBasePos = separator->getPosition();
-            boundsClipper->addChild(separator);
+            hoverContainer->addChild(separator);
         }
     }
 
@@ -759,104 +777,141 @@ class $modify(PaimonLevelCell, LevelCell) {
         PaimonBgType bgType = fields->m_cachedBgType;
 
         if (bgType == PaimonBgType::Thumbnail && texture) {
-             CCSprite* bgSprite = nullptr;
-             
-             float blurIntensity = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-blur"));
-
-             if (ThumbnailLoader::get().hasGIFData(levelID)) {
-                 auto path = ThumbnailLoader::get().getCachePath(levelID, true);
-                 WeakRef<PaimonLevelCell> gradSafeRef = this;
-                 AnimatedGIFSprite::createAsync(geode::utils::string::pathToString(path), [gradSafeRef, levelID, blurIntensity](AnimatedGIFSprite* anim) {
-                     auto selfRef = gradSafeRef.lock();
-                     auto* self = static_cast<PaimonLevelCell*>(selfRef.data());
-                     if (!self) return;
-                     if (!self->getParent()) return;
-                     if (self->m_level && self->m_level->m_levelID == levelID) {
-                         if (anim) {
-                             if (auto bg = self->m_mainLayer) {
-                                 if (auto clipper = bg->getChildByID("paimon-bg-clipper"_spr)) {
-                                     clipper->removeAllChildren();
-                                     
-                                    float targetW = clipper->getContentWidth();
-                                    float targetH = clipper->getContentHeight();
-                                    float scale = safeCoverScale(
-                                        targetW, targetH,
-                                        anim->getContentWidth(), anim->getContentHeight(),
-                                        1.0f
-                                    );
-                                     anim->setScale(scale);
-                                     anim->setPosition(clipper->getContentSize() / 2);
-                                     
-                                     // Apply blur shader to GIF
-                                     auto shader = Shaders::getBlurCellShader();
-                                     if (shader) {
-                                         anim->setShaderProgram(shader);
-                                         anim->m_intensity = blurIntensity;
-                                         if (auto* animTex = anim->getTexture()) {
-                                             anim->m_texSize = animTex->getContentSizeInPixels();
-                                         } else {
-                                             anim->m_texSize = anim->getContentSize();
-                                         }
-                                     }
-                                     
-                                     clipper->addChild(anim);
-                                 }
-                             }
-                         }
-                     }
-                 });
+             // Para thumbnail: ocultar solo el color marrón del bg, manteniendo el nodo
+             // visible para que los hijos (blur clipper) se rendericen correctamente.
+             bg->setVisible(true);
+             if (auto* bgLayer = typeinfo_cast<CCLayerColor*>(bg)) {
+                 bgLayer->setOpacity(0);
              }
+             float blurIntensity = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-blur"));
+             bool hasGifBackground = ThumbnailLoader::get().hasGIFData(levelID);
+             std::string gifPath = hasGifBackground
+                 ? geode::utils::string::pathToString(ThumbnailLoader::get().getCachePath(levelID, true))
+                 : std::string();
 
-             if (!bgSprite) {
-                 // Static image - blur centralizado en Shaders.hpp
+             auto ensureBgClipper = [bg]() -> CCClippingNode* {
+                 if (auto existing = typeinfo_cast<CCClippingNode*>(static_cast<CCNode*>(bg->getChildByID("paimon-bg-clipper"_spr)))) {
+                     return existing;
+                 }
+
+                 auto stencil = paimon::SpriteHelper::createRectStencil(bg->getContentWidth(), bg->getContentHeight());
+                 auto clipper = CCClippingNode::create(stencil);
+                 if (!clipper) {
+                     return nullptr;
+                 }
+                 clipper->setContentSize(bg->getContentSize());
+                 clipper->setPosition({0,0});
+                 clipper->setZOrder(10);
+                 clipper->setID("paimon-bg-clipper"_spr);
+                 bg->addChild(clipper);
+                 bg->reorderChild(clipper, 10);
+                 return clipper;
+             };
+
+             auto attachOverlay = [bg, fields](CCClippingNode* clipper) {
+                 if (!clipper) return;
+                 if (auto oldOverlay = clipper->getChildByID("paimon-level-background-overlay"_spr)) {
+                     oldOverlay->removeFromParent();
+                 }
+
+                 float darkness = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-darkness"));
+                 GLubyte opacity = static_cast<GLubyte>(std::clamp(darkness, 0.0f, 1.0f) * 255.0f);
+                 auto overlay = paimon::SpriteHelper::createDarkPanel(bg->getContentWidth(), bg->getContentHeight(), opacity, 0.f);
+                 if (!overlay) return;
+                 overlay->setPosition({0, 0});
+                 overlay->setID("paimon-level-background-overlay"_spr);
+                 clipper->addChild(overlay);
+                 fields->m_darkOverlay = overlay;
+             };
+
+             auto attachBackgroundSprite = [bg, fields, ensureBgClipper, attachOverlay](CCSprite* mediaSprite) {
+                 auto clipper = ensureBgClipper();
+                 if (!clipper) return;
+
+                 if (auto oldMedia = clipper->getChildByID("paimon-level-background"_spr)) {
+                     oldMedia->removeFromParent();
+                 }
+
+                 if (mediaSprite) {
+                     float targetW = bg->getContentWidth();
+                     float targetH = bg->getContentHeight();
+                     float scale = safeCoverScale(
+                         targetW, targetH,
+                         mediaSprite->getContentSize().width, mediaSprite->getContentSize().height,
+                         1.0f
+                     );
+                     mediaSprite->setScale(scale);
+                     mediaSprite->setPosition(bg->getContentSize() / 2);
+                     mediaSprite->setID("paimon-level-background"_spr);
+                     clipper->addChild(mediaSprite);
+                     fields->m_gradientLayer = mediaSprite;
+                 } else {
+                     fields->m_gradientLayer = nullptr;
+                 }
+
+                 attachOverlay(clipper);
+             };
+
+             auto createStaticBackground = [bg, texture, blurIntensity]() -> CCSprite* {
                  CCSize targetSize = bg->getContentSize();
                  targetSize.width = std::max(targetSize.width, 512.f);
                  targetSize.height = std::max(targetSize.height, 256.f);
 
-                 bgSprite = Shaders::createBlurredSprite(texture, targetSize, blurIntensity);
+                 auto bgSprite = Shaders::createBlurredSprite(texture, targetSize, blurIntensity);
                  if (!bgSprite) {
                      bgSprite = PaimonShaderSprite::createWithTexture(texture);
                  }
+                 return bgSprite;
+             };
+
+             auto configureGifBackground = [blurIntensity](AnimatedGIFSprite* anim) {
+                 if (!anim) return;
+                 if (auto shader = Shaders::getBlurCellShader()) {
+                     anim->setShaderProgram(shader);
+                     anim->m_intensity = std::clamp((blurIntensity - 1.0f) / 9.0f, 0.0f, 1.0f);
+                     if (auto* animTex = anim->getTexture()) {
+                         anim->m_texSize = animTex->getContentSizeInPixels();
+                     } else {
+                         anim->m_texSize = anim->getContentSize();
+                     }
+                 }
+                 anim->play();
+             };
+
+             if (hasGifBackground) {
+                 if (AnimatedGIFSprite::isCached(gifPath)) {
+                     if (auto anim = AnimatedGIFSprite::createFromCache(gifPath)) {
+                         configureGifBackground(anim);
+                         attachBackgroundSprite(anim);
+                     } else {
+                         attachBackgroundSprite(createStaticBackground());
+                     }
+                 } else {
+                     attachBackgroundSprite(nullptr);
+                     WeakRef<PaimonLevelCell> gradSafeRef = this;
+                     AnimatedGIFSprite::createAsync(gifPath, [gradSafeRef, levelID, configureGifBackground, attachBackgroundSprite, createStaticBackground](AnimatedGIFSprite* anim) {
+                         auto selfRef = gradSafeRef.lock();
+                         auto* self = static_cast<PaimonLevelCell*>(selfRef.data());
+                         if (!self || !self->getParent()) return;
+                         if (!self->m_level || self->m_level->m_levelID != levelID) return;
+
+                         if (anim) {
+                             configureGifBackground(anim);
+                             attachBackgroundSprite(anim);
+                         } else {
+                             attachBackgroundSprite(createStaticBackground());
+                         }
+                     });
+                 }
+             } else {
+                 attachBackgroundSprite(createStaticBackground());
              }
-             
-             if (bgSprite) {
-                auto stencil = paimon::SpriteHelper::createRectStencil(bg->getContentWidth(), bg->getContentHeight());
 
-                 auto clipper = CCClippingNode::create(stencil);
-                 clipper->setContentSize(bg->getContentSize());
-                 // No alpha threshold for geometric stencil
-                 clipper->setPosition({0,0});
-                 clipper->setZOrder(10); // Same Z as gradient
-                 clipper->setID("paimon-bg-clipper"_spr);
-
-                 float targetW = bg->getContentWidth();
-                 float targetH = bg->getContentHeight();
-
-                float scale = safeCoverScale(
-                    targetW, targetH,
-                    bgSprite->getContentSize().width, bgSprite->getContentSize().height,
-                    1.0f
-                );
-                 bgSprite->setScale(scale);
-                 
-                 bgSprite->setPosition(bg->getContentSize() / 2);
-                 clipper->addChild(bgSprite);
-
-                 float darkness = static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-background-darkness"));
-                 GLubyte opacity = static_cast<GLubyte>(std::clamp(darkness, 0.0f, 1.0f) * 255.0f);
-
-                 auto overlay = paimon::SpriteHelper::createDarkPanel(bg->getContentWidth(), bg->getContentHeight(), opacity, 0.f);
-                 overlay->setPosition({0, 0});
-                 clipper->addChild(overlay);
-                 fields->m_darkOverlay = overlay;
-
-                 bg->addChild(clipper);
-                 bg->reorderChild(clipper, 10);
-                 fields->m_gradientLayer = bgSprite;
-
-                 return;
-             }
+             return;
         }
+
+        // Para gradiente: ocultar bg completo (no tiene hijos blur)
+        bg->setVisible(false);
 
         ccColor3B colorA = {0, 0, 0};
         ccColor3B colorB = {255, 0, 0};
@@ -890,8 +945,7 @@ class $modify(PaimonLevelCell, LevelCell) {
              // grad should mimic.
         }
         
-        // Simply hide the original background and place ours
-        bg->setVisible(false);
+        // bg ya fue ocultado al inicio de setupGradient
         this->addChild(grad);
         
         // fields->m_gradient = grad; // m_gradient is CCNode* in struct
@@ -1300,6 +1354,96 @@ class $modify(PaimonLevelCell, LevelCell) {
                 CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
         } break;
 
+        case PaimonGalleryTransition::ElasticSlide: {
+            // Nueva entra desde la derecha con efecto elastico
+            newNode->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newNode->runAction(CCEaseElasticOut::create(
+                CCMoveTo::create(dur * 1.2f, targetPos), 0.3f));
+            // Vieja: zoom pequeno + slide a la izquierda con back-ease + fade
+            if (oldNode) oldNode->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseBackIn::create(
+                        CCMoveTo::create(dur * 0.7f, {targetPos.x - clipSize.width, targetPos.y})),
+                    CCScaleTo::create(dur * 0.3f, sx * 1.05f, sy * 1.05f),
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.6f, 0))
+                              : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur * 0.6f)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::Spiral: {
+            // Nueva: rota desde 360 + escala desde 0 + fade in
+            newNode->setScaleX(sx * 0.01f);
+            newNode->setScaleY(sy * 0.01f);
+            newNode->setRotation(360.0f);
+            newSprite->setOpacity(0);
+            newNode->runAction(CCSpawn::create(
+                CCEaseOut::create(CCScaleTo::create(dur, sx, sy), 2.5f),
+                CCEaseOut::create(CCRotateTo::create(dur, 0.0f), 2.5f),
+                nullptr));
+            newSprite->runAction(CCFadeTo::create(dur * 0.7f, 255));
+            // Vieja: rota + escala a 0 + fade out
+            if (oldNode) oldNode->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseIn::create(CCScaleTo::create(dur * 0.8f, 0.01f, 0.01f), 2.0f),
+                    CCEaseIn::create(CCRotateTo::create(dur * 0.8f, -360.0f), 2.0f),
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(dur * 0.7f, 0))
+                              : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(dur * 0.7f)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
+        case PaimonGalleryTransition::Wave: {
+            // Nueva: slide suave desde la derecha
+            newNode->setPosition({targetPos.x + clipSize.width, targetPos.y});
+            newNode->runAction(CCEaseOut::create(CCMoveTo::create(dur, targetPos), 3.0f));
+            newSprite->setOpacity(0);
+            newSprite->runAction(CCFadeTo::create(dur * 0.5f, 255));
+            // Vieja: ondulacion (pulsos de escala alternando X/Y) + fade out
+            if (oldNode) {
+                float waveDur = dur * 0.8f;
+                float pulse = waveDur / 4.0f;
+                oldNode->runAction(CCSequence::create(
+                    CCSpawn::create(
+                        CCSequence::create(
+                            CCScaleTo::create(pulse, sx * 1.08f, sy * 0.94f),
+                            CCScaleTo::create(pulse, sx * 0.94f, sy * 1.06f),
+                            CCScaleTo::create(pulse, sx * 1.04f, sy * 0.97f),
+                            CCScaleTo::create(pulse, sx * 0.5f, sy * 0.5f),
+                            nullptr),
+                        oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(waveDur, 0))
+                                  : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(waveDur)),
+                        nullptr),
+                    CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
+            }
+        } break;
+
+        case PaimonGalleryTransition::Pop: {
+            // Secuencial: vieja escala a 0 primero, luego nueva pop desde 0
+            newNode->setScaleX(0.01f);
+            newNode->setScaleY(0.01f);
+            newSprite->setOpacity(0);
+            // Nueva aparece despues de que la vieja desaparezca
+            newNode->runAction(CCSequence::create(
+                CCDelayTime::create(halfDur),
+                CCSpawn::create(
+                    CCEaseBackOut::create(CCScaleTo::create(halfDur, sx, sy)),
+                    nullptr),
+                nullptr));
+            newSprite->runAction(CCSequence::create(
+                CCDelayTime::create(halfDur),
+                CCFadeTo::create(halfDur * 0.3f, 255),
+                nullptr));
+            // Vieja escala a 0 con back-ease
+            if (oldNode) oldNode->runAction(CCSequence::create(
+                CCSpawn::create(
+                    CCEaseBackIn::create(CCScaleTo::create(halfDur, 0.01f, 0.01f)),
+                    oldSprite ? static_cast<CCFiniteTimeAction*>(CCFadeTo::create(halfDur * 0.8f, 0))
+                              : static_cast<CCFiniteTimeAction*>(CCDelayTime::create(halfDur)),
+                    nullptr),
+                CCCallFunc::create(oldNode, callfunc_selector(CCNode::removeFromParent)), nullptr));
+        } break;
+
         default: { // fallback = crossfade
             newSprite->setOpacity(0);
             newSprite->runAction(CCFadeTo::create(dur, 255));
@@ -1330,7 +1474,9 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto fields = m_fields.self();
         if (!fields) return;
         fields->m_isGalleryTransitioning = true;
-        log::info("[LevelCell] beginGalleryTransitionGuard: dur={:.2f}", dur);
+        fields->m_galleryTransitionStart = std::chrono::steady_clock::now();
+
+        log::info("[LevelCell] beginGalleryTransitionGuard: dur={:.2f} centerLerp={:.2f}", dur, fields->m_centerLerp);
         // cancelar callback anterior si habia una transicion previa aun pendiente
         this->unschedule(schedule_selector(PaimonLevelCell::endGalleryTransition));
         this->scheduleOnce(schedule_selector(PaimonLevelCell::endGalleryTransition), dur + 0.1f);
@@ -1389,18 +1535,7 @@ class $modify(PaimonLevelCell, LevelCell) {
         oldSprite->setRotation(0.0f);
         oldSprite->setOpacity(255);
 
-        // apply same shader if thumbnail bg type
-        std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
-        if (bgType == "thumbnail") {
-            if (auto pss = typeinfo_cast<PaimonShaderSprite*>(newSprite)) {
-                auto shader = getOrCreateShader("paimon_cell_saturation", vertexShaderCell, fragmentShaderSaturationCell);
-                if (shader) {
-                    newSprite->setShaderProgram(shader);
-                    pss->m_intensity = 2.5f;
-                    pss->m_brightness = 3.0f;
-                }
-            }
-        }
+        // No aplicar shader de saturacion aqui — updateCenterAnimation lo maneja
 
         // read cached transition settings
         cacheSettings();
@@ -1429,11 +1564,19 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_lastSpriteHoverRotation = 0.0f;
         fields->m_lastSpriteHoverOffsetX = 0.0f;
 
-        this->addChild(newClip);
+        // Añadir al hoverContainer si existe, sino a this como fallback
+        if (fields->m_hoverContainer && fields->m_hoverContainer->getParent()) {
+            fields->m_hoverContainer->addChild(newClip);
+        } else if (fields->m_boundsClipper && fields->m_boundsClipper->getParent()) {
+            fields->m_boundsClipper->addChild(newClip);
+        } else {
+            this->addChild(newClip);
+        }
         beginGalleryTransitionGuard(dur);
         applyGalleryTransition(newClip, newSprite, oldClip, oldSprite, transType, dur, clipSize);
 
         // crossfade gradient background if bgType is thumbnail
+        std::string bgType = Mod::get()->getSettingValue<std::string>("levelcell-background-type");
         if (bgType == "thumbnail" && m_level && fields->m_gradientLayer &&
             fields->m_gradientLayer->getParent()) {
             auto bg = m_backgroundLayer;
@@ -1478,13 +1621,21 @@ class $modify(PaimonLevelCell, LevelCell) {
         auto const& thumb = fields->m_galleryThumbnails[index];
         if (thumb.url.empty()) return;
 
+        const int levelID = m_level->m_levelID.value();
+        const int galleryToken = fields->m_galleryToken;
+
         // check shared URL cache first
         if (ThumbnailLoader::get().isUrlLoaded(thumb.url)) {
             if (fields->m_galleryIndex == index) {
                 log::info("[LevelCell] requestGalleryThumbnail: shared cache hit index={} url={}", index, thumb.url);
-                // re-request to get the texture via callback
-                ThumbnailLoader::get().requestUrlLoad(thumb.url, [this, index](CCTexture2D* tex, bool ok) {
-                    if (ok && tex) this->crossfadeToThumb(tex);
+                WeakRef<PaimonLevelCell> safeRef = this;
+                ThumbnailLoader::get().requestUrlLoad(thumb.url, [safeRef, levelID, galleryToken, index](CCTexture2D* tex, bool ok) {
+                    auto cellRef = safeRef.lock();
+                    auto* cell = static_cast<PaimonLevelCell*>(cellRef.data());
+                    if (!cell || !cell->getParent() || !cell->m_level || cell->m_level->m_levelID != levelID) return;
+                    auto fields = cell->m_fields.self();
+                    if (!fields || fields->m_galleryToken != galleryToken) return;
+                    if (ok && tex && fields->m_galleryIndex == index) cell->crossfadeToThumb(tex);
                 });
             }
             return;
@@ -1496,8 +1647,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         }
         log::info("[LevelCell] requestGalleryThumbnail: downloading index={} url={}", index, thumb.url);
 
-        const int levelID = m_level->m_levelID.value();
-        const int galleryToken = fields->m_galleryToken;
         WeakRef<PaimonLevelCell> safeRef = this;
         ThumbnailLoader::get().requestUrlLoad(thumb.url, [safeRef, levelID, galleryToken, index, url = thumb.url](CCTexture2D* tex, bool success) {
             auto cellRef = safeRef.lock();
@@ -1523,18 +1672,66 @@ class $modify(PaimonLevelCell, LevelCell) {
     void updateGalleryCycle(float dt) {
         auto fields = m_fields.self();
         if (!fields || fields->m_isBeingDestroyed || !m_level) return;
-        if (fields->m_galleryThumbnails.size() < 2) {
+
+        // Safety timeout: if transition guard is stuck for >2s, force-release it
+        if (fields->m_isGalleryTransitioning) {
+            auto elapsed = std::chrono::steady_clock::now() - fields->m_galleryTransitionStart;
+            if (elapsed > std::chrono::duration<float>(Fields::GALLERY_TRANSITION_SAFETY_TIMEOUT)) {
+                log::warn("[LevelCell] updateGalleryCycle: transition guard stuck for >{}s, forcing release",
+                    Fields::GALLERY_TRANSITION_SAFETY_TIMEOUT);
+                fields->m_isGalleryTransitioning = false;
+                this->unschedule(schedule_selector(PaimonLevelCell::endGalleryTransition));
+            } else {
+                return; // still transitioning normally
+            }
+        }
+
+        const int gallerySize = static_cast<int>(fields->m_galleryThumbnails.size());
+        if (gallerySize < 2) {
             this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
             return;
         }
-        fields->m_galleryIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
-        this->requestGalleryThumbnail(fields->m_galleryIndex);
 
-        if (fields->m_galleryThumbnails.size() > 2) {
-            int prefetchIndex = (fields->m_galleryIndex + 1) % static_cast<int>(fields->m_galleryThumbnails.size());
-            if (prefetchIndex != fields->m_galleryIndex) {
+        // scan→show→prefetch pattern (como ListThumbnailCarousel):
+        // buscar la siguiente miniatura ya cargada en cache
+        int foundIndex = -1;
+        int triggeredDownloads = 0;
+
+        for (int i = 1; i < gallerySize; ++i) {
+            int idx = (fields->m_galleryIndex + i) % gallerySize;
+            auto const& thumb = fields->m_galleryThumbnails[idx];
+            if (thumb.url.empty()) continue;
+
+            if (ThumbnailLoader::get().isUrlLoaded(thumb.url)) {
+                foundIndex = idx;
+                break;
+            }
+
+            // disparar descarga de las no cargadas (max 3 por ciclo)
+            if (triggeredDownloads < 3) {
+                this->requestGalleryThumbnail(idx);
+                triggeredDownloads++;
+            }
+        }
+
+        if (foundIndex != -1) {
+            // imagen lista — mostrar y avanzar indice
+            fields->m_galleryIndex = foundIndex;
+            this->requestGalleryThumbnail(foundIndex);
+
+            // prefetch siguiente
+            int prefetchIndex = (foundIndex + 1) % gallerySize;
+            if (prefetchIndex != foundIndex) {
                 this->requestGalleryThumbnail(prefetchIndex);
             }
+
+            // reschedule a intervalo normal (4.5s)
+            this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+            this->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
+        } else {
+            // nada cargado — reintentar mas rapido (0.5s)
+            this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
+            this->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 0.5f);
         }
     }
 
@@ -1665,7 +1862,6 @@ class $modify(PaimonLevelCell, LevelCell) {
         this->unscheduleUpdate();
         this->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
         this->unschedule(schedule_selector(PaimonLevelCell::updateGradientAnim));
-        this->unschedule(schedule_selector(PaimonLevelCell::checkCenterPosition));
         this->unschedule(schedule_selector(PaimonLevelCell::updateCenterAnimation));
 
         if (auto fields = m_fields.self()) {
@@ -1832,41 +2028,126 @@ class $modify(PaimonLevelCell, LevelCell) {
         fields->m_cachedTransitionDuration = std::clamp(static_cast<float>(Mod::get()->getSettingValue<double>("levelcell-gallery-transition-duration")), 0.2f, 2.0f);
     }
 
-    void checkCenterPosition(float dt) {
+    // Inline hover detection — runs every frame inside updateCenterAnimation
+    void updateCenterDetection(Fields* fields) {
+        if (!fields->m_cachedHoverEnabled) {
+            fields->m_wasInCenter = false;
+            return;
+        }
+        if (!this->getParent()) {
+            fields->m_wasInCenter = false;
+            return;
+        }
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
+        CCPoint worldPos = this->convertToWorldSpace(CCPointZero);
+        float cellCenterY = worldPos.y + this->getContentSize().height / 2.0f;
+        float screenCenterY = winSize.height / 2.0f;
+        float centerZone = fields->m_cachedCompactMode ? 24.75f : 45.0f;
+        float distanceFromCenter = std::abs(cellCenterY - screenCenterY);
+        bool isVisible = cellCenterY > 0 && cellCenterY < winSize.height;
+        fields->m_wasInCenter = isVisible && distanceFromCenter < centerZone;
+    }
+
+    void updateCenterAnimation(float dt) {
         auto fields = m_fields.self();
         if (!fields || fields->m_isBeingDestroyed) return;
 
         cacheSettings();
+        updateCenterDetection(fields);
 
         if (!fields->m_cachedHoverEnabled) {
             if (fields->m_centerLerp > 0.0f) fields->m_centerLerp = 0.0f;
             return;
         }
 
-        if (!this->getParent()) return;
+        if (fields->m_isGalleryTransitioning) {
+            // Durante transicion: aplicar hover al boundsClipper (contenedor de todo).
+            // No tocar clipping node/sprite/separator que estan siendo animados por CCActions.
+            fields->m_animTime += dt;
 
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-        CCPoint worldPos = this->convertToWorldSpace(CCPointZero);
+            PaimonAnimType animType = fields->m_cachedAnimType;
+            float speedMult = fields->m_cachedAnimSpeed;
 
-        float cellCenterY = worldPos.y + this->getContentSize().height / 2.0f;
-        float screenCenterY = winSize.height / 2.0f;
-        float centerZone = fields->m_cachedCompactMode ? 24.75f : 45.0f;
+            if (animType == PaimonAnimType::None) {
+                fields->m_centerLerp = 0.0f;
+            } else {
+                // Smooth lerp during transitions (same speed as normal hover)
+                float target = fields->m_wasInCenter ? 1.0f : 0.0f;
+                float speed = 12.0f * speedMult;
+                fields->m_centerLerp += (target - fields->m_centerLerp) * std::min(1.0f, dt * speed);
+                if (std::abs(fields->m_centerLerp - target) < 0.01f) fields->m_centerLerp = target;
+            }
 
-        float distanceFromCenter = std::abs(cellCenterY - screenCenterY);
-        bool isVisible = cellCenterY > 0 && cellCenterY < winSize.height;
+            float lerp = fields->m_centerLerp;
+            float zoomFactor = 1.0f;
+            float offsetX = 0.0f;
 
-        if (!isVisible) {
-            fields->m_wasInCenter = false;
+            switch (animType) {
+                case PaimonAnimType::ZoomSlide:
+                    zoomFactor = 1.0f + 0.12f * lerp;
+                    offsetX = -10.f * lerp;
+                    break;
+                case PaimonAnimType::Zoom:          zoomFactor = 1.0f + 0.15f * lerp; break;
+                case PaimonAnimType::Slide:
+                    zoomFactor = 1.0f + 0.1f * lerp;
+                    offsetX = -15.f * lerp;
+                    break;
+                case PaimonAnimType::Bounce:        zoomFactor = 1.0f + 0.20f * lerp; break;
+                case PaimonAnimType::Rotate:        zoomFactor = 1.0f + 0.05f * lerp; break;
+                case PaimonAnimType::RotateContent: zoomFactor = 1.0f + 0.15f * lerp; break;
+                case PaimonAnimType::Shake:         zoomFactor = 1.0f + 0.05f * lerp; break;
+                case PaimonAnimType::Pulse: {
+                    float pulse = (sinf(fields->m_animTime * 6.0f) + 1.0f) * 0.5f;
+                    zoomFactor = 1.0f + 0.05f * lerp + pulse * 0.05f * lerp;
+                } break;
+                case PaimonAnimType::Swing:         zoomFactor = 1.0f + 0.05f * lerp; break;
+                default: break;
+            }
+
+            if (fields->m_cachedCompactMode) {
+                zoomFactor = 1.0f + ((zoomFactor - 1.0f) * 0.55f);
+                offsetX *= 0.55f;
+            }
+
+            // Aplicar zoom + offset al hoverContainer — el boundsClipper mantiene su stencil
+            // fijo para que nada desborde la celda
+            auto hoverTarget = fields->m_hoverContainer ? static_cast<CCNode*>(fields->m_hoverContainer.data())
+                                                        : static_cast<CCNode*>(fields->m_boundsClipper.data());
+            if (hoverTarget && hoverTarget->getParent()) {
+                float prevScale = fields->m_lastBoundsHoverScale;
+                float curScale = hoverTarget->getScale();
+                curScale = curScale / std::max(0.001f, prevScale) * zoomFactor;
+                hoverTarget->setScale(curScale);
+                fields->m_lastBoundsHoverScale = zoomFactor;
+
+                auto pos = hoverTarget->getPosition();
+                pos.x -= fields->m_lastBoundsHoverOffsetX;
+                pos.x += offsetX;
+                hoverTarget->setPosition(pos);
+                fields->m_lastBoundsHoverOffsetX = offsetX;
+            }
             return;
         }
 
-        fields->m_wasInCenter = distanceFromCenter < centerZone;
-    }
-
-
-    void updateCenterAnimation(float dt) {
-        auto fields = m_fields.self();
-        if (!fields || fields->m_isBeingDestroyed) return;
+        // Asegurar que el hoverContainer no tenga hover scale/offset residual al salir de transicion
+        {
+            auto hoverTarget = fields->m_hoverContainer ? static_cast<CCNode*>(fields->m_hoverContainer.data())
+                                                        : static_cast<CCNode*>(fields->m_boundsClipper.data());
+            if (hoverTarget && hoverTarget->getParent()) {
+                if (fields->m_lastBoundsHoverScale != 1.0f) {
+                    float curScale = hoverTarget->getScale();
+                    curScale = curScale / std::max(0.001f, fields->m_lastBoundsHoverScale);
+                    hoverTarget->setScale(curScale);
+                    fields->m_lastBoundsHoverScale = 1.0f;
+                }
+                if (fields->m_lastBoundsHoverOffsetX != 0.0f) {
+                    auto pos = hoverTarget->getPosition();
+                    pos.x -= fields->m_lastBoundsHoverOffsetX;
+                    hoverTarget->setPosition(pos);
+                    fields->m_lastBoundsHoverOffsetX = 0.0f;
+                }
+            }
+        }
 
         fields->m_animTime += dt;
         cacheSettings();
@@ -1879,8 +2160,9 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_centerLerp = 0.0f;
         } else {
             float target = fields->m_wasInCenter ? 1.0f : 0.0f;
-            float speed = 6.0f * speedMult;
+            float speed = 12.0f * speedMult;
             fields->m_centerLerp += (target - fields->m_centerLerp) * std::min(1.0f, dt * speed);
+            if (std::abs(fields->m_centerLerp - target) < 0.01f) fields->m_centerLerp = target;
         }
 
         float lerp = fields->m_centerLerp;
@@ -1983,7 +2265,6 @@ class $modify(PaimonLevelCell, LevelCell) {
             fields->m_thumbSprite->setScale(fields->m_thumbSprite->getScale() * zoomFactor);
             fields->m_thumbSprite->setRotation(fields->m_thumbSprite->getRotation() + spriteRotation);
             fields->m_thumbSprite->setPosition(fields->m_thumbSprite->getPosition() + CCPoint(spriteOffsetX, 0.0f));
-            fields->m_thumbSprite->setOpacity(255);
 
             fields->m_lastSpriteHoverScale = zoomFactor;
             fields->m_lastSpriteHoverRotation = spriteRotation;
@@ -2004,14 +2285,17 @@ class $modify(PaimonLevelCell, LevelCell) {
             bool usingShader = false;
             PaimonShaderSprite* pss = typeinfo_cast<PaimonShaderSprite*>(target);
             PaimonShaderGradient* psg = typeinfo_cast<PaimonShaderGradient*>(target);
+            AnimatedGIFSprite* ags = typeinfo_cast<AnimatedGIFSprite*>(target);
 
             auto setIntensity = [&](float i) {
                 if (pss) pss->m_intensity = i;
                 if (psg) psg->m_intensity = i;
+                if (ags) ags->m_intensity = i;
             };
             auto setTime = [&](float t) {
                 if (pss) pss->m_time = t;
                 if (psg) psg->m_time = t;
+                if (ags) ags->m_time = t;
             };
             auto setTexSize = [&]() {
                 if (pss) {
@@ -2022,6 +2306,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                     }
                 }
                 if (psg) psg->m_texSize = target->getContentSize();
+                if (ags) {
+                    if (auto* targetTex = target->getTexture()) {
+                        ags->m_texSize = targetTex->getContentSizeInPixels();
+                    } else {
+                        ags->m_texSize = target->getContentSize();
+                    }
+                }
             };
 
             switch (animEffect) {
@@ -2154,8 +2445,13 @@ class $modify(PaimonLevelCell, LevelCell) {
                 target->setColor({255, 255, 255});
                 break;
             default:
-                if (!psg) target->setColor({255, 255, 255});
+                if (!psg) { target->setColor({255, 255, 255}); target->setOpacity(255); }
                 break;
+            }
+
+            // Resetear opacidad para efectos que no la manejan (Fade la controla explicitamente)
+            if (animEffect != PaimonAnimEffect::Fade && animEffect != PaimonAnimEffect::None) {
+                target->setOpacity(255);
             }
 
             if (!usingShader) {
@@ -2282,7 +2578,7 @@ class $modify(PaimonLevelCell, LevelCell) {
                 fields->m_isDailyCellCached = false;
                 fields->m_galleryThumbnails.clear();
                 fields->m_galleryPendingUrls.clear();
-                fields->m_galleryIndex = -1;
+                fields->m_galleryIndex = 0;
                 fields->m_galleryTimer = 0.f;
                 fields->m_galleryRequested = false;
                 fields->m_galleryToken++;
@@ -2317,14 +2613,16 @@ class $modify(PaimonLevelCell, LevelCell) {
                         success ? thumbs : std::vector<ThumbnailAPI::ThumbnailInfo>{}
                     );
                     log::info("[LevelCell] gallery callback: levelID={} success={} thumbCount={}", levelID, success, fields->m_galleryThumbnails.size());
-                    fields->m_galleryIndex = -1;
+                    fields->m_galleryIndex = 0;
                     fields->m_galleryTimer = 0.f;
                     bool autoCycleEnabled = Mod::get()->getSettingValue<bool>("levelcell-gallery-autocycle");
                     cell->unschedule(schedule_selector(PaimonLevelCell::updateGalleryCycle));
                     if (autoCycleEnabled && fields->m_galleryThumbnails.size() > 1) {
                         log::info("[LevelCell] gallery: auto-cycle enabled for levelID={} with {} thumbs", levelID, fields->m_galleryThumbnails.size());
-                        cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 3.0f);
+                        // Start at 4.5s — scan pattern will retry at 0.5s if images aren't cached yet
+                        cell->schedule(schedule_selector(PaimonLevelCell::updateGalleryCycle), 4.5f);
                     }
+                    // Bulk-request ALL gallery URLs in parallel for async preload
                     for (int i = 0; i < static_cast<int>(fields->m_galleryThumbnails.size()); ++i) {
                         cell->requestGalleryThumbnail(i);
                     }
@@ -2451,43 +2749,10 @@ class $modify(PaimonLevelCell, LevelCell) {
             if (!animatedThumb) {
                 return;
             }
-            fields->m_hoverCheckAccumulator += dt;
-#if defined(GEODE_IS_WINDOWS)
-            if (fields->m_hoverCheckAccumulator < 0.04f) {
-                return;
-            }
-            fields->m_hoverCheckAccumulator = 0.0f;
-#endif
-#if defined(GEODE_IS_WINDOWS)
-            // Check hover (solo Windows - getMousePosition solo existe en Windows)
-            auto winSize = CCDirector::sharedDirector()->getWinSize();
-            auto mousePos = cocos2d::CCDirector::sharedDirector()->getOpenGLView()->getMousePosition();
-            // In cocos2d-x 2.2.3 (GD), getMousePosition returns y from top.
-            mousePos.y = winSize.height - mousePos.y;
-            
-            auto* thumbParent = fields->m_thumbSprite->getParent();
-            if (!thumbParent) return;
-            auto nodePos = thumbParent->convertToNodeSpace(mousePos);
-            auto box = fields->m_thumbSprite->boundingBox();
-            
-            bool hovering = box.containsPoint(nodePos);
-            
-            if (hovering && !fields->m_isHovering) {
-                fields->m_isHovering = true;
-                animatedThumb->play();
-            } else if (!hovering) {
-                if (fields->m_isHovering) {
-                    fields->m_isHovering = false;
-                }
-                animatedThumb->pause();
-            }
-#else
-            // En movil: mostrar siempre el GIF animado
-            if (!fields->m_isHovering) {
-                fields->m_isHovering = true;
+            // Siempre animar el GIF (en todas las plataformas)
+            if (!animatedThumb->isPlaying()) {
                 animatedThumb->play();
             }
-#endif
         }
     }
 

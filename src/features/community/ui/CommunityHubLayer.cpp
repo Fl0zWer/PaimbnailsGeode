@@ -7,10 +7,17 @@
 #include "../../transitions/services/TransitionManager.hpp"
 #include "../../backgrounds/services/LayerBackgroundManager.hpp"
 #include "../../../utils/SpriteHelper.hpp"
+#include "../../profiles/services/ProfileThumbs.hpp"
+#include "../../../utils/Shaders.hpp"
+#include "../../../utils/AnimatedGIFSprite.hpp"
+#include "../../../utils/PaimonButtonHighlighter.hpp"
 #include <Geode/binding/ButtonSprite.hpp>
 #include <Geode/binding/CCMenuItemSpriteExtra.hpp>
 #include <Geode/binding/FMODAudioEngine.hpp>
 #include <Geode/binding/GameLevelManager.hpp>
+#include <Geode/binding/SimplePlayer.hpp>
+#include <Geode/binding/GameManager.hpp>
+#include <Geode/binding/ProfilePage.hpp>
 #include <Geode/utils/web.hpp>
 #include <matjson.hpp>
 #include <chrono>
@@ -234,6 +241,8 @@ bool CommunityHubLayer::ccMouseScroll(float x, float y) {
 
 void CommunityHubLayer::onBack(CCObject*) {
     m_isExiting = true;
+    m_moderatorsRebuildQueued = false;
+    this->unschedule(schedule_selector(CommunityHubLayer::onDeferredModeratorsRebuild));
     this->unscheduleUpdate();
     removeCaveEffect();
     CCDirector::sharedDirector()->popSceneWithTransition(0.5f, PopTransition::kPopTransitionFade);
@@ -263,7 +272,9 @@ void CommunityHubLayer::onTab(CCObject* sender) {
 
     for (auto tab : m_tabs) {
         tab->toggle(tab == toggler);
+        tab->setEnabled(false);
     }
+    m_isLoadingTab = true;
 
     clearList();
     if (m_loadingSpinner) m_loadingSpinner->setVisible(true);
@@ -293,6 +304,9 @@ void CommunityHubLayer::loadModerators() {
     m_modEntries.clear();
     m_modScores = CCArray::create();
     m_pendingProfiles = 0;
+    m_requestedModeratorProfiles.clear();
+    m_moderatorsRebuildQueued = false;
+    this->unschedule(schedule_selector(CommunityHubLayer::onDeferredModeratorsRebuild));
 
     WeakRef<CommunityHubLayer> self = this;
     HttpClient::get().get("/api/moderators", [self](bool success, std::string const& response) {
@@ -438,7 +452,29 @@ void CommunityHubLayer::onAllProfilesFetched() {
     buildModeratorsList();
 }
 
+void CommunityHubLayer::requestModeratorsListRebuild() {
+    if (m_isExiting || m_currentTab != Tab::Moderators) {
+        return;
+    }
+
+    m_moderatorsRebuildQueued = true;
+    this->unschedule(schedule_selector(CommunityHubLayer::onDeferredModeratorsRebuild));
+    this->scheduleOnce(schedule_selector(CommunityHubLayer::onDeferredModeratorsRebuild), 0.35f);
+}
+
+void CommunityHubLayer::onDeferredModeratorsRebuild(float) {
+    m_moderatorsRebuildQueued = false;
+    if (m_isExiting || m_currentTab != Tab::Moderators) {
+        return;
+    }
+
+    buildModeratorsList();
+}
+
 void CommunityHubLayer::buildModeratorsList() {
+    m_moderatorsRebuildQueued = false;
+    m_isLoadingTab = false;
+    for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     auto& loc = Localization::get();
@@ -457,25 +493,248 @@ void CommunityHubLayer::buildModeratorsList() {
     m_listContainer = CCNode::create();
     this->addChild(m_listContainer, 5);
 
-    // Use GD's native CustomListView for moderators (consistent with ModeratorsLayer)
-    auto listView = CustomListView::create(
-        m_modScores,
-        BoomListType::Score,
-        winSize.height - 85.f,
-        360.f
-    );
+    float listW = 380.f;
+    float cellH = 50.f;
+    float listH = winSize.height - 90.f;
+    int count = m_modScores->count();
+    float totalH = std::max(listH, cellH * static_cast<float>(count));
 
-    auto listLayer = GJListLayer::create(
-        listView,
-        loc.getString("mods.title").c_str(),
-        {0, 0, 0, 180},
-        360.f,
-        winSize.height - 85.f,
-        0
-    );
+    auto scrollView = geode::ScrollLayer::create({listW, listH});
+    scrollView->setPosition({winSize.width / 2 - listW / 2, 20.f});
 
-    listLayer->setPosition({winSize.width / 2 - 180.f, 15.f});
-    m_listContainer->addChild(listLayer);
+    auto content = CCLayer::create();
+    content->setContentSize({listW, totalH});
+    content->setPosition({0, 0});
+    scrollView->m_contentLayer->addChild(content);
+    scrollView->m_contentLayer->setContentSize({listW, totalH});
+
+    m_listContainer->addChild(scrollView);
+    m_scrollView = scrollView;
+
+    auto* gm = GameManager::sharedState();
+    auto& profileThumbs = ProfileThumbs::get();
+
+    for (int i = 0; i < count; i++) {
+        auto* score = static_cast<GJUserScore*>(m_modScores->objectAtIndex(i));
+        if (!score) continue;
+
+        if (score->m_accountID > 0) {
+            profileThumbs.notifyVisible(score->m_accountID);
+        }
+
+        float y = totalH - (i + 0.5f) * cellH;
+
+        auto cell = CCNode::create();
+        cell->setContentSize({listW, cellH - 2.f});
+        cell->setAnchorPoint({0.5f, 0.5f});
+        cell->setPosition({listW / 2, y});
+        content->addChild(cell);
+
+        float cellInnerH = cellH - 2.f;
+
+        // --- ScoreCell-style banner background ---
+        bool hasBanner = false;
+        auto config = profileThumbs.getProfileConfig(score->m_accountID);
+        auto* cachedEntry = profileThumbs.getCachedProfile(score->m_accountID);
+        CCTexture2D* thumbTex = cachedEntry ? cachedEntry->texture.data() : nullptr;
+        std::string gifKey = config.gifKey;
+        bool hasReadyGif = !gifKey.empty() && AnimatedGIFSprite::isCached(gifKey);
+        bool hasStableRenderableProfile = hasReadyGif || (thumbTex && gifKey.empty());
+
+        if (hasStableRenderableProfile) {
+            m_requestedModeratorProfiles.erase(score->m_accountID);
+        }
+
+        bool shouldQueueProfile = score->m_accountID > 0 && !score->m_userName.empty() &&
+            (!thumbTex || (!gifKey.empty() && !hasReadyGif));
+        bool queuedNow = shouldQueueProfile && m_requestedModeratorProfiles.insert(score->m_accountID).second;
+        if (queuedNow) {
+            WeakRef<CommunityHubLayer> safeLayer = this;
+            profileThumbs.queueLoad(score->m_accountID, score->m_userName, [safeLayer, accountID = score->m_accountID](bool success, CCTexture2D*) {
+                auto layerRef = safeLayer.lock();
+                auto* layer = static_cast<CommunityHubLayer*>(layerRef.data());
+                if (!layer || layer->m_isExiting || layer->m_currentTab != Tab::Moderators) return;
+
+                auto* refreshed = ProfileThumbs::get().getCachedProfile(accountID);
+                bool hasRenderableProfile = refreshed && (refreshed->texture ||
+                    (!refreshed->gifKey.empty() && AnimatedGIFSprite::isCached(refreshed->gifKey)));
+                if (!success && !hasRenderableProfile) return;
+
+                Loader::get()->queueInMainThread([safeLayer]() {
+                    auto layerRef2 = safeLayer.lock();
+                    auto* layer2 = static_cast<CommunityHubLayer*>(layerRef2.data());
+                    if (!layer2 || layer2->m_isExiting || layer2->m_currentTab != Tab::Moderators) return;
+                    layer2->requestModeratorsListRebuild();
+                });
+            });
+        }
+
+        if (thumbTex || hasReadyGif) {
+            CCNode* bgNode = nullptr;
+            CCSize targetSize = {listW, cellInnerH};
+
+            if (hasReadyGif) {
+                auto bgGif = AnimatedGIFSprite::createFromCache(gifKey);
+                if (bgGif) {
+                    float scaleX = targetSize.width / bgGif->getContentSize().width;
+                    float scaleY = targetSize.height / bgGif->getContentSize().height;
+                    float sc = std::max(scaleX, scaleY);
+                    bgGif->setScale(sc);
+                    bgGif->setAnchorPoint({0.5f, 0.5f});
+                    bgGif->setPosition(targetSize * 0.5f);
+                    auto shader = Shaders::getBlurCellShader();
+                    if (shader) bgGif->setShaderProgram(shader);
+                    float norm = 2.0f / 9.0f;
+                    bgGif->m_intensity = std::min(1.7f, norm * 2.5f);
+                    if (bgGif->getTexture()) bgGif->m_texSize = bgGif->getTexture()->getContentSizeInPixels();
+                    bgGif->play();
+                    bgNode = bgGif;
+                }
+            }
+
+            if (!bgNode && thumbTex) {
+                auto blurred = Shaders::createBlurredSprite(thumbTex, targetSize, 6.0f);
+                if (blurred) {
+                    blurred->setPosition(targetSize * 0.5f);
+                    bgNode = blurred;
+                }
+            }
+
+            if (bgNode) {
+                auto stencil = CCDrawNode::create();
+                CCPoint rect[4] = {
+                    ccp(0, 0), ccp(listW, 0),
+                    ccp(listW, cellInnerH), ccp(0, cellInnerH)
+                };
+                ccColor4F white = {1, 1, 1, 1};
+                stencil->drawPolygon(rect, 4, white, 0, white);
+
+                auto clipper = CCClippingNode::create(stencil);
+                clipper->setContentSize({listW, cellInnerH});
+                clipper->setPosition({0, 0});
+                cell->addChild(clipper, -2);
+
+                CCSize bgSize = bgNode->getContentSize();
+                if (bgSize.width > 0 && bgSize.height > 0) {
+                    float scaleToFitX = listW / bgSize.width;
+                    float scaleToFitY = cellInnerH / bgSize.height;
+                    float finalScale = std::max(scaleToFitX, scaleToFitY);
+                    bgNode->setScale(finalScale);
+                }
+                bgNode->setAnchorPoint({0.5f, 0.5f});
+                bgNode->setPosition({listW / 2, cellInnerH / 2});
+                clipper->addChild(bgNode);
+
+                float darkness = config.hasConfig ? config.darkness : 0.35f;
+                if (darkness > 0.0f) {
+                    auto overlay = CCLayerColor::create({0, 0, 0, static_cast<GLubyte>(darkness * 255)});
+                    overlay->setContentSize({listW, cellInnerH});
+                    overlay->setPosition({0, 0});
+                    cell->addChild(overlay, -1);
+                }
+                hasBanner = true;
+            }
+        }
+
+        if (!hasBanner) {
+            // fallback: alternating dark background
+            auto cellBg = paimon::SpriteHelper::createColorPanel(
+                listW, cellInnerH,
+                i % 2 == 0 ? ccColor3B{18, 18, 28} : ccColor3B{22, 22, 32}, 200);
+            cellBg->setPosition({0, 0});
+            cell->addChild(cellBg, 0);
+        }
+
+        // --- SimplePlayer icon ---
+        float iconAreaW = 42.f;
+        auto player = SimplePlayer::create(score->m_iconID);
+        if (player && gm) {
+            auto col1 = gm->colorForIdx(score->m_color1);
+            auto col2 = gm->colorForIdx(score->m_color2);
+            player->setColor(col1);
+            player->setSecondColor(col2);
+            if (score->m_glowEnabled) {
+                player->setGlowOutline(col2);
+            } else {
+                player->disableGlowOutline();
+            }
+            float maxDim = std::max(player->getContentSize().width, player->getContentSize().height);
+            if (maxDim > 0) player->setScale(30.f / maxDim);
+        }
+
+        float textX = iconAreaW + 8.f;
+
+        // --- Username ---
+        auto nameLbl = CCLabelBMFont::create(score->m_userName.c_str(), "bigFont.fnt");
+        nameLbl->setScale(0.4f);
+        nameLbl->setAnchorPoint({0, 0.5f});
+        float maxNameW = 160.f;
+        if (nameLbl->getScaledContentSize().width > maxNameW) {
+            nameLbl->setScale(nameLbl->getScale() * (maxNameW / nameLbl->getScaledContentSize().width));
+        }
+        float nameW = nameLbl->getScaledContentSize().width;
+
+        // --- Clickable area (icon + name -> opens profile) ---
+        float clickW = textX + nameW;
+        auto clickNode = CCNode::create();
+        clickNode->setContentSize({clickW, cellInnerH});
+        clickNode->setAnchorPoint({0, 0.5f});
+
+        if (player) {
+            player->setPosition({iconAreaW / 2 + 4.f, cellInnerH / 2});
+            clickNode->addChild(player, 5);
+        }
+        nameLbl->setPosition({textX, cellInnerH / 2});
+        clickNode->addChild(nameLbl, 10);
+
+        auto profileBtn = CCMenuItemSpriteExtra::create(
+            clickNode, this, menu_selector(CommunityHubLayer::onModProfile));
+        profileBtn->setTag(score->m_accountID);
+        profileBtn->setAnchorPoint({0, 0.5f});
+        profileBtn->setPosition({0, cellInnerH / 2});
+        // subtle press: barely noticeable scale
+        profileBtn->m_scaleMultiplier = 1.02f;
+        PaimonButtonHighlighter::registerButton(profileBtn);
+
+        auto menu = CCMenu::create();
+        menu->setPosition(CCPointZero);
+        menu->setContentSize({listW, cellInnerH});
+        cell->addChild(menu, 5);
+        menu->addChild(profileBtn);
+
+        // --- Paimbnails badge ---
+        bool isAdmin = (score->m_modBadge == 2);
+        auto badge = CCSprite::create(
+            isAdmin ? "paim_Admin.png"_spr : "paim_Moderador.png"_spr);
+        if (badge) {
+            float targetH = 15.5f;
+            float badgeScale = targetH / badge->getContentSize().height;
+            badge->setScale(badgeScale);
+            badge->setPosition({textX + nameW + badge->getScaledContentSize().width / 2 + 6.f, cellInnerH / 2});
+            cell->addChild(badge, 10);
+        }
+
+        // --- Global rank (right side) ---
+        if (score->m_globalRank > 0) {
+            auto rankStr = fmt::format("#{}", score->m_globalRank);
+            auto rankLbl = CCLabelBMFont::create(rankStr.c_str(), "chatFont.fnt");
+            rankLbl->setScale(0.4f);
+            rankLbl->setColor({255, 200, 50});
+            rankLbl->setAnchorPoint({1, 0.5f});
+            rankLbl->setPosition({listW - 10.f, cellInnerH / 2});
+            cell->addChild(rankLbl, 10);
+        }
+    }
+
+    // Scroll to top
+    scrollView->m_contentLayer->setPositionY(listH - totalH);
+}
+
+void CommunityHubLayer::onModProfile(CCObject* sender) {
+    int accountID = sender->getTag();
+    if (accountID > 0) {
+        ProfilePage::create(accountID, false)->show();
+    }
 }
 
 // ==================== TOP CREATORS TAB ====================
@@ -514,6 +773,8 @@ void CommunityHubLayer::loadTopCreators() {
 }
 
 void CommunityHubLayer::buildCreatorsList() {
+    m_isLoadingTab = false;
+    for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     auto& loc = Localization::get();
@@ -642,6 +903,8 @@ void CommunityHubLayer::loadTopThumbnails() {
 }
 
 void CommunityHubLayer::buildThumbnailsList() {
+    m_isLoadingTab = false;
+    for (auto tab : m_tabs) tab->setEnabled(true);
     clearList();
     auto winSize = CCDirector::sharedDirector()->getWinSize();
     auto& loc = Localization::get();

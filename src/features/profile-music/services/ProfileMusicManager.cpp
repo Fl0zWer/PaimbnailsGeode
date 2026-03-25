@@ -1,6 +1,7 @@
 #include "ProfileMusicManager.hpp"
 #include "../../audio/services/AudioContextCoordinator.hpp"
 #include "../../dynamic-songs/services/DynamicSongManager.hpp"
+#include "../../../core/Settings.hpp"
 #include "../../../utils/AudioInterop.hpp"
 #include "../../../utils/HttpClient.hpp"
 #include "../../../utils/MainThreadDelay.hpp"
@@ -17,6 +18,111 @@
 
 using namespace geode::prelude;
 
+namespace {
+constexpr auto PROFILE_MUSIC_CACHE_MAX_AGE = std::chrono::hours(24 * 30);
+
+std::mutex& getProfileMusicCachePruneMutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::filesystem::path getProfileMusicCacheDirStatic() {
+    return Mod::get()->getSaveDir() / "profile_music";
+}
+
+size_t getProfileMusicCacheMaxBytes() {
+    return std::clamp<size_t>(
+        paimon::settings::quality::diskCacheBytes(),
+        256ull * 1024ull * 1024ull,
+        1024ull * 1024ull * 1024ull
+    );
+}
+
+void removeProfileMusicCachePair(std::filesystem::path const& mp3Path) {
+    std::error_code ec;
+    std::filesystem::remove(mp3Path, ec);
+    auto metaPath = mp3Path;
+    metaPath.replace_extension(".meta");
+    ec.clear();
+    std::filesystem::remove(metaPath, ec);
+}
+
+void pruneProfileMusicCache() {
+    std::lock_guard<std::mutex> lock(getProfileMusicCachePruneMutex());
+
+    auto cacheDir = getProfileMusicCacheDirStatic();
+    std::error_code ec;
+    if (!std::filesystem::exists(cacheDir, ec)) {
+        return;
+    }
+
+    struct CacheEntry {
+        std::filesystem::path mp3Path;
+        std::filesystem::file_time_type mtime;
+        uintmax_t size = 0;
+    };
+
+    std::vector<CacheEntry> entries;
+    uintmax_t totalBytes = 0;
+    auto now = std::filesystem::file_time_type::clock::now();
+
+    for (auto const& entry : std::filesystem::directory_iterator(cacheDir, ec)) {
+        if (ec || !entry.is_regular_file() || entry.path().extension() != ".mp3") {
+            continue;
+        }
+
+        std::error_code sizeEc;
+        auto mp3Size = entry.file_size(sizeEc);
+        if (sizeEc) {
+            continue;
+        }
+
+        auto metaPath = entry.path();
+        metaPath.replace_extension(".meta");
+        uintmax_t totalEntrySize = mp3Size;
+        if (std::filesystem::exists(metaPath, sizeEc) && !sizeEc) {
+            sizeEc.clear();
+            auto metaSize = std::filesystem::file_size(metaPath, sizeEc);
+            if (!sizeEc) {
+                totalEntrySize += metaSize;
+            }
+        }
+
+        std::error_code timeEc;
+        auto mtime = entry.last_write_time(timeEc);
+        if (timeEc) {
+            continue;
+        }
+
+        if (now - mtime > PROFILE_MUSIC_CACHE_MAX_AGE) {
+            removeProfileMusicCachePair(entry.path());
+            continue;
+        }
+
+        totalBytes += totalEntrySize;
+        entries.push_back({entry.path(), mtime, totalEntrySize});
+    }
+
+    auto maxBytes = getProfileMusicCacheMaxBytes();
+    if (totalBytes <= maxBytes) {
+        return;
+    }
+
+    std::sort(entries.begin(), entries.end(), [](CacheEntry const& lhs, CacheEntry const& rhs) {
+        return lhs.mtime < rhs.mtime;
+    });
+
+    for (auto const& entry : entries) {
+        if (totalBytes <= maxBytes) {
+            break;
+        }
+
+        removeProfileMusicCachePair(entry.mp3Path);
+        totalBytes = (entry.size > totalBytes) ? 0 : (totalBytes - entry.size);
+    }
+}
+}
+
 // Helper: extrae el FMOD::Channel* subyacente del ChannelGroup de musica de fondo.
 static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
     if (!engine || !engine->m_backgroundMusicChannel) return nullptr;
@@ -31,10 +137,11 @@ static FMOD::Channel* getMainBgChannel(FMODAudioEngine* engine) {
 ProfileMusicManager::ProfileMusicManager() {
     std::error_code ec;
     std::filesystem::create_directories(getCacheDir(), ec);
+    pruneProfileMusicCache();
 }
 
 std::filesystem::path ProfileMusicManager::getCacheDir() {
-    return Mod::get()->getSaveDir() / "profile_music";
+    return getProfileMusicCacheDirStatic();
 }
 
 std::filesystem::path ProfileMusicManager::getCachePath(int accountID) {
@@ -350,6 +457,7 @@ void ProfileMusicManager::downloadMusicFragment(int accountID, DownloadCallback 
         if (file) {
             file.write(reinterpret_cast<char const*>(data.data()), data.size());
             file.close();
+            pruneProfileMusicCache();
             log::info("[ProfileMusic] Downloaded and cached music for account {} ({} bytes)", accountID, data.size());
             Loader::get()->queueInMainThread([callback, cachePath]() {
                 callback(true, geode::utils::string::pathToString(cachePath));
@@ -472,6 +580,7 @@ void ProfileMusicManager::playProfileMusicWithConfig(int accountID, ProfileMusic
 void ProfileMusicManager::playAudioFile(std::string const& path, bool loop, int startMs, int endMs) {
     auto generation = ++m_fadeGeneration;
     m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+    m_playbackKind = PlaybackKind::Profile;
 
     // Cancelar fades y limpiar estado
     m_isFadingIn = false;
@@ -543,6 +652,11 @@ void ProfileMusicManager::loadProfileOnMainChannel(const std::string& path, bool
     }
 
     paimon::setProfileMusicInteropActive(true);
+    if (m_playbackKind == PlaybackKind::Preview) {
+        AudioContextCoordinator::get().claimPreviewAudio(m_profileSessionToken);
+    } else {
+        AudioContextCoordinator::get().claimProfileAudio(m_profileSessionToken);
+    }
 
     // Configurar loop points y posicion via Channel*
     auto* bgCh = getMainBgChannel(engine);
@@ -618,15 +732,11 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
         }
 
         if (restoreAfter) {
-            // Saliendo de profile music: restaurar menu o dynamic
-            m_isPlaying = false;
-            m_isPaused = false;
-            m_currentProfileID = 0;
-            m_currentAudioPath.clear();
-            paimon::setProfileMusicInteropActive(false);
-
+            // Saliendo de profile music: detener canal y devolver ownership antes de restaurar contexto
+            auto sessionToken = m_profileSessionToken;
+            stopOwnedAudioPlayback();
             m_isFadingOut = false;
-            AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, m_profileSessionToken);
+            AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, sessionToken);
             log::info("[ProfileMusic] Fade-out complete, context restored by coordinator");
         } else {
             // Entrando a profile music: notificar dynamic y cargar profile
@@ -654,7 +764,9 @@ void ProfileMusicManager::executeDipFadeOut(int step, int totalSteps,
     float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo, restoreAfter, generation]() {
+    auto lt = m_lifetimeToken;
+    paimon::scheduleMainThreadDelay(stepDelay, [lt, this, next, totalSteps, volFrom, volTo, restoreAfter, generation]() {
+        if (!lt || !lt->load(std::memory_order_acquire)) return;
         if (generation != m_fadeGeneration || !m_isFadingOut) return;
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
@@ -690,7 +802,9 @@ void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
     float stepDelay = getFadeDurationMs() / static_cast<float>(totalSteps) / 1000.f;
     int next = step + 1;
 
-    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, volFrom, volTo, generation]() {
+    auto lt = m_lifetimeToken;
+    paimon::scheduleMainThreadDelay(stepDelay, [lt, this, next, totalSteps, volFrom, volTo, generation]() {
+        if (!lt || !lt->load(std::memory_order_acquire)) return;
         if (generation != m_fadeGeneration || !m_isFadingIn) return;
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
@@ -698,7 +812,7 @@ void ProfileMusicManager::executeDipFadeIn(int step, int totalSteps,
     });
 }
 
-void ProfileMusicManager::stopCurrentAudio() {
+void ProfileMusicManager::stopOwnedAudioPlayback() {
     ++m_fadeGeneration;
     ++m_caveGeneration;
 
@@ -710,14 +824,43 @@ void ProfileMusicManager::stopCurrentAudio() {
     // Limpiar efecto cueva si estaba activo
     forceRemoveCaveEffect();
 
+    // Siempre parar el canal principal — incluso si los flags de ownership
+    // estan desincronizados (e.g., playAudioFile no termino, callback async).
+    // Si no somos dueños, al menos silenciar para que la restauracion
+    // posterior (menu/dynamic) pueda tomar control limpio.
+    {
+        auto engine = FMODAudioEngine::sharedEngine();
+        if (engine && engine->m_backgroundMusicChannel) {
+            engine->m_backgroundMusicChannel->stop();
+        }
+    }
+
     m_isPlaying = false;
     m_isPaused = false;
+    m_isFadingIn = false;
+    m_isFadingOut = false;
+    m_currentProfileID = 0;
+    m_currentAudioPath.clear();
+    m_pendingStartMs = 0;
+    m_pendingEndMs = 0;
+    m_pendingLoop = true;
+    m_savedBgPosMs = 0;
+    m_bgVolumeBeforeFade = 1.0f;
+    m_playbackKind = PlaybackKind::None;
     paimon::setProfileMusicInteropActive(false);
-    AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, m_profileSessionToken);
+    AudioContextCoordinator::get().releaseProfileLikeAudio(m_profileSessionToken);
+}
+
+void ProfileMusicManager::stopCurrentAudio(bool restoreContext) {
+    auto sessionToken = m_profileSessionToken;
+    stopOwnedAudioPlayback();
+    if (restoreContext) {
+        AudioContextCoordinator::get().restoreAfterProfileMusicStop(true, sessionToken);
+    }
 }
 
 void ProfileMusicManager::pauseProfileMusic() {
-    if (m_isPlaying) {
+    if (m_playbackKind == PlaybackKind::Profile && m_isPlaying) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->setPaused(true);
@@ -728,7 +871,7 @@ void ProfileMusicManager::pauseProfileMusic() {
 }
 
 void ProfileMusicManager::resumeProfileMusic() {
-    if (m_isPaused) {
+    if (m_playbackKind == PlaybackKind::Profile && m_isPaused) {
         auto engine = FMODAudioEngine::sharedEngine();
         if (engine && engine->m_backgroundMusicChannel) {
             engine->m_backgroundMusicChannel->setPaused(false);
@@ -739,8 +882,13 @@ void ProfileMusicManager::resumeProfileMusic() {
 }
 
 void ProfileMusicManager::stopProfileMusic() {
+    if (m_playbackKind == PlaybackKind::Preview) {
+        stopPreview();
+        return;
+    }
+
     // Si no hay nada reproduciendose ni en fade, no tocar nada
-    if (!m_isPlaying && !m_isFadingOut) {
+    if (!m_isPlaying && !m_isPaused && !m_isFadingOut && !m_isFadingIn) {
         return;
     }
 
@@ -758,9 +906,7 @@ void ProfileMusicManager::stopProfileMusic() {
         fadeOutAndStop();
     } else {
         // Sin crossfade o sin reproduccion activa: parar inmediatamente
-        stopCurrentAudio();
-        m_currentProfileID = 0;
-        m_currentAudioPath.clear();
+        stopCurrentAudio(true);
         log::info("[ProfileMusic] Stopped immediately");
     }
 }
@@ -983,8 +1129,9 @@ std::vector<float> ProfileMusicManager::analyzeWaveform(std::string const& fileP
 }
 
 void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, int endMs) {
-    stopPreview();
+    forceStop();
     m_profileSessionToken = AudioContextCoordinator::get().getCurrentProfileSessionToken();
+    m_playbackKind = PlaybackKind::Preview;
 
     auto engine = FMODAudioEngine::sharedEngine();
     if (!engine || !engine->m_system) return;
@@ -1005,7 +1152,10 @@ void ProfileMusicManager::playPreview(std::string const& filePath, int startMs, 
 }
 
 void ProfileMusicManager::stopPreview() {
-    stopCurrentAudio();
+    if (m_playbackKind != PlaybackKind::Preview) {
+        return;
+    }
+    stopCurrentAudio(true);
 }
 
 void ProfileMusicManager::clearCache() {
@@ -1058,6 +1208,7 @@ void ProfileMusicManager::saveMetaFile(int accountID, ProfileMusicConfig const& 
     if (file) {
         file << config.songID << "|" << config.startMs << "|" << config.endMs << "|" << config.updatedAt;
         file.close();
+        pruneProfileMusicCache();
         log::info("[ProfileMusic] Saved meta for account {}: songID={}, {}ms-{}ms, updatedAt={}",
             accountID, config.songID, config.startMs, config.endMs, config.updatedAt);
     }
@@ -1291,8 +1442,10 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
     int next = step + 1;
     float stepDelay = 400.0f / static_cast<float>(totalSteps) / 1000.f; // 400ms total transition
 
-    paimon::scheduleMainThreadDelay(stepDelay, [this, next, totalSteps, cutoffFrom, cutoffTo,
+    auto lt = m_lifetimeToken;
+    paimon::scheduleMainThreadDelay(stepDelay, [lt, this, next, totalSteps, cutoffFrom, cutoffTo,
                                                 freqFrom, freqTo, volFrom, volTo, applying, generation]() {
+        if (!lt || !lt->load(std::memory_order_acquire)) return;
         if (generation != m_caveGeneration) return;
         auto engine = FMODAudioEngine::sharedEngine();
         if (!engine || !engine->m_backgroundMusicChannel) return;
@@ -1302,36 +1455,9 @@ void ProfileMusicManager::executeCaveTransitionStep(int step, int totalSteps,
 }
 
 void ProfileMusicManager::forceStop() {
-    ++m_fadeGeneration;
-    ++m_caveGeneration;
-
     log::info("[ProfileMusic] forceStop called (fadingOut:{}, fadingIn:{}, playing:{})",
         m_isFadingOut, m_isFadingIn, m_isPlaying);
-
-    // Cancelar fades primero para que callbacks pendientes sean no-op
-    m_isFadingIn = false;
-    m_isFadingOut = false;
-
-    // Limpiar efecto cueva ANTES de borrar m_caveTransitioning
-    // (forceRemoveCaveEffect ahora tambien chequea m_lowpassDSP)
-    forceRemoveCaveEffect();
-    m_caveTransitioning = false;
-
-    // Detener el canal de audio si estaba reproduciendose musica de perfil
-    // Sin esto, el audio seguia sonando despues de cerrar el perfil
-    if (m_isPlaying && !m_currentAudioPath.empty()) {
-        auto engine = FMODAudioEngine::sharedEngine();
-        if (engine && engine->m_backgroundMusicChannel) {
-            engine->m_backgroundMusicChannel->stop();
-        }
-    }
-
-    m_isPlaying = false;
-    m_isPaused = false;
-    m_currentProfileID = 0;
-    m_currentAudioPath.clear();
-    paimon::setProfileMusicInteropActive(false);
-
+    stopOwnedAudioPlayback();
     log::info("[ProfileMusic] forceStop complete, all state cleared");
 }
 

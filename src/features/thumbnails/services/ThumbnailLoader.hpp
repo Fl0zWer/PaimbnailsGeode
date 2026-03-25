@@ -45,6 +45,7 @@ public:
     
     // carga por URL (para gallery thumbnails compartidos entre vistas)
     void requestUrlLoad(std::string const& url, LoadCallback callback, int priority = 0);
+    void requestUrlBatchLoad(std::vector<std::string> const& urls, LoadCallback perUrlCallback, int priority = 0);
     bool isUrlLoaded(std::string const& url) const;
     void cancelUrlLoad(std::string const& url);
 
@@ -117,8 +118,10 @@ private:
     std::unordered_map<std::string, std::shared_ptr<Task>> m_urlTasks; // url -> tarea gallery
     std::multimap<int, int, std::greater<int>> m_priorityQueue; // prioridad (desc) -> levelID
     std::atomic<int> m_activeTaskCount{0};
+    std::atomic<int> m_activeUrlTaskCount{0};
     int m_maxConcurrentTasks = 20;
-    mutable std::mutex m_queueMutex;
+    int m_maxConcurrentUrlTasks = 10;
+    mutable std::recursive_mutex m_queueMutex;
 
     // entrada de cache con version de invalidacion
     struct CacheEntry {
@@ -146,12 +149,12 @@ private:
 
     // legacy disk index — mantenido temporalmente para compatibilidad durante la transicion
     std::unordered_set<int> m_diskCache;
-    std::mutex m_diskMutex;
+    std::recursive_mutex m_diskMutex;
     
     // cache fallidos con TTL (5 minutos)
     std::unordered_map<int, std::chrono::steady_clock::time_point> m_failedCache;
     std::unordered_map<std::string, std::chrono::steady_clock::time_point> m_urlFailedCache;
-    static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(5);
+    static constexpr auto FAILED_CACHE_TTL = std::chrono::minutes(5); // avoid re-requesting non-existent thumbnails
     static constexpr auto FAILED_CACHE_PRUNE_INTERVAL = std::chrono::minutes(1);
     std::chrono::steady_clock::time_point m_lastFailedCachePrune = std::chrono::steady_clock::time_point::min();
     
@@ -191,6 +194,7 @@ private:
     void workerLoadFromDisk(std::shared_ptr<Task> task);
     void workerDownload(std::shared_ptr<Task> task);
     void workerUrlDownload(std::shared_ptr<Task> task);
+    void processUrlQueue();
     void spawnBackground(std::function<void()> job);
     void waitBackgroundWorkers();
     void pruneFinishedWorkers();
@@ -207,7 +211,7 @@ private:
     DecodeResult decodeImageData(std::vector<uint8_t> const& data, int realID);
 
     std::vector<std::future<void>> m_backgroundWorkers;
-    mutable std::mutex m_workerMutex;
+    mutable std::recursive_mutex m_workerMutex;
 
     // quota de cache de disco — dynamic per quality tier
     static constexpr auto MAX_DISK_CACHE_AGE = std::chrono::hours(24 * 21);

@@ -52,7 +52,7 @@ public:
         geode::CopyableFunction<void(bool, ProfileConfig const&)> callback);
 
 private:
-    ProfileImageService() = default;
+    ProfileImageService();
     ProfileImageService(ProfileImageService const&) = delete;
     ProfileImageService& operator=(ProfileImageService const&) = delete;
 

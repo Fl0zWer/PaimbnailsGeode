@@ -11,15 +11,58 @@ AudioContextCoordinator& AudioContextCoordinator::get() {
     return instance;
 }
 
+void AudioContextCoordinator::claimDynamicAudio() {
+    m_mainAudioOwner = MainAudioOwner::Dynamic;
+    m_mainAudioOwnerToken = 0;
+}
+
+void AudioContextCoordinator::clearDynamicAudio() {
+    if (m_mainAudioOwner == MainAudioOwner::Dynamic) {
+        m_mainAudioOwner = MainAudioOwner::None;
+        m_mainAudioOwnerToken = 0;
+    }
+}
+
+void AudioContextCoordinator::claimProfileAudio(uint32_t sessionToken) {
+    m_mainAudioOwner = MainAudioOwner::Profile;
+    m_mainAudioOwnerToken = sessionToken;
+}
+
+void AudioContextCoordinator::claimPreviewAudio(uint32_t sessionToken) {
+    m_mainAudioOwner = MainAudioOwner::Preview;
+    m_mainAudioOwnerToken = sessionToken;
+}
+
+void AudioContextCoordinator::releaseProfileLikeAudio(uint32_t sessionToken) {
+    if ((m_mainAudioOwner == MainAudioOwner::Profile || m_mainAudioOwner == MainAudioOwner::Preview) &&
+        m_mainAudioOwnerToken == sessionToken) {
+        m_mainAudioOwner = MainAudioOwner::None;
+        m_mainAudioOwnerToken = 0;
+    }
+}
+
+bool AudioContextCoordinator::isCurrentProfileSession(uint32_t sessionToken) const {
+    return sessionToken == m_profileSessionToken;
+}
+
+bool AudioContextCoordinator::isAudioOwnedByProfileSession(uint32_t sessionToken) const {
+    return (m_mainAudioOwner == MainAudioOwner::Profile || m_mainAudioOwner == MainAudioOwner::Preview) &&
+           m_mainAudioOwnerToken == sessionToken;
+}
+
 void AudioContextCoordinator::activateLevelSelect(int levelID, bool playImmediately) {
     m_gameplayActive = false;
     m_levelSelectLevelID = levelID;
     m_dynamicContextLayer = DynSongLayer::LevelSelect;
 
+    if (m_profileOpen) {
+        clearProfileContext();
+    }
+
     auto* dsm = DynamicSongManager::get();
     dsm->enterLayer(DynSongLayer::LevelSelect);
 
-    if (playImmediately && !m_profileOpen) {
+    if (playImmediately) {
         playDynamicForCurrentContext();
     }
 }
@@ -42,10 +85,15 @@ void AudioContextCoordinator::activateLevelInfo(GJGameLevel* level, bool playImm
     m_levelInfoLevel = level;
     m_dynamicContextLayer = DynSongLayer::LevelInfo;
 
+    // Si el perfil quedo abierto por error, limpiarlo — el usuario ya esta en otro layer
+    if (m_profileOpen) {
+        clearProfileContext();
+    }
+
     auto* dsm = DynamicSongManager::get();
     dsm->enterLayer(DynSongLayer::LevelInfo);
 
-    if (playImmediately && !m_profileOpen) {
+    if (playImmediately) {
         playDynamicForCurrentContext();
     }
 }
@@ -64,8 +112,12 @@ void AudioContextCoordinator::deactivateLevelInfo(bool returnsToLevelSelect) {
         m_dynamicContextLayer = DynSongLayer::None;
     }
 
-    if (!m_profileOpen && dsm->m_isDynamicSongActive) {
-        dsm->stopSong();
+    if (!m_profileOpen) {
+        if (dsm->isActive()) {
+            dsm->stopSong(); // stopSong handles menu music restoration
+        } else {
+            restoreMenuMusic();
+        }
     }
 }
 
@@ -87,6 +139,7 @@ void AudioContextCoordinator::activateProfile(int accountID) {
     m_profileOpen = true;
     m_profileAccountID = accountID;
     m_gameplayActive = false;
+    suspendDynamicForProfileMusicIfNeeded();
     ProfileMusicManager::get().playProfileMusic(accountID);
 }
 
@@ -95,6 +148,15 @@ void AudioContextCoordinator::activateProfile(int accountID, ProfileMusicManager
     m_profileOpen = true;
     m_profileAccountID = accountID;
     m_gameplayActive = false;
+    suspendDynamicForProfileMusicIfNeeded();
+    ProfileMusicManager::get().playProfileMusic(accountID, config);
+}
+
+void AudioContextCoordinator::updateProfileMusicConfig(int accountID, ProfileMusicManager::ProfileMusicConfig const& config) {
+    // Actualizar config sin incrementar session token (evita desincronizacion por doble activacion)
+    m_profileOpen = true;
+    m_profileAccountID = accountID;
+    suspendDynamicForProfileMusicIfNeeded();
     ProfileMusicManager::get().playProfileMusic(accountID, config);
 }
 
@@ -105,7 +167,7 @@ void AudioContextCoordinator::clearProfileContext() {
 
 bool AudioContextCoordinator::shouldSuspendDynamicForProfileMusic() const {
     auto* dsm = DynamicSongManager::get();
-    return dsm->m_isDynamicSongActive && !dsm->hasSuspendedPlayback();
+    return dsm->isActive() && !dsm->hasSuspendedPlayback();
 }
 
 void AudioContextCoordinator::suspendDynamicForProfileMusicIfNeeded() {
@@ -121,13 +183,19 @@ bool AudioContextCoordinator::restoreSuspendedDynamicSong() {
     }
 
     dsm->resumeSuspendedPlayback();
-    return true;
+
+    // Verificar que la restauracion realmente inicio audio.
+    // resumeSuspendedPlayback puede abortar por guards internos (menu music
+    // desactivado, volumen 0, layer invalido) sin cargar nada.
+    return dsm->isActive();
 }
 
 void AudioContextCoordinator::restoreAfterProfileMusicStop(bool hadProfileAudio, uint32_t sessionToken) {
-    if (sessionToken != m_profileSessionToken) {
+    if (!isCurrentProfileSession(sessionToken)) {
         return;
     }
+
+    releaseProfileLikeAudio(sessionToken);
 
     if (restoreSuspendedDynamicSong()) {
         return;
@@ -137,17 +205,16 @@ void AudioContextCoordinator::restoreAfterProfileMusicStop(bool hadProfileAudio,
         return;
     }
 
-    if (hadProfileAudio) {
-        restoreMenuMusic();
-    }
+    restoreMenuMusic();
 }
 
 void AudioContextCoordinator::handleProfileClosedAfterForceStop(bool hadProfileAudio, uint32_t sessionToken) {
-    if (sessionToken != m_profileSessionToken) {
+    if (!isCurrentProfileSession(sessionToken)) {
         return;
     }
 
     clearProfileContext();
+    releaseProfileLikeAudio(sessionToken);
     restoreAfterProfileMusicStop(hadProfileAudio, sessionToken);
 }
 
@@ -197,6 +264,8 @@ void AudioContextCoordinator::restoreMenuMusic() {
     DynamicSongManager::s_selfPlayMusic = true;
     engine->playMusic(menuTrack, true, 0.0f, 0);
     DynamicSongManager::s_selfPlayMusic = false;
+    m_mainAudioOwner = MainAudioOwner::Menu;
+    m_mainAudioOwnerToken = 0;
 
     if (engine->m_backgroundMusicChannel) {
         engine->m_backgroundMusicChannel->setVolume(engine->m_musicVolume);
